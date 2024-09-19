@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: ./web
+    command: ["npm run start"]
+    ports:
+      - "8080:8080"
+    environment:
+      - ENV_VAR=your_value
+    volumes:
+      - ./web:/web
+    tty: true
+    restart: always
+    depends_on:
+      - db
+    networks:
+      - matrix_network
+
+  db:
+    build:
+      context: ./db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    tty: true
+    restart: always
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - matrix_network
+
+volumes:
+  db_data:
+
+networks:
+  matrix_network:
+    driver: bridge
