@@ -4,13 +4,24 @@ services:
   web:
     build:
       context: ./web
-    command: ["npm run start"]
     ports:
       - "8080:8080"
     environment:
       - ENV_VAR=your_value
     volumes:
       - ./web:/web
+    tty: true
+    restart: always
+    depends_on:
+      - db
+    networks:
+      - matrix_network
+
+  noaa_adopter:
+    build:
+      context: ./noaa_adopter
+    environment:
+      - ENV_VAR=your_value
     tty: true
     restart: always
     depends_on:
