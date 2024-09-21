@@ -17,9 +17,9 @@ services:
     networks:
       - matrix_network
 
-  noaa_adopter:
+  noaa_adapter:
     build:
-      context: ./noaa_adopter
+      context: ./noaa_adapter
     environment:
       - ENV_VAR=your_value
     tty: true
