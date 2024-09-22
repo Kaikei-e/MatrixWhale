@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   web:
     build:
@@ -7,7 +5,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - ENV_VAR=your_value
+      - ENV_VAR=test_value
     volumes:
       - ./web:/web
     tty: true
@@ -21,9 +19,11 @@ services:
     build:
       context: ./noaa_adapter
     environment:
-      - ENV_VAR=your_value
+      - ENV_VAR=test_value
     tty: true
     restart: always
+    volumes:
+      - ./noaa_adapter/app:/app
     depends_on:
       - db
     networks:
