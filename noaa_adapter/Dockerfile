@@ -1,18 +1,14 @@
-FROM golang:1.23-alpine3.19 as builder
+FROM golang:1.23-alpine3.19 AS builder
 
-RUN mkdir /usr/bin/noaa_adapter
-WORKDIR /usr/bin/noaa_adapter
+WORKDIR /app
 COPY ./app ./
-RUN go mod download &&\
+RUN go mod download && \
     go build -o noaa_adapter .
 
+FROM alpine:3.19 AS final
+COPY --from=builder /app/noaa_adapter /noaa_adapter
 
-FROM alpine:3.20.3 as final
-COPY --from=builder /usr/bin/noaa_adapter/noaa_adapter /noaa_adapter
-
+WORKDIR /app
 RUN chmod +x /noaa_adapter
 
 CMD ["/noaa_adapter"]
-
-
-

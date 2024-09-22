@@ -1,4 +1,4 @@
-FROM node:22.9.0-bullseye as build
+FROM node:22.9.0-bullseye AS build
 
 ADD ./app /app
 
@@ -7,11 +7,13 @@ WORKDIR /app
 RUN npm install && \
     npm run build
 
-FROM node:22.9.0-bullseye-slim as production
+FROM node:22.9.0-bullseye-slim AS production
 
 RUN mkdir /app
 
 COPY --from=build /app /app
-EXPOSE 8080
 
-CMD ["npm run start"]
+WORKDIR /app
+
+EXPOSE 8080
+CMD ["npm", "run", "start"]
