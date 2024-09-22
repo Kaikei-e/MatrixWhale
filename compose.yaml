@@ -15,6 +15,22 @@ services:
     networks:
       - matrix_network
 
+  matrix_whale:
+    build:
+      context: ./matrix_whale
+    environment:
+      - ENV_VAR=test_value
+    ports:
+      - "6000:6000"
+    tty: true
+    restart: always
+    volumes:
+      - ./matrix_whale:/matrix_whale
+    depends_on:
+      - db
+    networks:
+      - matrix_network
+
   noaa_adapter:
     build:
       context: ./noaa_adapter
