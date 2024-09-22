@@ -1,5 +1,5 @@
-import gleam/io
+import logs/reciever/reciever
 
 pub fn main() {
-  io.println("Hello from matrix_whale!")
+  reciever.reciever_main()
 }
