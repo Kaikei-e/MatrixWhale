@@ -5,8 +5,8 @@
 	</div>
 
 	<div class="... grid grid-flow-row-dense grid-cols-3 grid-rows-3 gap-4">
-		<div class="col-span-2 rounded-lg border border-gray-200 p-4 shadow">01</div>
-		<div class="col-span-2 rounded-lg border border-gray-200 p-4 shadow">02</div>
+		<div class="col-span-2 bg-white rounded-lg border border-gray-200 p-4 shadow">01</div>
+		<div class="col-span-2 bg-white rounded-lg border border-gray-200 p-4 shadow">02</div>
 		<div class="rounded-lg border border-gray-200 p-4 shadow">03</div>
 		<div class="bg-black">04</div>
 		<div class="bg-white">05</div>
