@@ -20,7 +20,7 @@ func NoaaAlertsAdapter() (string, error) {
 		panic(err)
 	}
 
-	req.Header.Set("User-Agent", "Matrix Whale, A GitHub Project")
+	req.Header.Set("User-Agent", "Matrix Whale, A Data Processing Project")
 	req.Header.Set("Accept", "application/geo+json")
 	cl := http.Client{}
 	res, err := cl.Do(req)
