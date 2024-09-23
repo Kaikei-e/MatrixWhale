@@ -1,7 +1,9 @@
 import gleam/dynamic.{type Dynamic}
+import gleam/io
 import gleam/json
 import gleam/result
 import gleam/string_builder
+import gzlib
 import wisp.{type Request, type Response}
 
 pub type LogFormat {
@@ -45,6 +47,30 @@ pub fn noaa_logs_handler(req: Request) -> Response {
     }
     Error(_) -> {
       string_builder.from_string("Invalid log format")
+      |> wisp.json_response(400)
+    }
+  }
+}
+
+pub fn noaa_data_handler(req: Request) -> Response {
+  use bit_data <- wisp.require_bit_array_body(req)
+
+  let result = {
+    // let decompressed_body = gzlib.uncompress(bit_data)
+
+    io.debug("Decompressed body:")
+    io.debug(bit_data)
+
+    Ok(bit_data)
+  }
+
+  case result {
+    Ok(_) -> {
+      string_builder.from_string("Data recieved")
+      |> wisp.json_response(200)
+    }
+    Error(_) -> {
+      string_builder.from_string("Invalid data format")
       |> wisp.json_response(400)
     }
   }

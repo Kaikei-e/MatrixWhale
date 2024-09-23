@@ -30,6 +30,7 @@ fn reciever_router(request: Request) -> Response {
       string_builder.from_string("system is alive") |> wisp.json_response(200)
     }
     ["api", "v1", "logs"] -> noaa_adapter.noaa_logs_handler(req)
+    ["api", "v1", "noaa_data", "send"] -> noaa_adapter.noaa_data_handler(req)
     _ -> wisp.response(404)
   }
 }
