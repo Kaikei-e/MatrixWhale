@@ -1,6 +1,5 @@
 import erlang_tools/zip
 import gleam/dynamic.{type Dynamic}
-import gleam/io
 import gleam/json
 import gleam/result
 import gleam/string_builder
