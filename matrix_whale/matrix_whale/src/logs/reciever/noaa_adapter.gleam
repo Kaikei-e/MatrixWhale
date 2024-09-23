@@ -5,7 +5,7 @@ import gleam/string_builder
 import wisp.{type Request, type Response}
 
 pub type LogFormat {
-  LogFormat(time: String, level: String, msg: String, service: String)
+  LogFormat(time: String, level: String, message: String, service: String)
 }
 
 fn decode_logs(json: Dynamic) -> Result(LogFormat, List(dynamic.DecodeError)) {
@@ -31,7 +31,7 @@ pub fn noaa_logs_handler(req: Request) -> Response {
       json.object([
         #("time", json.string(log_format.time)),
         #("level", json.string(log_format.level)),
-        #("msg", json.string(log_format.msg)),
+        #("msg", json.string(log_format.message)),
         #("service", json.string(log_format.service)),
       ])
 
