@@ -38,7 +38,5 @@ func NoaaAlertsAdapter() (string, error) {
 
 	resText := string(resBytes)
 
-	slog.Info("noaa's response", "from 0 to 100 characters", resText[:10])
-
 	return resText, nil
 }
