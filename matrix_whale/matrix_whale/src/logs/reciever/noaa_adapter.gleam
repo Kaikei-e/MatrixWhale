@@ -1,9 +1,9 @@
+import erlang_tools/zip
 import gleam/dynamic.{type Dynamic}
 import gleam/io
 import gleam/json
 import gleam/result
 import gleam/string_builder
-import gzlib
 import wisp.{type Request, type Response}
 
 pub type LogFormat {
@@ -56,12 +56,12 @@ pub fn noaa_data_handler(req: Request) -> Response {
   use bit_data <- wisp.require_bit_array_body(req)
 
   let result = {
-    // let decompressed_body = gzlib.uncompress(bit_data)
-
-    io.debug("Decompressed body:")
-    io.debug(bit_data)
-
-    Ok(bit_data)
+    case zip.gunzip(bit_data) {
+      Ok(json_data) -> {
+        Ok(json_data)
+      }
+      Error(_) -> Error("Invalid data format")
+    }
   }
 
   case result {
