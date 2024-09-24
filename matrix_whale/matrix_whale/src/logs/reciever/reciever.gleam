@@ -1,6 +1,7 @@
 import gleam/erlang/process
 import gleam/string_builder
 import logs/reciever/noaa_adapter
+import message/reviever/noaa_reciever
 import mist
 import wisp.{type Request, type Response}
 import wisp/wisp_mist
@@ -30,7 +31,7 @@ fn reciever_router(request: Request) -> Response {
       string_builder.from_string("system is alive") |> wisp.json_response(200)
     }
     ["api", "v1", "logs"] -> noaa_adapter.noaa_logs_handler(req)
-    ["api", "v1", "noaa_data", "send"] -> noaa_adapter.noaa_data_handler(req)
+    ["api", "v1", "noaa_data", "send"] -> noaa_reciever.noaa_data_handler(req)
     _ -> wisp.response(404)
   }
 }
