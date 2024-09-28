@@ -3,6 +3,7 @@
 
 packages = [
   { name = "birl", version = "1.7.1", build_tools = ["gleam"], requirements = ["gleam_stdlib", "ranger"], otp_app = "birl", source = "hex", outer_checksum = "5C66647D62BCB11FE327E7A6024907C4A17954EF22865FE0940B54A852446D01" },
+  { name = "decode", version = "0.2.1", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "decode", source = "hex", outer_checksum = "4727FC627B803E4F4FF0075B5F93BC022F9293A19B03BF44B5A4C64BF9E8EAE1" },
   { name = "directories", version = "1.1.0", build_tools = ["gleam"], requirements = ["envoy", "gleam_stdlib", "platform", "simplifile"], otp_app = "directories", source = "hex", outer_checksum = "BDA521A4EB9EE3A7894F0DC863797878E91FF5C7826F7084B2E731E208BDB076" },
   { name = "envoy", version = "1.0.1", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "envoy", source = "hex", outer_checksum = "CFAACCCFC47654F7E8B75E614746ED924C65BD08B1DE21101548AC314A8B6A41" },
   { name = "exception", version = "2.0.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "exception", source = "hex", outer_checksum = "F5580D584F16A20B7FCDCABF9E9BE9A2C1F6AC4F9176FA6DD0B63E3B20D450AA" },
@@ -30,6 +31,8 @@ packages = [
 ]
 
 [requirements]
+birl = { version = ">= 1.7.1 and < 2.0.0" }
+decode = { version = ">= 0.2.1 and < 1.0.0" }
 gleam_erlang = { version = ">= 0.26.0 and < 1.0.0" }
 gleam_http = { version = ">= 3.7.0 and < 4.0.0" }
 gleam_json = { version = ">= 1.0.1 and < 2.0.0" }
