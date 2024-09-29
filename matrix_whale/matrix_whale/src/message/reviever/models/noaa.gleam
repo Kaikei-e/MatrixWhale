@@ -1,6 +1,9 @@
 import decode.{type Decoder}
 import gleam/dict.{type Dict}
-import gleam/dynamic.{type DecodeError, type Dynamic}
+import gleam/dynamic.{
+  type DecodeError, type Dynamic, field, float, list, optional, string,
+}
+import gleam/json
 import gleam/option.{type Option}
 
 pub type Alerts {
@@ -12,6 +15,10 @@ pub type Alerts {
     updated: String,
     pagination: Pagination,
   )
+}
+
+pub type Features {
+  Features(elements: List(FeatureElement))
 }
 
 pub type ContextClass {
@@ -148,155 +155,144 @@ pub type Urgency {
   UnknownUrgency
 }
 
-pub fn decode_alerts(data: Dynamic) -> Result(Alerts, List(DecodeError)) {
+pub fn decode_alert_element_list(
+  data: String,
+) -> Result(List(FeatureElement), json.DecodeError) {
   let decoder =
-    decode.into({
-      use context <- decode.parameter
-      use type_ <- decode.parameter
-      use features <- decode.parameter
-      use title <- decode.parameter
-      use updated <- decode.parameter
-      use pagination <- decode.parameter
-      Alerts(context, type_, features, title, updated, pagination)
-    })
-    |> decode.field("@context", decode.string)
-    |> decode.field("type", decode.string)
-    |> decode.field("features", decode.list(decode_feature_element))
-    |> decode.field("title", decode.string)
-    |> decode.field("updated", decode.string)
-    |> decode.field("pagination", decode_pagination)
+    dynamic.decode1(
+      Features,
+      field(
+        "alert_elements",
+        of: list(dynamic.decode4(
+          FeatureElement,
+          field("id", of: string),
+          field("type", of: string),
+          field(
+            "geometry",
+            optional(dynamic.decode2(
+              Geometry,
+              field("type", of: dynamic.decode1(Polygon, field("type", string))),
+              field("coordinates", of: list(list(list(float)))),
+            )),
+          ),
+          field("properties", of: decode_properties),
+        )),
+      ),
+    )
 
-  case
-    decoder
-    |> decode.from(data)
-  {
-    Ok(alerts) -> Ok(alerts)
-    Error(err) -> Error(err)
-  }
+  json.decode(from: data, using: decoder)
 }
 
-// fn decode_context_class(data: Dynamic) -> Decoder(List(ContextElement)) {
-//   let decoder =
-//     decode.into({
-//       use version <- decode.parameter
-//       use wx <- decode.parameter
-//       use vocab <- decode.parameter
-//       ContextClass(version, wx, vocab)
-//     })
-//     |> decode.field("version", decode.string)
-//     |> decode.field("wx", decode.string)
-//     |> decode.field("vocab", decode.string)
-
-//   case decoder |> decode.from(data) {
-//     Ok(context_class) -> {
-//       let context_class_element =
-//         ContextClassElement(ContextClass(
-//           context_class.version,
-//           context_class.wx,
-//           context_class.vocab,
-//         ))
-
-//       let context_element =
-//         ContextElement.ContextClassElement(context_class_element)
-
-//       let decoder2 =
-//         decode.into({
-//           use context_element <- decode.parameter
-//           ContextClassElement
-//         })
-//         |> decode.field("context_class", decode_context_class)
-
-//     }
-//     Error(err) -> Error(err)
-//   }
-// }
-
-fn decode_feature_element(data: Dynamic) {
+fn decode_properties(data: Dynamic) {
   let decoder =
     decode.into({
       use id <- decode.parameter
       use type_ <- decode.parameter
-      use geometry <- decode.parameter
-      use properties <- decode.parameter
-      FeatureElement(id, type_, geometry, properties)
+      use properties_id <- decode.parameter
+      use area_desc <- decode.parameter
+      use geocode <- decode.parameter
+      use affected_zones <- decode.parameter
+      use references <- decode.parameter
+      use sent <- decode.parameter
+      use effective <- decode.parameter
+      use onset <- decode.parameter
+      use expires <- decode.parameter
+      use ends <- decode.parameter
+      use status <- decode.parameter
+      use message_type <- decode.parameter
+      use category <- decode.parameter
+      use severity <- decode.parameter
+      use certainty <- decode.parameter
+      use urgency <- decode.parameter
+      use event <- decode.parameter
+      use sender <- decode.parameter
+      use sender_name <- decode.parameter
+      use headline <- decode.parameter
+      use description <- decode.parameter
+      use instruction <- decode.parameter
+      use response <- decode.parameter
+      use parameters <- decode.parameter
+      use replaced_by <- decode.parameter
+      use replaced_at <- decode.parameter
+      Properties(
+        id,
+        type_,
+        properties_id,
+        area_desc,
+        geocode,
+        affected_zones,
+        references,
+        sent,
+        effective,
+        onset,
+        expires,
+        ends,
+        status,
+        message_type,
+        category,
+        severity,
+        certainty,
+        urgency,
+        event,
+        sender,
+        sender_name,
+        headline,
+        description,
+        instruction,
+        response,
+        parameters,
+        replaced_by,
+        replaced_at,
+      )
     })
     |> decode.field("id", decode.string)
     |> decode.field("type", decode.string)
-    |> decode.field("geometry", decode.optional(decode_geometry))
-    |> decode.field("properties", decode_properties)
-    |> decode.from(data)
-
-  decoder
-}
-
-fn decode_geometry(data: Dynamic) {
-  let decoder =
-    decode.into({
-      use type_ <- decode.parameter
-      use coordinates <- decode.parameter
-      Geometry(type_, coordinates)
-    })
-    |> decode.field("type", decode_polygon)
+    |> decode.field("properties_id", decode.string)
+    |> decode.field("area_desc", decode.string)
+    |> decode.field("geocode", decode.subfield("same", decode.list(decode.string)))
+    |> decode.field("affected_zones", decode.list(decode.string))
+    |> decode.field("references", decode.list(decode_reference))
+    |> decode.field("sent", decode.string)
+    |> decode.field("effective", decode.string)
+    |> decode.field("onset", decode.optional(decode.string))
+    |> decode.field("expires", decode.string)
+    |> decode.field("ends", decode.optional(decode.string))
+    |> decode.field("status", decode.status)
+    |> decode.field("message_type", decode.message_type)
+    |> decode.field("category", decode.category)
+    |> decode.field("severity", decode.severity)
+    |> decode.field("certainty", decode.certainty)
+    |> decode.field("urgency", decode.urgency)
+    |> decode.field("event", decode.string)
+    |> decode.field("sender", decode.sender)
+    |> decode.field("sender_name", decode.string)
+    |> decode.field("headline", decode.optional(decode.string))
+    |> decode.field("description", decode.optional(decode.string))
+    |> decode.field("instruction", decode.optional(decode.string))
+    |> decode.field("response", decode.response)
     |> decode.field(
-      "coordinates",
-      decode.list(decode.list(decode.list(decode.float))),
+      "parameters",
+      decode.dict(decode.string, decode.list(decode.string)),
     )
-    |> decode.from(data)
+    |> decode.field("replaced_by", decode.optional(decode.string))
+    |> decode.field("replaced_at", decode.optional(decode.string))
 
-  decoder
-}
-
-fn decode_polygon(data: Dynamic) {
-  let decoder =
-    decode.into({
-      use type_ <- decode.parameter
-      Polygon(type_)
-    })
-    |> decode.field("type", decode.string)
-    |> decode.from(data)
-
-  case decoder {
-    Ok(polygon) -> {
-      decoder(Polygon(polygon.type_))
-    }
-    Error(err) -> Error(err)
+  case decoder |> decode.from(data) {
+    Ok(properties) -> Ok(properties)
+    Error(error) -> Error(error)
   }
 }
 
-fn decode_pagination(data: Dynamic) {
+fn decode_geocode(data: String) {
   let decoder =
-    decode.into({
-      use next <- decode.parameter
-      Pagination(next)
-    })
-    |> decode.field("next", decode.string)
-    |> decode.from(data)
+    dynamic.decode2(
+      Geocode,
+      field("same", of: list(string)),
+      field("ugc", of: list(string)),
+    )
 
-  decoder
+  case json.decode(from: data, using: decoder) {
+    Ok(geocode) -> Ok(geocode)
+    Error(error) -> Error(error)
+  }
 }
-// fn decode_polygon(data: Dynamic) {
-//   let decoder =
-//     decode.into({
-//       use type_ <- decode.parameter
-//       use coordinates <- decode.parameter
-//       Geometry(type_, coordinates)
-//     })
-//     |> decode.field("type", decode_geometry_type)
-//     |> decode.field(
-//       "coordinates",
-//       decode.list(decode.list(decode.list(decode.float))),
-//     )
-
-//   decoder |> decode.from(data)
-// }
-
-// fn decode_geometry_type(data: Dynamic) {
-//   let decoder =
-//     decode.into({
-//       use type_ <- decode.parameter
-//       Polygon(type_)
-//     })
-//     |> decode.field("type", decode.string)
-
-//   decoder |> decode.from(data)
-// }
