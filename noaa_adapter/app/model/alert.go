@@ -11,6 +11,11 @@ type Alerts struct {
 	Pagination Pagination       `json:"pagination"`
 }
 
+type Features struct {
+	Element []FeatureElement `json:"alert_elements"`
+}
+
+
 type ContextClass struct {
 	Version string `json:"@version"`
 	Wx      string `json:"wx"`

@@ -20,7 +20,12 @@ func ManageRESTRequest() {
 				slog.Error("Error getting data from NOAA", "error", err)
 			}
 
-			err = adapter.MatrixWhaleAdapter(data)
+			trimmedData, err := TrimNoaaData(data)
+			if err != nil {
+				slog.Error("Error trimming data", "error", err)
+			}
+
+			err = adapter.MatrixWhaleAdapter(trimmedData)
 			if err != nil {
 				slog.Error("Error sending data to Matrix Whale", "error", err)
 			}
