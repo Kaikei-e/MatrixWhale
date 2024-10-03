@@ -1,8 +1,7 @@
 import decode.{type Decoder}
 import gleam/dict.{type Dict}
 import gleam/dynamic.{
-  type DecodeError, type Dynamic, decode1, decode2, field, float, list, optional,
-  string,
+  type DecodeError, type Dynamic, decode2, field, float, list, optional, string,
 }
 import gleam/json
 import gleam/option.{type Option}
@@ -103,6 +102,7 @@ pub type Pagination {
 
 pub type Category {
   Met
+  UnknownCategory
 }
 
 pub type Certainty {
@@ -116,6 +116,7 @@ pub type MessageType {
   Alert
   Cancel
   Update
+  UnknownMessageType
 }
 
 pub type Sender {
@@ -136,12 +137,13 @@ pub type Severity {
   Minor
   Moderate
   Severe
-  UnknownServerity
+  UnknownSeverity
 }
 
 pub type Status {
   Actual
   Test
+  UnknownStatus
 }
 
 pub type Urgency {
@@ -151,15 +153,6 @@ pub type Urgency {
   Past
   UnknownUrgency
 }
-
-// > decode.field("status", decode.status)
-//     |> decode.field("message_type", decode.message_type)
-//     |> decode.field("category", decode.category)
-//     |> decode.field("severity", decode.severity)
-//     |> decode.field("certainty", decode.certainty)
-//     |> decode.field("urgency", decode.urgency)
-//     |> decode.field("event", decode.string)
-//     |> decode.field("sender", decode.sender)
 
 pub type CustomTypesList {
   GeocodeType(Geocode)
@@ -288,13 +281,7 @@ fn decode_properties(data: Dynamic) {
           Reference,
           field("id", string),
           field("identifier", string),
-          field(
-            "sender",
-            decode_sender_wrapper(
-              data,
-              decode1(Sender, field("sender", string)),
-            ),
-          ),
+          field("sender", dynamic.decode1(Sender, field("sender", string))),
           field("sent", string),
         ),
       )),
@@ -304,19 +291,19 @@ fn decode_properties(data: Dynamic) {
     |> decode.field("onset", decode.optional(decode.string))
     |> decode.field("expires", decode.string)
     |> decode.field("ends", decode.optional(decode.string))
-    |> decode.field("status", decode.status)
-    |> decode.field("message_type", decode.message_type)
-    |> decode.field("category", decode.category)
-    |> decode.field("severity", decode.severity)
-    |> decode.field("certainty", decode.certainty)
-    |> decode.field("urgency", decode.urgency)
+    |> decode.field("status", decode_status())
+    |> decode.field("message_type", decode_message_type())
+    |> decode.field("category", decode_category())
+    |> decode.field("severity", decode_severity())
+    |> decode.field("certainty", decode_certainty())
+    |> decode.field("urgency", decode_urgency())
     |> decode.field("event", decode.string)
-    |> decode.field("sender", decode.sender)
+    |> decode.field("sender", decode_sender())
     |> decode.field("sender_name", decode.string)
     |> decode.field("headline", decode.optional(decode.string))
     |> decode.field("description", decode.optional(decode.string))
     |> decode.field("instruction", decode.optional(decode.string))
-    |> decode.field("response", decode.response)
+    |> decode.field("response", decode_response())
     |> decode.field(
       "parameters",
       decode.dict(decode.string, decode.list(decode.string)),
@@ -330,18 +317,88 @@ fn decode_properties(data: Dynamic) {
   }
 }
 
-fn decode_geocode(data: String) {
-  let decoder =
-    dynamic.decode2(
-      Geocode,
-      field("same", of: list(string)),
-      field("ugc", of: list(string)),
-    )
+fn decode_status() -> Decoder(Status) {
+  decode.map(decode.string, fn(string) {
+    case string {
+      "Actual" -> Actual
+      "Test" -> Test
+      _ -> UnknownStatus
+    }
+  })
+}
 
-  case json.decode(from: data, using: decoder) {
-    Ok(geocode) -> Ok(geocode)
-    Error(error) -> Error(error)
-  }
+fn decode_message_type() -> Decoder(MessageType) {
+  decode.map(decode.string, fn(string) {
+    case string {
+      "Alert" -> Alert
+      "Cancel" -> Cancel
+      "Update" -> Update
+      _ -> UnknownMessageType
+    }
+  })
+}
+
+fn decode_category() -> Decoder(Category) {
+  decode.map(decode.string, fn(string) {
+    case string {
+      "Met" -> Met
+      _ -> UnknownCategory
+    }
+  })
+}
+
+fn decode_severity() -> Decoder(Severity) {
+  decode.map(decode.string, fn(string) {
+    case string {
+      "Minor" -> Minor
+      "Moderate" -> Moderate
+      "Severe" -> Severe
+      _ -> UnknownSeverity
+    }
+  })
+}
+
+fn decode_certainty() -> Decoder(Certainty) {
+  decode.map(decode.string, fn(string) {
+    case string {
+      "Unknown" -> Unknown
+      "Likely" -> Likely
+      "Observed" -> Observed
+      "Possible" -> Possible
+      _ -> Unknown
+    }
+  })
+}
+
+fn decode_urgency() -> Decoder(Urgency) {
+  decode.map(decode.string, fn(string) {
+    case string {
+      "Expected" -> Expected
+      "Future" -> Future
+      "Immediate" -> Immediate
+      "Past" -> Past
+      _ -> UnknownUrgency
+    }
+  })
+}
+
+fn decode_sender() -> Decoder(Sender) {
+  decode.map(decode.string, fn(string) { Sender(string) })
+}
+
+fn decode_response() -> Decoder(Response) {
+  decode.map(decode.string, fn(string) {
+    case string {
+      "AllClear" -> AllClear
+      "Avoid" -> Avoid
+      "Execute" -> Execute
+      "Monitor" -> Monitor
+      "None" -> None
+      "Prepare" -> Prepare
+      "Shelter" -> Shelter
+      _ -> None
+    }
+  })
 }
 
 fn deocde_geocode_wrapper(
@@ -380,85 +437,8 @@ fn decode_reference_wrapper(
       })
       |> decode.field("id", decode.string)
       |> decode.field("identifier", decode.string)
-      |> decode.field(
-        "sender",
-        decode_sender_wrapper(data, decode1(Sender, field("sender", string))),
-      )
+      |> decode.field("sender", decode_sender())
       |> decode.field("sent", decode.string)
     _ -> decode.fail("Invalid type variant")
   }
 }
-
-fn decode_sender_wrapper(
-  data: Dynamic,
-  decoded_fn: fn(Dynamic) -> Result(Sender, List(DecodeError)),
-) -> Decoder(Sender) {
-  let result = decoded_fn(data)
-
-  case result {
-    Ok(_) ->
-      decode.into({
-        use sender <- decode.parameter
-        Sender(sender)
-      })
-      |> decode.field("sender", decode.string)
-    _ -> decode.fail("Invalid type variant")
-  }
-}
-// fn decode_wrapper(
-//   type_variant: CustomTypesList,
-//   data: Dynamic,
-//   decoded_fn: fn(Dynamic) -> Result(Dynamic, List(DecodeError)),
-// ) -> Decoder(CustomTypesList) {
-//   let result = decoded_fn(data)
-
-//   case result {
-//     Ok(decoded_data) ->
-//       case type_variant {
-//         GeocodeType(_) -> {
-//           decode.into({
-//             use same <- decode.parameter
-//             use ugc <- decode.parameter
-//             Geocode(same, ugc)
-//           })
-//           |> decode.field("same", decode.list(decode.string))
-//           |> decode.field("ugc", decode.list(decode.string))
-//         }
-//         _ -> decode.fail("Invalid type variant")
-//       }
-//     Error(errors) -> todo
-//   }
-// }
-// case CustomTypesList {
-//   GeocodeType(Geocode(same: [""], ugc: )) -> {
-//     case result {
-//       Ok(_) ->
-//         decode.into({
-//           use same <- decode.parameter
-//           use ugc <- decode.parameter
-//           Geocode(same, ugc)
-//         })
-//         |> decode.field("same", decode.list(decode.string))
-//         |> decode.field("ugc", decode.list(decode.string))
-//       Error(errors) -> Error(errors)
-//     }
-//   }
-
-//   ReferenceType(reference) -> Ok(reference)
-//   StatusType(status) -> Ok(status)
-//   MessageType(message_type) -> Ok(message_type)
-//   CategoryType(category) -> Ok(category)
-//   SeverityType(severity) -> Ok(severity)
-//   CertaintyType(certainty) -> Ok(certainty)
-//   UrgencyType(urgency) -> Ok(urgency)
-//   SenderType(sender) -> Ok(sender)
-//   ResponseType(response) -> Ok(response)
-// }
-//
-//
-// fn(data: Dynamic) -> Result(a, List(DecodeError)) {
-//   case decoded(data) {
-//     Ok(preprocessed) -> typed(preprocessed)
-//     Error(errors) -> Error(errors)
-//   }
-// }
