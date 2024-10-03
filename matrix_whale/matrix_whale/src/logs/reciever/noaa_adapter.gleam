@@ -1,6 +1,8 @@
 import gleam/dynamic.{type Dynamic}
+import gleam/io
 import gleam/json
 import gleam/result
+import gleam/string
 import gleam/string_builder
 import wisp.{type Request, type Response}
 
@@ -35,15 +37,18 @@ pub fn noaa_logs_handler(req: Request) -> Response {
         #("service", json.string(log_format.service)),
       ])
 
+    io.debug("Log: " <> string.inspect(object))
     Ok(json.to_string_builder(object))
   }
 
   case result {
     Ok(_) -> {
+      io.debug("Log recieved")
       string_builder.from_string("Log recieved")
       |> wisp.json_response(200)
     }
     Error(_) -> {
+      io.debug("Invalid log format")
       string_builder.from_string("Invalid log format")
       |> wisp.json_response(400)
     }
