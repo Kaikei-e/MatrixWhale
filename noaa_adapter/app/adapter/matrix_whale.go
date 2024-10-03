@@ -22,6 +22,8 @@ func MatrixWhaleAdapter(geoData string) error {
 	var buf bytes.Buffer
 	gzipWriter := gzip.NewWriter(&buf)
 
+	slog.Info("Sending data to Matrix Whale", "data size, unit is byte", len(sendData))
+
 	_, err = gzipWriter.Write(sendData)
 	if err != nil {
 		slog.Error("Error writing data to gzip", "error", err)
