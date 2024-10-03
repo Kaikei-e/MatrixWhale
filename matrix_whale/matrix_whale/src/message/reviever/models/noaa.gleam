@@ -3,6 +3,7 @@ import gleam/dict.{type Dict}
 import gleam/dynamic.{
   type DecodeError, type Dynamic, decode2, field, float, list, optional, string,
 }
+import gleam/io
 import gleam/json
 import gleam/option.{type Option}
 
@@ -313,7 +314,10 @@ fn decode_properties(data: Dynamic) {
 
   case decoder |> decode.from(data) {
     Ok(properties) -> Ok(properties)
-    Error(error) -> Error(error)
+    Error(error) -> {
+      io.debug("Error: {error}")
+      Error(error)
+    }
   }
 }
 
@@ -416,7 +420,10 @@ fn deocde_geocode_wrapper(
       })
       |> decode.field("same", decode.list(decode.string))
       |> decode.field("ugc", decode.list(decode.string))
-    _ -> decode.fail("Invalid type variant")
+    Error(_) -> {
+      io.debug("Error: {result}")
+      decode.fail("Invalid type variant")
+    }
   }
 }
 
@@ -439,6 +446,9 @@ fn decode_reference_wrapper(
       |> decode.field("identifier", decode.string)
       |> decode.field("sender", decode_sender())
       |> decode.field("sent", decode.string)
-    _ -> decode.fail("Invalid type variant")
+    _ -> {
+      io.debug("Error: {result}")
+      decode.fail("Invalid type variant")
+    }
   }
 }
