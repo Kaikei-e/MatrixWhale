@@ -1,7 +1,8 @@
 import decode.{type Decoder}
 import gleam/dict.{type Dict}
 import gleam/dynamic.{
-  type DecodeError, type Dynamic, decode2, field, float, list, optional, string,
+  type DecodeError, type Dynamic, decode2, decode6, field, float, list, optional,
+  string,
 }
 import gleam/io
 import gleam/json
@@ -15,7 +16,7 @@ pub type Alerts {
   Alerts(
     context: String,
     type_: String,
-    features: List(FeatureElement),
+    features: List(String),
     title: String,
     updated: String,
     pagination: String,
@@ -172,45 +173,111 @@ pub type CustomTypesList {
   ResponseType(Response)
 }
 
-// pub fn parse_features(json_string: String) -> Result(List(Dynamic), String) {
-//   json.decode(json_string, dynamic.list(dynamic.dynamic))
-//   |> result.map_error(fn(_) { "Failed to parse features JSON" })
-// }
+fn to_decode_error_type(err: DecodeError) -> String {
+  todo
+}
 
-// pub fn extract_features(json_string: String) -> Result(String, json.DecodeError) {
-//   json.decode(json_string, dynamic.field("features", dynamic.dynamic))
-//   |> result.map(fn(json) { convert_dynamic_to_json(json) })
-// }
+pub fn extract_features(json_string: String) -> List(Dynamic) {
+  let decoded_result =
+    json.decode(
+      from: json_string,
+      using: dynamic.field("features", dynamic.list(dynamic.dynamic)),
+    )
 
-pub fn extract_features(
-  json_string: String,
-) -> Result(List(Result(String, List(DecodeError))), String) {
-  case json.decode(json_string, dynamic.dynamic) {
-    Ok(parsed) -> {
-      case parsed {
-        list when is_list(parsed) -> {
-          // Handle list format
-          Ok(convert_dynamic_to_json(list.from_dynamic(parsed)))
-        }
-        dict when is_dict(parsed) -> {
-          // Handle dictionary format
-          Ok(convert_dynamic_to_json([dict.from_dynamic(parsed)]))
-        }
-        _ -> Error("Unexpected JSON format")
-      }
+  case decoded_result {
+    Ok(features) -> {
+      io.debug("features's length: " <> string.inspect(list.length(features)))
+      io.debug("first feature is below ///////////////////////")
+      io.debug(string.inspect(list.first(features)))
+      io.debug("///////////////////////")
+
+      features
     }
-    Error(err) -> Error("Failed to parse JSON: " <> string.inspect(err))
+    Error(err) -> {
+      io.debug("Error decoding features: " <> string.inspect(err))
+      []
+    }
   }
 }
 
-fn convert_dynamic_to_json(
-  data: List(Dynamic),
-) -> List(Result(String, List(DecodeError))) {
-  data
-  |> list.map(fn(item) {
-    json.encode(item)
-    |> result.map_error(fn(err) { [DecodeError("JSON encoding failed", "", [])] })
-  })
+pub fn prepare_feature_for_decoding(
+  feature: Dynamic,
+) -> Result(String, List(dynamic.DecodeError)) {
+  case dynamic.string(feature) {
+    Ok(json_string) -> Ok(json_string)
+    Error(errs) as error -> {
+      // Convert the list of dynamic.DecodeError to a string for logging
+      let err_string =
+        errs
+        |> list.map(fn(err) { "Error: " <> string.inspect(err) <> ". " })
+        |> string.join("")
+
+      io.debug("Error converting feature to string: " <> err_string)
+      error
+    }
+  }
+}
+
+pub fn extract_and_decode_features(json_string: String) -> List(FeatureElement) {
+  let decoded_result =
+    json.decode(
+      from: json_string,
+      using: dynamic.field("features", dynamic.list(dynamic.dynamic)),
+    )
+
+  io.debug("decoded_result is below ///////////////////////")
+  io.debug(string.inspect(decoded_result))
+  io.debug("///////////////////////")
+
+  case decoded_result {
+    Ok(features) -> {
+      features
+      |> list.filter_map(fn(feature) {
+        io.debug("feature: ////////////////")
+        decode_feature(feature)
+      })
+    }
+    Error(_) -> []
+  }
+  // case
+  //   json.decode(
+  //     from: json_string,
+  //     using: dynamic.field("features", dynamic.list(dynamic.dynamic)),
+  //   )
+  // {
+  //   Ok(features) -> {
+  //     features
+  //     |> list.filter_map(fn(feature) {
+  //       case prepare_feature_for_decoding(feature) {
+  //         Ok(feature) -> {
+  //           io.debug("feature: ////////////////")
+
+  //           decode_feature(feature)
+  //         }
+  //         Error(err) -> {
+  //           io.debug("Error: " <> string.inspect(err))
+  //           Error(json.UnexpectedFormat(err))
+  //         }
+  //       }
+  //     })
+  //   }
+  //   Error(_) -> []
+  // }
+}
+
+pub fn decode_alerts(data: String) -> Result(Alerts, json.DecodeError) {
+  let decoder =
+    dynamic.decode6(
+      Alerts,
+      field("@context", of: string),
+      field("type", of: string),
+      field("features", of: list(string)),
+      field("title", of: string),
+      field("updated", of: string),
+      field("pagination", of: string),
+    )
+
+  json.decode(from: data, using: decoder)
 }
 
 pub fn decode_feature(data: String) -> Result(FeatureElement, json.DecodeError) {
