@@ -5,7 +5,11 @@ import gleam/dynamic.{
 }
 import gleam/io
 import gleam/json
+import gleam/list
 import gleam/option.{type Option}
+import gleam/result
+import gleam/string
+import gleam/string_builder
 
 pub type Alerts {
   Alerts(
@@ -14,7 +18,7 @@ pub type Alerts {
     features: List(FeatureElement),
     title: String,
     updated: String,
-    pagination: Pagination,
+    pagination: String,
   )
 }
 
@@ -168,29 +172,62 @@ pub type CustomTypesList {
   ResponseType(Response)
 }
 
-pub fn decode_alert_element_list(
-  data: String,
-) -> Result(Features, json.DecodeError) {
+// pub fn parse_features(json_string: String) -> Result(List(Dynamic), String) {
+//   json.decode(json_string, dynamic.list(dynamic.dynamic))
+//   |> result.map_error(fn(_) { "Failed to parse features JSON" })
+// }
+
+// pub fn extract_features(json_string: String) -> Result(String, json.DecodeError) {
+//   json.decode(json_string, dynamic.field("features", dynamic.dynamic))
+//   |> result.map(fn(json) { convert_dynamic_to_json(json) })
+// }
+
+pub fn extract_features(
+  json_string: String,
+) -> Result(List(Result(String, List(DecodeError))), String) {
+  case json.decode(json_string, dynamic.dynamic) {
+    Ok(parsed) -> {
+      case parsed {
+        list when is_list(parsed) -> {
+          // Handle list format
+          Ok(convert_dynamic_to_json(list.from_dynamic(parsed)))
+        }
+        dict when is_dict(parsed) -> {
+          // Handle dictionary format
+          Ok(convert_dynamic_to_json([dict.from_dynamic(parsed)]))
+        }
+        _ -> Error("Unexpected JSON format")
+      }
+    }
+    Error(err) -> Error("Failed to parse JSON: " <> string.inspect(err))
+  }
+}
+
+fn convert_dynamic_to_json(
+  data: List(Dynamic),
+) -> List(Result(String, List(DecodeError))) {
+  data
+  |> list.map(fn(item) {
+    json.encode(item)
+    |> result.map_error(fn(err) { [DecodeError("JSON encoding failed", "", [])] })
+  })
+}
+
+pub fn decode_feature(data: String) -> Result(FeatureElement, json.DecodeError) {
   let decoder =
-    dynamic.decode1(
-      Features,
+    dynamic.decode4(
+      FeatureElement,
+      field("id", of: string),
+      field("type", of: string),
       field(
-        "alert_elements",
-        of: list(dynamic.decode4(
-          FeatureElement,
-          field("id", of: string),
-          field("type", of: string),
-          field(
-            "geometry",
-            optional(dynamic.decode2(
-              Geometry,
-              field("type", of: dynamic.decode1(Polygon, field("type", string))),
-              field("coordinates", of: list(list(list(float)))),
-            )),
-          ),
-          field("properties", of: decode_properties),
+        "geometry",
+        optional(dynamic.decode2(
+          Geometry,
+          field("type", of: dynamic.decode1(Polygon, field("type", string))),
+          field("coordinates", of: list(list(list(float)))),
         )),
       ),
+      field("properties", of: decode_properties),
     )
 
   json.decode(from: data, using: decoder)
@@ -315,7 +352,7 @@ fn decode_properties(data: Dynamic) {
   case decoder |> decode.from(data) {
     Ok(properties) -> Ok(properties)
     Error(error) -> {
-      io.debug("Error: {error}")
+      io.debug("Error: " <> string.inspect(error))
       Error(error)
     }
   }
