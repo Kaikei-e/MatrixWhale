@@ -2,61 +2,47 @@ package adapter
 
 import (
 	"bytes"
-	"compress/gzip"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 const MatrixWhaleURL = "http://matrix_whale:6000/api/v1"
 
 func MatrixWhaleAdapter(geoData string) error {
+	// unescape the geoData string
+	unescapedData := strings.ReplaceAll(geoData, "\\", "")
+	unescapedData = strings.ReplaceAll(unescapedData, `\\`, ``)
+
+	fmt.Println(unescapedData[0:100])
+
 	targetAPIEndpoint, err := url.JoinPath(MatrixWhaleURL, "noaa_data", "send")
 	if err != nil {
 		slog.Error("Error joining URL path", "error", err)
-		panic(err)
-	}
-
-	sendData := []byte(geoData)
-
-	var buf bytes.Buffer
-	gzipWriter := gzip.NewWriter(&buf)
-
-	slog.Info("Sending data to Matrix Whale", "data size, unit is byte", len(sendData))
-
-	_, err = gzipWriter.Write(sendData)
-	if err != nil {
-		slog.Error("Error writing data to gzip", "error", err)
 		return err
 	}
 
-	if err := gzipWriter.Close(); err != nil {
-		slog.Error("Error closing gzip writer", "error", err)
-		return err
-	}
-
-	req, err := http.NewRequest("POST", targetAPIEndpoint, &buf)
+	req, err := http.NewRequest("POST", targetAPIEndpoint, bytes.NewBuffer([]byte(unescapedData)))
 	if err != nil {
 		slog.Error("Error creating request", "error", err)
 		return err
 	}
 
-	req.Header.Set("Content-Encoding", "gzip")
+	slog.Info("Sending data to Matrix Whale", "data size, unit is byte", len([]byte(unescapedData)))
+
+	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		slog.Error("Error sending data to Matrix Whale", "error", err)
+		slog.Error("Error sending request", "error", err)
 		return err
 	}
-
 	defer resp.Body.Close()
 
 	slog.Info("Matrix Whale response", "status", resp.Status)
-	if resp.StatusCode != http.StatusOK {
-		slog.Error("Matrix Whale response status is not OK", "status", resp.Status)
-		return err
-	}
 
 	return nil
 }
