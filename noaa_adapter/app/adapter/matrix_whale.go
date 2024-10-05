@@ -2,7 +2,7 @@ package adapter
 
 import (
 	"bytes"
-	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -16,17 +16,15 @@ func MatrixWhaleAdapter(geoData string) error {
 	unescapedData := strings.ReplaceAll(geoData, "\\", "")
 	unescapedData = strings.ReplaceAll(unescapedData, `\\`, ``)
 
-	fmt.Println(unescapedData[0:100])
-
 	targetAPIEndpoint, err := url.JoinPath(MatrixWhaleURL, "noaa_data", "send")
 	if err != nil {
-		slog.Error("Error joining URL path", "error", err)
+		slog.Error("Error joining URL path. " + err.Error())
 		return err
 	}
 
 	req, err := http.NewRequest("POST", targetAPIEndpoint, bytes.NewBuffer([]byte(unescapedData)))
 	if err != nil {
-		slog.Error("Error creating request", "error", err)
+		slog.Error("Error creating request is " + err.Error())
 		return err
 	}
 
@@ -37,12 +35,19 @@ func MatrixWhaleAdapter(geoData string) error {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		slog.Error("Error sending request", "error", err)
+		slog.Error("Error sending request to Matrix Whale" + err.Error())
 		return err
 	}
 	defer resp.Body.Close()
 
-	slog.Info("Matrix Whale response", "status", resp.Status)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		slog.Error("Error reading response body: " + err.Error())
+		return err
+	}
+
+	slog.Info("Matrix Whale response status is " + resp.Status)
+	slog.Info("Matrix Whale response is " + string(body))
 
 	return nil
 }
