@@ -33,36 +33,42 @@ pub fn noaa_data_handler(req: Request) -> Response {
     |> string.replace("\\r", "")
     |> string.trim
 
-  let features_list = noaa.extract_and_decode_features(unescaped_body_string)
+  let features_result = noaa.extract_and_decode_features(unescaped_body_string)
 
-  io.debug(list.first(features_list) |> string.inspect)
+  let extracted_feature =
+    features_result
+    |> list.first
+    |> result.try(fn(feature_element) {
+      case feature_element {
+        Ok(fe) -> Ok(fe)
+        Error(err) -> {
+          io.debug("Error parsing data: " <> string.inspect(err))
+          Error(Nil)
+        }
+      }
+    })
+
+  let severity = case extracted_feature {
+    Ok(feature_element) -> {
+      feature_element.properties.severity
+    }
+    Error(err) -> {
+      wisp.log_error("Error parsing data: " <> string.inspect(err))
+      noaa.UnknownSeverity
+    }
+  }
 
   wisp.log_info("Data successfully received and parsed.")
   wisp.json_response(
     string_builder.from_string(
       "Parsing procce. First element's alert type is "
-      <> string.inspect(
-        list.first(features_list)
-        |> result.map(fn(element) { element.properties.severity })
-        |> result.unwrap(or: noaa.UnknownSeverity),
-      ),
+      <> string.inspect(severity),
     ),
     200,
   )
-  // case processed_result {
-  //   Ok(features) -> {
-  //     wisp.log_info("Data successfully received and parsed.")
-  //     wisp.json_response(
-  //       string_builder.from_string(
-  //         "Parsing procce. First element's alert type is "
-  //         <> string.inspect(
-  //           list.first(features)
-  //           |> result.map(fn(element) { element.properties.severity })
-  //           |> result.unwrap(or: noaa.UnknownSeverity),
-  //         ),
-  //       ),
-  //       200,
-  //     )
+  // case extracted_feature {
+  //   Ok(severity) -> {
+
   //   }
   //   Error(err) -> {
   //     wisp.log_error("Error parsing data: " <> string.inspect(err))
