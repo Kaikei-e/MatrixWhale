@@ -66,18 +66,4 @@ pub fn noaa_data_handler(req: Request) -> Response {
     ),
     200,
   )
-  // case extracted_feature {
-  //   Ok(severity) -> {
-
-  //   }
-  //   Error(err) -> {
-  //     wisp.log_error("Error parsing data: " <> string.inspect(err))
-  //     wisp.json_response(
-  //       string_builder.from_string(
-  //         "Invalid data format: " <> string.inspect(err),
-  //       ),
-  //       400,
-  //     )
-  //   }
-  // }
 }
