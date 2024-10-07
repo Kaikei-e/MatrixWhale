@@ -1,5 +1,5 @@
 <div
-	class="flex h-screen w-screen flex-col place-content-between bg-[url('image/whale1.jpg')] bg-cover p-8"
+	class="flex h-screen w-screen flex-col place-content-between bg-[url('/image/whale1.jpg')] bg-cover p-8"
 >
 	<div>
 		<h1 class="font-serif text-4xl font-semibold text-white">Matrix Whale</h1>
