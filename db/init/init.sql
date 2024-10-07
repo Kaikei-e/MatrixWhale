@@ -1,9 +1,10 @@
 CREATE SCHEMA IF NOT EXISTS sea;
 
-CREATE TABLE pool (
+CREATE TABLE IF NOT EXISTS sea.severity (
   id SERIAL PRIMARY KEY,
-  name VARCHAR(255) NOT NULL,
-  location VARCHAR(255),
-  capacity INT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  severity VARCHAR(255) NOT NULL,
+  datetime TIMESTAMP NOT NULL,
+
+  UNIQUE (severity, datetime)
+  INDEX (id, datetime)
 );
