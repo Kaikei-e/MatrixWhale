@@ -4,6 +4,6 @@ ADD /matrix_whale /app
 WORKDIR /app
 RUN gleam build
 
-EXPOSE 6000
+EXPOSE 6000 8080
 
 CMD ["gleam", "run"]
