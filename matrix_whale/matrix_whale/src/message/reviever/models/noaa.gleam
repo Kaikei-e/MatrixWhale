@@ -1,6 +1,6 @@
 import decode.{type Decoder}
 import gleam/dict.{type Dict}
-import gleam/dynamic.{type DecodeError, type Dynamic, field, list, string}
+import gleam/dynamic.{type Dynamic, field, list, string}
 import gleam/io
 import gleam/json
 import gleam/list
