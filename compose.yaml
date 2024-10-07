@@ -3,7 +3,7 @@ services:
     build:
       context: ./web
     ports:
-      - "8080:8080"
+      - "4173:4173"
     environment:
       - ENV_VAR=test_value
     volumes:
@@ -21,6 +21,7 @@ services:
     environment:
       - ENV_VAR=test_value
     ports:
+      - "8080:8080"
       - "6000:6000"
     tty: true
     restart: always
