@@ -1,19 +1,23 @@
 FROM node:22.9.0-bullseye AS build
 
-ADD ./app /app
-
 WORKDIR /app
 
-RUN npm install && \
-    npm run build
+COPY ./app/package.json ./
+
+RUN npm install
+
+COPY ./app .
+
+RUN npm run build
 
 FROM node:22.9.0-bullseye-slim AS production
 
-RUN mkdir /app
-
-COPY --from=build /app /app
-
 WORKDIR /app
 
-EXPOSE 8080
+COPY --from=build /app .
+
+RUN npm install -g vite && npm install
+
+EXPOSE 4173
+
 CMD ["npm", "run", "preview"]
