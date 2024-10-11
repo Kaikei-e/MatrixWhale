@@ -1,6 +1,8 @@
 import decode.{type Decoder}
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic, field, list, string}
+import gleam/float
+import gleam/int
 import gleam/io
 import gleam/json
 import gleam/list
@@ -50,7 +52,7 @@ pub type Feature {
 }
 
 pub type Geometry {
-  Geometry(type_: String, coordinates: List(List(List(Float))))
+  Geometry(type_: String, coordinates: List(List(List(Coordinate))))
 }
 
 pub type Polygon {
@@ -154,6 +156,12 @@ pub type Urgency {
   Immediate
   Past
   UnknownUrgency
+}
+
+pub type Coordinate {
+  FloatType(Float)
+  IntType(Int)
+  StringType(String)
 }
 
 pub type CustomTypesList {
@@ -510,9 +518,23 @@ fn decode_geometry() -> Decoder(Option(Geometry)) {
     |> decode.field("type", decode.string)
     |> decode.field(
       "coordinates",
-      decode.list(decode.list(decode.list(decode.float))),
+      decode.list(decode.list(decode.list(decode_coordinates()))),
     ),
   )
+}
+
+fn decode_coordinates() -> Decoder(Coordinate) {
+  decode.string
+  |> decode.then(fn(s) {
+    case float.parse(s) {
+      Ok(f) -> decode.into(FloatType(f))
+      Error(_) ->
+        case int.parse(s) {
+          Ok(i) -> decode.into(IntType(i))
+          _ -> decode.into(StringType(s))
+        }
+    }
+  })
 }
 
 fn decode_reference() -> Decoder(Reference) {
