@@ -1,48 +1,73 @@
 import dot_env as dot
 import dot_env/env
-import gleam/option.{Some}
+import gleam/int
 import gleam/pgo.{type Connection}
+import gleam/string
+import wisp
 
 pub fn initialize_db() -> Connection {
-  dot.new()
-  |> dot.set_path(".env")
-  |> dot.set_debug(False)
-  |> dot.load
+  dot.load_default()
 
   let db_host = case env.get_string("POSTGRES_HOST") {
     Ok(value) -> value
-    Error(_) -> panic
+    Error(_) -> {
+      wisp.log_error("POSTGRES_HOST not set")
+      panic
+    }
   }
 
   let db_port = case env.get_int("POSTGRES_PORT") {
     Ok(value) -> value
-    Error(_) -> panic
+    Error(_) -> {
+      wisp.log_error("POSTGRES_PORT not set")
+      panic
+    }
   }
 
   let db_user = case env.get_string("POSTGRES_USER") {
     Ok(value) -> value
-    Error(_) -> panic
+    Error(_) -> {
+      wisp.log_error("POSTGRES_USER not set")
+      panic
+    }
   }
 
   let db_password = case env.get_string("POSTGRES_PASSWORD") {
     Ok(value) -> value
-    Error(_) -> panic
+    Error(_) -> {
+      wisp.log_error("POSTGRES_PASSWORD not set")
+      panic
+    }
   }
 
   let db_name = case env.get_string("POSTGRES_DB") {
     Ok(value) -> value
-    Error(_) -> panic
+    Error(_) -> {
+      wisp.log_error("POSTGRES_DB not set")
+      panic
+    }
   }
 
-  pgo.connect(
-    pgo.Config(
-      ..pgo.default_config(),
-      host: db_host,
-      port: db_port,
-      password: Some(db_password),
-      database: db_name,
-      pool_size: 15,
-      user: db_user,
-    ),
-  )
+  let conf =
+    pgo.url_config(
+      "postgres://"
+      <> db_user
+      <> ":"
+      <> db_password
+      <> "@"
+      <> db_host
+      <> ":"
+      <> int.to_string(db_port)
+      <> "/"
+      <> db_name,
+    )
+  let config = case conf {
+    Ok(config) -> config
+    Error(err) -> {
+      wisp.log_error("Error creating database config: " <> string.inspect(err))
+      panic
+    }
+  }
+
+  pgo.connect(config)
 }
