@@ -1,3 +1,7 @@
+CREATE DATABASE sea;
+
+\connect sea
+
 CREATE SCHEMA IF NOT EXISTS sea;
 
 CREATE TABLE IF NOT EXISTS sea.severity (
@@ -6,5 +10,6 @@ CREATE TABLE IF NOT EXISTS sea.severity (
   datetime TIMESTAMP NOT NULL,
 
   UNIQUE (severity, datetime)
-  INDEX (id, datetime)
 );
+
+CREATE INDEX idx_severity_id_datetime ON sea.severity (id, datetime);
