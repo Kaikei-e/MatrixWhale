@@ -1,3 +1,4 @@
+import adapter/context.{type Context}
 import gleam/erlang/process
 import gleam/string_builder
 import logs/reciever/noaa_adapter
@@ -6,12 +7,12 @@ import mist
 import wisp.{type Request, type Response}
 import wisp/wisp_mist
 
-pub fn reciever_main() {
+pub fn reciever_main(ctx: Context) {
   wisp.configure_logger()
   let secret_key_base = wisp.random_string(128)
 
   let assert Ok(_) =
-    wisp_mist.handler(reciever_router, secret_key_base)
+    wisp_mist.handler(reciever_router(_, ctx), secret_key_base)
     |> mist.new
     |> mist.port(6000)
     |> mist.start_http()
@@ -19,11 +20,7 @@ pub fn reciever_main() {
   process.sleep_forever()
 }
 
-pub type Context {
-  Context(secret: String)
-}
-
-fn reciever_router(request: Request) -> Response {
+fn reciever_router(request: Request, ctx: Context) -> Response {
   use req <- middleware(request)
 
   case wisp.path_segments(req) {
@@ -31,7 +28,8 @@ fn reciever_router(request: Request) -> Response {
       string_builder.from_string("system is alive") |> wisp.json_response(200)
     }
     ["api", "v1", "logs"] -> noaa_adapter.noaa_logs_handler(req)
-    ["api", "v1", "noaa_data", "send"] -> noaa_reciever.noaa_data_handler(req)
+    ["api", "v1", "noaa_data", "send"] ->
+      noaa_reciever.noaa_data_handler(req, ctx)
     _ -> wisp.response(404)
   }
 }

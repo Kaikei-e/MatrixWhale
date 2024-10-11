@@ -1,3 +1,5 @@
+import adapter/context.{type Context}
+import controller/noaa_controller.{noaa_controller}
 import gleam/bit_array
 import gleam/io
 import gleam/list
@@ -7,7 +9,7 @@ import gleam/string_builder
 import message/reviever/models/noaa
 import wisp.{type Request, type Response}
 
-pub fn noaa_data_handler(req: Request) -> Response {
+pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
   let req_body = case wisp.read_body_to_bitstring(req) {
     Ok(body) -> body
     Error(err) -> {
@@ -34,6 +36,31 @@ pub fn noaa_data_handler(req: Request) -> Response {
     |> string.trim
 
   let features_result = noaa.extract_and_decode_features(unescaped_body_string)
+
+  let handled_features =
+    features_result
+    |> list.filter_map(fn(feature) {
+      case feature {
+        Ok(feature) -> Ok(feature)
+        Error(err) -> {
+          wisp.log_error("Error parsing data: " <> string.inspect(err))
+          Error(err)
+        }
+      }
+    })
+
+  let result = noaa_controller(handled_features, ctx)
+  case result {
+    Ok(_) -> {
+      wisp.log_info("Noaa alert severities written to database")
+    }
+    Error(err) -> {
+      wisp.log_error(
+        "Error writing noaa alert severities to database: "
+        <> string.inspect(err),
+      )
+    }
+  }
 
   let extracted_feature =
     features_result
