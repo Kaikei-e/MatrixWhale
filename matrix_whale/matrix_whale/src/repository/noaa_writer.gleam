@@ -1,10 +1,14 @@
 import birl
+import gleam/int
+import gleam/io
+import gleam/iterator
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/pgo
 import gleam/result
 import gleam/string
 import message/reviever/models/noaa.{type FeatureElement}
+import string_tools/list_element_to_int.{list_element_to_int}
 import wisp
 
 pub fn write_noaa_alerts(
@@ -24,13 +28,38 @@ pub fn write_noaa_alerts(
       Error(_) -> birl.now()
     }
 
-    let timestamp = birl.to_iso8601(datetime_parsed)
+    let timestamp_parsed_list =
+      birl.to_iso8601(datetime_parsed)
+      |> string.split("-")
+      |> list.map(fn(s) { string.split(s, "T") })
+      |> list.flatten
+      |> list.map(fn(s) { string.split(s, ":") })
+      |> list.flatten
+      |> list.map(fn(s) { string.split(s, ".") })
+      |> list.flatten
+
+
+    // #(#(year, month, day), #(hour, minute, second))
+    let year =
+      list_element_to_int(timestamp_parsed_list, 0)
+      |> result.unwrap(-1)
+    let month =
+      list_element_to_int(timestamp_parsed_list, 1) |> result.unwrap(-1)
+    let day = list_element_to_int(timestamp_parsed_list, 2) |> result.unwrap(-1)
+    let hour =
+      list_element_to_int(timestamp_parsed_list, 3) |> result.unwrap(-1)
+    let minute =
+      list_element_to_int(timestamp_parsed_list, 4) |> result.unwrap(-1)
+    let second =
+      list_element_to_int(timestamp_parsed_list, 5) |> result.unwrap(-1)
+
+    let ts = #(#(year, month, day), #(hour, minute, second))
 
     case
       pgo.execute(
         "INSERT INTO sea.severity (severity, datetime) VALUES ($1, $2) ON CONFLICT (severity, datetime) DO NOTHING;",
         conn,
-        [pgo.text(string.inspect(severity)), pgo.text(timestamp)],
+        [pgo.text(string.inspect(severity)), pgo.timestamp(ts)],
         fn(_) { Ok(Nil) },
       )
     {
