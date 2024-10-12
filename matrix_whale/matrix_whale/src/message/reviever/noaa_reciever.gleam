@@ -37,6 +37,10 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
 
   let features_result = noaa.extract_and_decode_features(unescaped_body_string)
 
+  io.debug(
+    "Extracted " <> string.inspect(list.length(features_result)) <> " features",
+  )
+
   let handled_features =
     features_result
     |> list.filter_map(fn(feature) {
@@ -48,6 +52,10 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
         }
       }
     })
+
+  io.debug(
+    "Handled " <> string.inspect(list.length(handled_features)) <> " features",
+  )
 
   let result = noaa_controller(handled_features, ctx)
   case result {

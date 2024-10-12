@@ -10,9 +10,13 @@ pub fn noaa_controller(
 ) -> Result(String, String) {
   let result = write_noaa_alerts(features, ctx.db)
   case result {
-    Ok(_) -> {
-      wisp.log_info("Noaa alert severities written to database")
-      Ok("Noaa alert severities written to database")
+    Ok(count) -> {
+      let message =
+        "Inserted "
+        <> string.inspect(count)
+        <> " noaa alert severities into database"
+      wisp.log_info(message)
+      Ok(message)
     }
     Error(err) -> {
       wisp.log_error(
