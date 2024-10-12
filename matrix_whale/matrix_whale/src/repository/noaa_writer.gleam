@@ -65,7 +65,7 @@ pub fn write_noaa_alerts(
         DO UPDATE SET severity = EXCLUDED.severity, datetime = EXCLUDED.datetime;",
         conn,
         [
-          pgo.text(string.inspect(area_desc)),
+          pgo.text(area_desc),
           pgo.text(string.inspect(severity)),
           pgo.timestamp(ts),
         ],
