@@ -19,10 +19,7 @@ pub fn write_noaa_alerts(
   )
 
   let insert_alert = fn(feature: FeatureElement) -> Result(Int, String) {
-    let area_desc = case feature.properties.area_desc {
-      Some(area_desc) -> area_desc
-      None -> "Unknown Area"
-    }
+    let area_desc = feature.properties.area_desc
     let severity = feature.properties.severity
 
     let datetime = case feature.properties.sent {
@@ -63,7 +60,9 @@ pub fn write_noaa_alerts(
 
     case
       pgo.execute(
-        "INSERT INTO sea.severity (area_desc, severity, datetime) VALUES ($1, $2, $3) ON CONFLICT (area_desc, severity)  DO UPDATE SET severity = EXCLUDED.severity, datetime = EXCLUDED.datetime;",
+        "INSERT INTO sea.severity (area_desc, severity, datetime) VALUES ($1, $2, $3)
+        ON CONFLICT (area_desc, severity, datetime)
+        DO UPDATE SET severity = EXCLUDED.severity, datetime = EXCLUDED.datetime;",
         conn,
         [
           pgo.text(string.inspect(area_desc)),
