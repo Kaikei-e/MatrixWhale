@@ -64,4 +64,4 @@ services:
 
 networks:
   matrix_network:
-    driver: bridgearea_desc
+    driver: bridge
