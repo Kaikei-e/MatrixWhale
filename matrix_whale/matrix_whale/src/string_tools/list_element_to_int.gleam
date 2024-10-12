@@ -10,7 +10,7 @@ pub fn list_element_to_int(list: List(String), index: Int) -> Result(Int, Nil) {
     |> result.map(fn(e) {
       case e {
         Ok(i) -> i
-        Error(e) -> 0
+        Error(_) -> 0
       }
     })
 
