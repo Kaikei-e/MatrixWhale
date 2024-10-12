@@ -6,11 +6,11 @@ CREATE SCHEMA IF NOT EXISTS sea;
 
 CREATE TABLE IF NOT EXISTS sea.severity (
   id SERIAL PRIMARY KEY,
-  area_desc VARCHAR(255) NOT NULL,
+  area_desc TEXT NOT NULL,
   severity VARCHAR(255) NOT NULL,
   datetime TIMESTAMP NOT NULL,
 
-  UNIQUE (area_desc, severity)
+  UNIQUE (area_desc, severity, datetime)
 );
 
 CREATE INDEX idx_area_desc_severity_datetime ON sea.severity (area_desc, severity, datetime);
