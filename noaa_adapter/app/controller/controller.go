@@ -29,7 +29,7 @@ func ManageRESTRequest() {
 			if err != nil {
 				slog.Error("Error sending data to Matrix Whale", "error", err)
 			}
-			time.Sleep(30 * time.Second)
+			time.Sleep(60 * time.Second)
 		}
 	}()
 
