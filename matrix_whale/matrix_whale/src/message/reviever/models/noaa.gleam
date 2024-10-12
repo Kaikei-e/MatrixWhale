@@ -64,7 +64,7 @@ pub type Properties {
     id: Option(String),
     type_: Option(String),
     properties_id: Option(String),
-    area_desc: Option(String),
+    area_desc: String,
     geocode: Geocode,
     affected_zones: List(String),
     references: List(Reference),
@@ -334,7 +334,7 @@ fn decode_properties(data: Dynamic) {
   |> decode.field("id", decode.optional(decode.string))
   |> decode.field("type", decode.optional(decode.string))
   |> decode.field("properties_id", decode.optional(decode.string))
-  |> decode.field("area_desc", decode.optional(decode.string))
+  |> decode.field("areaDesc", decode.string)
   |> decode.field(
     "geocode",
     decode.optional(decode_geocode())
