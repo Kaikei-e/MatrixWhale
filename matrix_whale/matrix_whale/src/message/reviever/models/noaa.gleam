@@ -524,17 +524,8 @@ fn decode_geometry() -> Decoder(Option(Geometry)) {
 }
 
 fn decode_coordinates() -> Decoder(Coordinate) {
-  decode.string
-  |> decode.then(fn(s) {
-    case float.parse(s) {
-      Ok(f) -> decode.into(FloatType(f))
-      Error(_) ->
-        case int.parse(s) {
-          Ok(i) -> decode.into(IntType(i))
-          _ -> decode.into(StringType(s))
-        }
-    }
-  })
+  decode.float
+  |> decode.map(FloatType)
 }
 
 fn decode_reference() -> Decoder(Reference) {
