@@ -13,4 +13,4 @@ CREATE TABLE IF NOT EXISTS sea.severity (
   UNIQUE (area_desc, severity, datetime)
 );
 
-CREATE INDEX idx_area_desc_severity_datetime ON sea.severity (area_desc, severity, datetime);
+CREATE INDEX idx_severity_area_desc_datetime ON sea.severity (severity, area_desc, datetime);
