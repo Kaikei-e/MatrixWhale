@@ -1,11 +1,14 @@
+import adapter/context.{type Context}
 import gleam/bytes_builder
 import gleam/erlang/process
 import gleam/function
 import gleam/http/request
 import gleam/http/response
+import gleam/iterator.{from_list}
 import gleam/otp/actor
 import gleam/string
 import gleam/string_builder
+import message/streamer/severity_streamer.{severity_streamer}
 import mist
 import repeatedly
 import wisp
@@ -19,7 +22,7 @@ pub type Event {
   Down(process.ProcessDown)
 }
 
-pub fn streamer() {
+pub fn streamer(ctx: Context) {
   wisp.log_info("Starting severity streamer")
 
   let init_severity = "Initial SSE"
@@ -48,11 +51,16 @@ pub fn streamer() {
                 |> process.selecting(subj, function.identity)
                 |> process.selecting_process_down(monitor, Down)
               let repeater =
-                repeatedly.call(1000, Nil, fn(_state, _count) {
-                  let severity =
-                    "Test SSE " <> string.inspect(system_time(Millisecond))
-                  wisp.log_info("Sending severity: " <> severity)
-                  process.send(subj, Severity(severity))
+                repeatedly.call(5000, Nil, fn(_state, _count) {
+                  let severity = severity_streamer(ctx)
+
+                  let severity_state =
+                    "Now upcomming severity is :"
+                    <> severity.severity
+                    <> " for "
+                    <> severity.area_desc
+                  wisp.log_info("Sending severity: " <> severity_state)
+                  process.send(subj, Severity(severity_state))
                 })
               actor.Ready(EventState(init_severity, repeater), selector)
             },
