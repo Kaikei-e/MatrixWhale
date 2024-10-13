@@ -15,5 +15,5 @@ pub fn main() {
   let _ = task.async(fn() { reciever.reciever_main(ctx) })
 
   // Start the streamer server in the main process
-  streamer.streamer()
+  streamer.streamer(ctx)
 }
