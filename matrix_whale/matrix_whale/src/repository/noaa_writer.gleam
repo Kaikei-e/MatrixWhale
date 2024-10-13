@@ -62,7 +62,10 @@ pub fn write_noaa_alerts(
       pgo.execute(
         "INSERT INTO sea.severity (area_desc, severity, datetime) VALUES ($1, $2, $3)
         ON CONFLICT (area_desc, severity, datetime)
-        DO UPDATE SET severity = EXCLUDED.severity, datetime = EXCLUDED.datetime;",
+        DO UPDATE SET
+          area_desc = EXCLUDED.area_desc,
+          severity = EXCLUDED.severity,
+          datetime = EXCLUDED.datetime;",
         conn,
         [
           pgo.text(area_desc),
