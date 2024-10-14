@@ -5,7 +5,6 @@ import gleam/erlang/process
 import gleam/function
 import gleam/http/request
 import gleam/http/response
-import gleam/iterator.{from_list}
 import gleam/otp/actor
 import gleam/string
 import gleam/string_builder
@@ -129,10 +128,9 @@ pub fn streamer(ctx: Context) {
   wisp.log_info("Server started on port 8080")
   process.sleep_forever()
 }
+// type Unit {
+//   Millisecond
+// }
 
-type Unit {
-  Millisecond
-}
-
-@external(erlang, "erlang", "system_time")
-fn system_time(unit: Unit) -> Int
+// @external(erlang, "erlang", "system_time")
+// fn system_time(unit: Unit) -> Int

@@ -1,4 +1,4 @@
-import birl.{type Time}
+// import birl.{type Time}
 import gleam/dynamic
 import gleam/list
 import gleam/pgo
@@ -42,7 +42,6 @@ pub fn read_noaa_severity(conn: pgo.Connection) -> Result(NOAASeverity, String) 
     Error(error) -> Error("Failed to fetch severity: " <> string.inspect(error))
   }
 }
-
 // fn decode_timestamp(
 //   dyn: dynamic.Dynamic,
 // ) -> Result(Time, List(dynamic.DecodeError)) {
