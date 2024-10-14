@@ -43,24 +43,24 @@ pub fn read_noaa_severity(conn: pgo.Connection) -> Result(NOAASeverity, String) 
   }
 }
 
-fn decode_timestamp(
-  dyn: dynamic.Dynamic,
-) -> Result(Time, List(dynamic.DecodeError)) {
-  // let decode_tuple3 = dynamic.tuple3(dynamic.int, dynamic.int, dynamic.int)
+// fn decode_timestamp(
+//   dyn: dynamic.Dynamic,
+// ) -> Result(Time, List(dynamic.DecodeError)) {
+//   // let decode_tuple3 = dynamic.tuple3(dynamic.int, dynamic.int, dynamic.int)
 
-  // use date <- dynamic.tuple2(decode_tuple3, decode_tuple3)
+//   // use date <- dynamic.tuple2(decode_tuple3, decode_tuple3)
 
-  // let #(#(year, month, day), #(hour, minute, second)) = date
-  // case time.new(year, month, day, hour, minute, second, 0) {
-  //   Ok(datetime) -> Ok(datetime)
-  //   Error(_) -> Error([dynamic.DecodeError("Invalid datetime", "DateTime", [])])
-  // }
+//   // let #(#(year, month, day), #(hour, minute, second)) = date
+//   // case time.new(year, month, day, hour, minute, second, 0) {
+//   //   Ok(datetime) -> Ok(datetime)
+//   //   Error(_) -> Error([dynamic.DecodeError("Invalid datetime", "DateTime", [])])
+//   // }
 
-  todo
-}
+//   todo
+// }
 
-fn decode_tuple3(dyn: dynamic.Dynamic) -> #(Int, Int, Int) {
-  let decoder = dynamic.tuple3(dynamic.int, dynamic.int, dynamic.int)
+// fn decode_tuple3(dyn: dynamic.Dynamic) -> #(Int, Int, Int) {
+//   let decoder = dynamic.tuple3(dynamic.int, dynamic.int, dynamic.int)
 
-  todo
-}
+//   todo
+// }
