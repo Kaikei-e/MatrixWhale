@@ -1,4 +1,5 @@
 import adapter/context.{type Context}
+import birl.{get_day, get_time_of_day, now}
 import gleam/bytes_builder
 import gleam/erlang/process
 import gleam/function
@@ -52,6 +53,24 @@ pub fn streamer(ctx: Context) {
                 |> process.selecting_process_down(monitor, Down)
               let repeater =
                 repeatedly.call(5000, Nil, fn(_state, _count) {
+                  let t_now = now()
+                  let date = get_day(t_now)
+                  let time = get_time_of_day(t_now)
+                  let datetime_of_now =
+                    string.concat([
+                      string.inspect(date.year),
+                      "-",
+                      string.inspect(date.month),
+                      "-",
+                      string.inspect(date.date),
+                      " ",
+                      string.inspect(time.hour),
+                      ":",
+                      string.inspect(time.minute),
+                      ":",
+                      string.inspect(time.second),
+                    ])
+
                   let severity = severity_streamer(ctx)
 
                   let severity_state =
@@ -59,6 +78,8 @@ pub fn streamer(ctx: Context) {
                     <> severity.severity
                     <> " for "
                     <> severity.area_desc
+                    <> " at "
+                    <> datetime_of_now
                   wisp.log_info("Sending severity: " <> severity_state)
                   process.send(subj, Severity(severity_state))
                 })
