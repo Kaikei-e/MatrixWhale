@@ -55,7 +55,7 @@ pub fn streamer(ctx: Context) {
                   let severity = severity_streamer(ctx)
 
                   let severity_state =
-                    "Now upcomming severity is :"
+                    "Upcoming severity: "
                     <> severity.severity
                     <> " for "
                     <> severity.area_desc
