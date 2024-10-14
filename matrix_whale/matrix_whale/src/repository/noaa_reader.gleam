@@ -20,7 +20,7 @@ pub fn read_noaa_severity(conn: pgo.Connection) -> Result(NOAASeverity, String) 
 
   let row =
     pgo.execute(
-      "SELECT area_desc, severity, datetime FROM sea.severity WHERE severity != 'UnknownSeverity' ORDER BY datetime DESC LIMIT 1",
+      "SELECT area_desc, severity, datetime FROM sea.severity WHERE datetime BETWEEN NOW() - INTERVAL '12 hours' AND NOW() AND severity != 'UnknownSeverity' ORDER BY datetime DESC LIMIT 1",
       conn,
       [],
       decoder,
