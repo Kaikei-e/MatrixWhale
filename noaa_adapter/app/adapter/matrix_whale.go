@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -28,7 +29,7 @@ func MatrixWhaleAdapter(geoData string) error {
 		return err
 	}
 
-	slog.Info("Sending data to Matrix Whale", "data size, unit is byte", len([]byte(unescapedData)))
+	slog.Info("Sending data to Matrix Whale. Data size, unit is byte: " + strconv.Itoa(len([]byte(unescapedData))))
 
 	req.Header.Set("Content-Type", "application/json")
 
