@@ -1,12 +1,12 @@
 import decode.{type Decoder}
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic, field, list, string}
-import gleam/io
 import gleam/json
 import gleam/list
 import gleam/option.{type Option}
 import gleam/result
 import gleam/string
+import wisp
 
 pub type Alerts {
   Alerts(
@@ -187,7 +187,7 @@ pub fn extract_features(json_string: String) -> List(Dynamic) {
       features
     }
     Error(err) -> {
-      io.debug("Error decoding features: " <> string.inspect(err))
+      wisp.log_error("Error decoding features: " <> string.inspect(err))
       []
     }
   }
@@ -205,7 +205,7 @@ pub fn prepare_feature_for_decoding(
         |> list.map(fn(err) { "Error: " <> string.inspect(err) <> ". " })
         |> string.join("")
 
-      io.debug("Error converting feature to string: " <> err_string)
+      wisp.log_error("Error converting feature to string: " <> err_string)
       error
     }
   }
@@ -214,22 +214,35 @@ pub fn prepare_feature_for_decoding(
 pub fn extract_and_decode_features(
   json_string: String,
 ) -> List(Result(FeatureElement, List(String))) {
-  let decoded_result =
+  case
     json.decode(
       from: json_string,
       using: dynamic.field("features", dynamic.list(dynamic.dynamic)),
     )
-
-  case decoded_result {
+  {
     Ok(features) -> {
       features
-      |> list.map(fn(feature) {
-        decode_feature(feature)
-        |> result.map_error(fn(errors) { errors |> list.map(string.inspect) })
+      |> list.index_map(fn(feature, index) {
+        case decode_feature(feature) {
+          Ok(decoded) -> Ok(decoded)
+          Error(errors) -> {
+            let error_messages = errors |> list.map(string.inspect)
+            wisp.log_error(
+              "Error decoding feature at index "
+              <> string.inspect(index)
+              <> ": "
+              <> string.join(error_messages, ", "),
+            )
+            Error(error_messages)
+          }
+        }
       })
     }
     Error(err) -> {
-      [Error([string.inspect(err)])]
+      wisp.log_error(
+        "Failed to parse main JSON structure: " <> string.inspect(err),
+      )
+      [Error(["Failed to parse main JSON structure: " <> string.inspect(err)])]
     }
   }
 }
@@ -329,8 +342,8 @@ fn decode_properties(data: Dynamic) {
       replaced_at,
     )
   })
-  |> decode.field("id", decode.optional(decode.string))
-  |> decode.field("type", decode.optional(decode.string))
+  |> decode.field("@id", decode.optional(decode.string))
+  |> decode.field("@type", decode.optional(decode.string))
   |> decode.field("properties_id", decode.optional(decode.string))
   |> decode.field("areaDesc", decode.string)
   |> decode.field(
@@ -344,7 +357,7 @@ fn decode_properties(data: Dynamic) {
       }),
   )
   |> decode.field(
-    "affected_zones",
+    "affectedZones",
     decode.optional(decode.list(decode.string))
       |> decode.map(fn(maybe_zones) {
         case maybe_zones {
@@ -364,7 +377,7 @@ fn decode_properties(data: Dynamic) {
   |> decode.field("expires", decode.string)
   |> decode.field("ends", decode.optional(decode.string))
   |> decode.field("status", decode_status())
-  |> decode.field("message_type", decode.optional(decode_message_type()))
+  |> decode.field("messageType", decode.optional(decode_message_type()))
   |> decode.field("category", decode_category())
   |> decode.field("severity", decode_severity())
   |> decode.field("certainty", decode_certainty())
@@ -380,7 +393,7 @@ fn decode_properties(data: Dynamic) {
         }
       }),
   )
-  |> decode.field("sender_name", decode.optional(decode.string))
+  |> decode.field("senderName", decode.optional(decode.string))
   |> decode.field("headline", decode.optional(decode.string))
   |> decode.field("description", decode.optional(decode.string))
   |> decode.field("instruction", decode.optional(decode.string))
@@ -389,8 +402,8 @@ fn decode_properties(data: Dynamic) {
     "parameters",
     decode.dict(decode.string, decode.list(decode.string)),
   )
-  |> decode.field("replaced_by", decode.optional(decode.string))
-  |> decode.field("replaced_at", decode.optional(decode.string))
+  |> decode.field("replacedBy", decode.optional(decode.string))
+  |> decode.field("replacedAt", decode.optional(decode.string))
 }
 
 fn decode_status() -> Decoder(Status) {
