@@ -21,7 +21,7 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
   let body_string =
     bit_array.to_string(req_body)
     |> result.map_error(fn(err) {
-      io.debug(err)
+      wisp.log_error("Invalid data format: " <> string.inspect(err))
       string_builder.from_string("Invalid data format: " <> string.inspect(err))
     })
     |> result.unwrap("Invalid data format")
@@ -31,13 +31,13 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
     string.trim(body_string)
     |> string.replace("\\\\", "\\")
     |> string.replace("\\\"", "\"")
-    |> string.replace("\n", "")
-    |> string.replace("\\r", "")
+    |> string.replace("", " ")
+    |> string.replace("\\n", " ")
     |> string.trim
 
   let features_result = noaa.extract_and_decode_features(unescaped_body_string)
 
-  io.debug(
+  wisp.log_info(
     "Extracted " <> string.inspect(list.length(features_result)) <> " features",
   )
 
@@ -47,13 +47,13 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
       case feature {
         Ok(feature) -> Ok(feature)
         Error(err) -> {
-          wisp.log_error("Error parsing data: " <> string.inspect(err))
+          wisp.log_error("Error parsing feature: " <> string.inspect(err))
           Error(err)
         }
       }
     })
 
-  io.debug(
+  wisp.log_info(
     "Handled " <> string.inspect(list.length(handled_features)) <> " features",
   )
 
@@ -88,7 +88,9 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
       feature_element.properties.severity
     }
     Error(err) -> {
-      wisp.log_error("Error parsing data: " <> string.inspect(err))
+      wisp.log_error(
+        "Error parsing data from noaa_adapter: " <> string.inspect(err),
+      )
       noaa.UnknownSeverity
     }
   }
@@ -96,7 +98,7 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
   wisp.log_info("Data successfully received and parsed.")
   wisp.json_response(
     string_builder.from_string(
-      "Parsing procce. First element's alert type is "
+      "Parsing procces. First element's alert type is "
       <> string.inspect(severity),
     ),
     200,
