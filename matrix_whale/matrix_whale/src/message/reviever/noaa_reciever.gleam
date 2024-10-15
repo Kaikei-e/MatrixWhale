@@ -77,7 +77,7 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
       case feature_element {
         Ok(fe) -> Ok(fe)
         Error(err) -> {
-          io.debug("Error parsing data: " <> string.inspect(err))
+          wisp.log_error("Error parsing data: " <> string.inspect(err))
           Error(Nil)
         }
       }
