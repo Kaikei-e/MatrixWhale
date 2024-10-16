@@ -1,6 +1,7 @@
 import decode.{type Decoder}
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic, field, list, string}
+import gleam/iterator
 import gleam/json
 import gleam/list
 import gleam/option.{type Option}
@@ -231,6 +232,9 @@ pub fn extract_and_decode_features(
               "Error decoding feature at index "
               <> string.inspect(index)
               <> ": "
+              <> "cause string is :"
+              <> string.slice(json_string, index * 8 - 40, index * 8 + 40)
+              <> "error is :"
               <> string.join(error_messages, ", "),
             )
             Error(error_messages)
