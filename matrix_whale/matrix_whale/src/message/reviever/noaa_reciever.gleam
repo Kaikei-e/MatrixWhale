@@ -37,10 +37,6 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
     |> string.replace("\r", " ")
     |> string.trim
 
-  wisp.log_info(
-    "Processed JSON sample: "
-    <> string.slice(unescaped_body_string, 100_000, 100_010),
-  )
 
   let features_result = noaa.extract_and_decode_features(unescaped_body_string)
 
