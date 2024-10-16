@@ -1,7 +1,6 @@
 import adapter/context.{type Context}
 import controller/noaa_controller.{noaa_controller}
 import gleam/bit_array
-import gleam/io
 import gleam/list
 import gleam/result
 import gleam/string
@@ -28,12 +27,20 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
 
   // unescape the body_string
   let unescaped_body_string =
-    string.trim(body_string)
-    |> string.replace("\\\\", "\\")
+    // string.trim(body_string)
+    // |> string.replace("\\\\", "")  // バックスラッシュを完全に削除
+    string.replace(body_string, "\\\\", "")
     |> string.replace("\\\"", "\"")
-    |> string.replace("", " ")
     |> string.replace("\\n", " ")
+    |> string.replace("\n", " ")
+    |> string.replace("\\r", " ")
+    |> string.replace("\r", " ")
     |> string.trim
+
+  wisp.log_info(
+    "Processed JSON sample: "
+    <> string.slice(unescaped_body_string, 100_000, 100_200),
+  )
 
   let features_result = noaa.extract_and_decode_features(unescaped_body_string)
 
