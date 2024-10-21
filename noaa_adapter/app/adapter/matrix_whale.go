@@ -14,8 +14,13 @@ const MatrixWhaleURL = "http://matrix_whale:6000/api/v1"
 
 func MatrixWhaleAdapter(geoData string) error {
 	// unescape the geoData string
-	unescapedData := strings.ReplaceAll(geoData, "\\", "")
-	unescapedData = strings.ReplaceAll(unescapedData, `\\`, ``)
+	unescapedData := strings.ReplaceAll(geoData, "\n", " ")
+
+	// err := os.WriteFile("unescapedData.json", []byte(unescapedData), 0644)
+	// if err != nil {
+	// 	slog.Error("Error writing unescaped data to file: " + err.Error())
+	// 	return err
+	// }
 
 	targetAPIEndpoint, err := url.JoinPath(MatrixWhaleURL, "noaa_data", "send")
 	if err != nil {
