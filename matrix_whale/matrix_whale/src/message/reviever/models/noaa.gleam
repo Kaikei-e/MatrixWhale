@@ -1,13 +1,12 @@
 import decode.{type Decoder}
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic, field, list, string}
-import gleam/iterator
+import gleam/io
 import gleam/json
 import gleam/list
 import gleam/option.{type Option}
 import gleam/result
 import gleam/string
-import wisp
 
 pub type Alerts {
   Alerts(
@@ -176,7 +175,9 @@ pub type CustomTypesList {
   ResponseType(Response)
 }
 
-pub fn extract_features(json_string: String) -> List(Dynamic) {
+pub fn extract_features(
+  json_string: String,
+) -> List(Result(FeatureElement, List(String))) {
   let decoded_result =
     json.decode(
       from: json_string,
@@ -186,10 +187,13 @@ pub fn extract_features(json_string: String) -> List(Dynamic) {
   case decoded_result {
     Ok(features) -> {
       features
+      |> list.map(fn(feature) {
+        decode_feature(feature)
+        |> result.map_error(fn(errors) { errors |> list.map(string.inspect) })
+      })
     }
     Error(err) -> {
-      wisp.log_error("Error decoding features: " <> string.inspect(err))
-      []
+      [Error([string.inspect(err)])]
     }
   }
 }
@@ -206,7 +210,7 @@ pub fn prepare_feature_for_decoding(
         |> list.map(fn(err) { "Error: " <> string.inspect(err) <> ". " })
         |> string.join("")
 
-      wisp.log_error("Error converting feature to string: " <> err_string)
+      io.debug("Error converting feature to string: " <> err_string)
       error
     }
   }
@@ -215,38 +219,22 @@ pub fn prepare_feature_for_decoding(
 pub fn extract_and_decode_features(
   json_string: String,
 ) -> List(Result(FeatureElement, List(String))) {
-  case
+  let decoded_result =
     json.decode(
       from: json_string,
       using: dynamic.field("features", dynamic.list(dynamic.dynamic)),
     )
-  {
+
+  case decoded_result {
     Ok(features) -> {
       features
-      |> list.index_map(fn(feature, index) {
-        case decode_feature(feature) {
-          Ok(decoded) -> Ok(decoded)
-          Error(errors) -> {
-            let error_messages = errors |> list.map(string.inspect)
-            wisp.log_error(
-              "Error decoding feature at index "
-              <> string.inspect(index)
-              <> ": "
-              <> "cause string is :"
-              <> string.slice(json_string, index * 8 - 40, index * 8 + 40)
-              <> "error is :"
-              <> string.join(error_messages, ", "),
-            )
-            Error(error_messages)
-          }
-        }
+      |> list.map(fn(feature) {
+        decode_feature(feature)
+        |> result.map_error(fn(errors) { errors |> list.map(string.inspect) })
       })
     }
     Error(err) -> {
-      wisp.log_error(
-        "Failed to parse main JSON structure: " <> string.inspect(err),
-      )
-      [Error(["Failed to parse main JSON structure: " <> string.inspect(err)])]
+      [Error([string.inspect(err)])]
     }
   }
 }
@@ -346,8 +334,8 @@ fn decode_properties(data: Dynamic) {
       replaced_at,
     )
   })
-  |> decode.field("@id", decode.optional(decode.string))
-  |> decode.field("@type", decode.optional(decode.string))
+  |> decode.field("id", decode.optional(decode.string))
+  |> decode.field("type", decode.optional(decode.string))
   |> decode.field("properties_id", decode.optional(decode.string))
   |> decode.field("areaDesc", decode.string)
   |> decode.field(

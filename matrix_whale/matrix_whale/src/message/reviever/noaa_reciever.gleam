@@ -1,6 +1,7 @@
 import adapter/context.{type Context}
 import controller/noaa_controller.{noaa_controller}
 import gleam/bit_array
+import gleam/io
 import gleam/list
 import gleam/result
 import gleam/string
@@ -20,23 +21,19 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
   let body_string =
     bit_array.to_string(req_body)
     |> result.map_error(fn(err) {
-      wisp.log_error("Invalid data format: " <> string.inspect(err))
+      io.debug(err)
       string_builder.from_string("Invalid data format: " <> string.inspect(err))
     })
     |> result.unwrap("Invalid data format")
 
   // unescape the body_string
   let unescaped_body_string =
-    // string.trim(body_string)
-    // |> string.replace("\\\\", "")  // バックスラッシュを完全に削除
-    string.replace(body_string, "\\\\", "")
+    string.trim(body_string)
+    |> string.replace("\\\\", "\\")
     |> string.replace("\\\"", "\"")
-    |> string.replace("\\n", " ")
     |> string.replace("\n", " ")
     |> string.replace("\\r", " ")
-    |> string.replace("\r", " ")
     |> string.trim
-
 
   let features_result = noaa.extract_and_decode_features(unescaped_body_string)
 
@@ -55,10 +52,6 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
         }
       }
     })
-
-  wisp.log_info(
-    "Handled " <> string.inspect(list.length(handled_features)) <> " features",
-  )
 
   let result = noaa_controller(handled_features, ctx)
   case result {
@@ -80,7 +73,9 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
       case feature_element {
         Ok(fe) -> Ok(fe)
         Error(err) -> {
-          wisp.log_error("Error parsing data: " <> string.inspect(err))
+          wisp.log_error(
+            "Error parsing data from noaa_adapter: " <> string.inspect(err),
+          )
           Error(Nil)
         }
       }
