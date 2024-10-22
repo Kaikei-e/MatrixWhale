@@ -35,8 +35,6 @@ pub fn sse_noaa_severity(req: Request, ctx: Context) -> Response {
     |> wisp.set_header("X-Accel-Buffering", "no")
 
   let init_conn = initialize_streamer(ctx)
-  
-  
 
   // keep_connection_alive(init_conn.event, init_conn.init_result)
   wisp.log_info("Severity streamer started")
