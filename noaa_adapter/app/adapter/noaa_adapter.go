@@ -9,7 +9,7 @@ import (
 
 const NoaaURL = "https://api.weather.gov"
 
-func NoaaAlertsAdapter() (string, error) {
+func NoaaAlertsAdapter() ([]byte, error) {
 	targetURL, err := url.JoinPath(NoaaURL, "alerts")
 	if err != nil {
 		panic(err)
@@ -32,11 +32,9 @@ func NoaaAlertsAdapter() (string, error) {
 
 	resBytes, errRead := io.ReadAll(res.Body)
 	if errRead != nil {
-		return "", errRead
+		return nil, errRead
 	}
 	defer res.Body.Close()
 
-	resText := string(resBytes)
-
-	return resText, nil
+	return resBytes, nil
 }
