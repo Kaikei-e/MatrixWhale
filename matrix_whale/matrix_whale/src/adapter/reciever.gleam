@@ -3,6 +3,8 @@ import gleam/erlang/process
 import gleam/string_builder
 import logs/reciever/noaa_adapter
 import message/reviever/noaa_reciever
+
+// import message/streamer/noaa_severity_streamrer
 import mist
 import wisp.{type Request, type Response}
 import wisp/wisp_mist
@@ -23,13 +25,15 @@ pub fn reciever_main(ctx: Context) {
 fn reciever_router(request: Request, ctx: Context) -> Response {
   use req <- middleware(request)
 
-  case wisp.path_segments(req) {
+  case wisp.path_segments(request) {
     ["api", "v1", "health"] -> {
       string_builder.from_string("system is alive") |> wisp.json_response(200)
     }
     ["api", "v1", "logs"] -> noaa_adapter.noaa_logs_handler(req)
     ["api", "v1", "noaa_data", "send"] ->
       noaa_reciever.noaa_data_handler(req, ctx)
+    // ["api", "v1", "noaa_data", "stream"] ->
+    //   noaa_severity_streamrer.sse_noaa_severity(req, ctx)
     _ -> wisp.response(404)
   }
 }
