@@ -12,9 +12,9 @@ import (
 
 const MatrixWhaleURL = "http://matrix_whale:6000/api/v1"
 
-func MatrixWhaleAdapter(geoData string) error {
+func MatrixWhaleAdapter(geoData []byte) error {
 	// unescape the geoData string
-	unescapedData := strings.ReplaceAll(geoData, "\n", " ")
+	unescapedData := strings.ReplaceAll(string(geoData), "\n", " ")
 
 	// err := os.WriteFile("unescapedData.json", []byte(unescapedData), 0644)
 	// if err != nil {
