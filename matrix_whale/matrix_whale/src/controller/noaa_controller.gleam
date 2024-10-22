@@ -16,7 +16,7 @@ pub fn noaa_controller(
         <> string.inspect(count)
         <> " noaa alert severities into database"
       wisp.log_info(message)
-      Ok(message)
+      Ok("OK at " <> string.inspect(count))
     }
     Error(err) -> {
       wisp.log_error(
