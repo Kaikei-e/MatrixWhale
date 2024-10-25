@@ -14,6 +14,24 @@ services:
       matrix_network:
         ipv4_address: 10.254.100.10
 
+  federation_orchestrator:
+    build:
+      context: ./federation_orchestrator
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./federation_orchestrator:/app/federation_orchestrator
+    tty: true
+    restart: always
+    networks:
+      matrix_network:
+        ipv4_address: 10.254.100.20
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   matrix_whale:
     build:
       context: ./matrix_whale
