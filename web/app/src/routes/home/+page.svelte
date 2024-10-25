@@ -20,10 +20,10 @@
 	})
 </script>
 
-<div class="h-screen w-screen bg-gradient-to-r from-indigo-200 to-blue-400 p-8">
+<div class="h-screen w-screen bg-gradient-to-r from-indigo-300 to-blue-400 p-8">
 	<div class="absolute inset-0 bg-gradient-to-r from-white to-gray-500 opacity-20"></div>
 	<div class="w-1/6">
-		<p class="text-2xl text-white">Stats</p>
+		<p class="text-2xl text-black">Stats</p>
 	</div>
 	<div class="mt-8 grid h-5/6 w-full grid-flow-row-dense grid-cols-3 grid-rows-3 gap-4">
 		<div class="col-span-2 rounded-lg border border-gray-200 bg-slate-300 p-4 shadow">
