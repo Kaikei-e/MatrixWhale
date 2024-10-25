@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { run } from 'svelte/legacy';
+
 
 	import { onMount } from 'svelte';
 	import { initSeverityTypeReceiver, severityData } from '$lib/noaa_alerts/severity_type_reciever';
@@ -15,9 +15,9 @@
 		};
 	});
 
-	run(() => {
+	$effect(() => {
 		console.log('severityData updated:', $severityData);
-	});
+	})
 </script>
 
 <div class="h-screen w-screen bg-gradient-to-r from-indigo-400 to-blue-500 p-8">
