@@ -1,5 +1,12 @@
 <script>
+	/**
+	 * @typedef {Object} Props
+	 * @property {import('svelte').Snippet} [children]
+	 */
+
+	/** @type {Props} */
+	let { children } = $props();
 	// import '../../app.css';
 </script>
 
-<slot></slot>
+{@render children?.()}
