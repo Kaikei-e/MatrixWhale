@@ -77,5 +77,5 @@ func InitLogger() {
 	handler := &LogSender{url: "http://matrix_whale:6000/api/v1/logs"}
 
 	slog.SetDefault(slog.New(handler).With("service", "noaa_adapter"))
-	slog.Info("The Logger initialized")
+	slog.Info("The NOAA Adapter Logger initialized")
 }
