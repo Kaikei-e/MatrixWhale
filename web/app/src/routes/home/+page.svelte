@@ -26,16 +26,16 @@
 		<p class="text-2xl text-black">Stats</p>
 	</div>
 	<div class="mt-8 grid h-5/6 w-full grid-flow-row-dense grid-cols-3 grid-rows-3 gap-4">
-		<div class="col-span-2 rounded-lg border border-gray-200 bg-slate-300 p-4 shadow">
+		<div class="col-span-2 rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">
 			{#if $severityData !== null}
 				<h3 class="text-2xl text-black">{$severityData}</h3>
 			{:else}
 				<h3 class="text-2xl text-black">Waiting for data...</h3>
 			{/if}
 		</div>
-		<div class="col-span-2 rounded-lg border border-gray-200 bg-slate-300 p-4 shadow">02</div>
-		<div class="rounded-lg border border-gray-200 p-4 shadow">03</div>
-		<div class="bg-black">04</div>
-		<div class="bg-slate-300">05</div>
+		<div class="col-span-2 rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">02</div>
+		<div class="rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">03</div>
+		<div class="rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">04</div>
+		<div class="rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">05</div>
 	</div>
 </div>
