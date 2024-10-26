@@ -19,7 +19,6 @@ func main() {
 		Handler: mux,
 	}
 
-	
 	if err := server.ListenAndServe(); err != nil {
 		fmt.Println("Error starting server:", err)
 	}
