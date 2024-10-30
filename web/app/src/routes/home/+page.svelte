@@ -1,6 +1,4 @@
 <script lang="ts">
-
-
 	import { onMount } from 'svelte';
 	import { initSeverityTypeReceiver, severityData } from '$lib/noaa_alerts/severity_type_reciever';
 
@@ -17,7 +15,7 @@
 
 	$effect(() => {
 		console.log('severityData updated:', $severityData);
-	})
+	});
 </script>
 
 <div class="h-screen w-screen bg-gradient-to-r from-indigo-400 to-blue-400 p-8">
@@ -33,8 +31,18 @@
 				<h3 class="text-2xl text-black">Waiting for data...</h3>
 			{/if}
 		</div>
-		<div class="col-span-2 rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">02</div>
-		<div class="rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">03</div>
+		<div class="col-span-1 rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">
+			<div class="flex flex-col">
+			<form method="POST" action="/superforms/noaa_area/search_alerts_area">
+			<label for="areaDescription">Search Alert Area</label>
+				<input type="text" name="areaDescription" />
+				<button class="bg-blue-500 text-white p-2 rounded-md" formaction="/superforms/noaa_area/search_alerts_area">
+					Search Alerts
+				</button>
+			</form>	
+			</div>
+			
+		</div>
 		<div class="rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">04</div>
 		<div class="rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">05</div>
 	</div>
