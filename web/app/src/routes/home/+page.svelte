@@ -12,7 +12,7 @@
 			}
 		};
 	});
-	
+
 	let data = {
 		form: {
 			areaDescription: '',
@@ -40,9 +40,8 @@
 		</div>
 		<div class="col-span-1 rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">
 			<div class="flex flex-col">
-				<Search data={data} />
+				<Search {data} />
 			</div>
-			
 		</div>
 		<div class="rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">04</div>
 		<div class="rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">05</div>
