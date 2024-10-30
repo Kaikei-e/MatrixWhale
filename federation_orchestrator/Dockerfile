@@ -4,7 +4,7 @@ ADD ./federation_orchestrator /usr/src/app/federation_orchestrator
 
 WORKDIR /usr/src/app/federation_orchestrator
 
-RUN apk update && apk add --no-cache curl nodejs npm
+RUN apk update && apk add --no-cache wget curl nodejs npm
 
 # install buf, grpcurl, protoc-gen-go, protoc-gen-connect-go
 RUN go install github.com/bufbuild/buf/cmd/buf@latest && \
