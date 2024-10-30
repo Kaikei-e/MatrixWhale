@@ -3,7 +3,7 @@ import { valibot } from 'sveltekit-superforms/adapters';
 import { NoaaSeverityData } from '$lib/schema/noaa_data';
 import { fail } from '@sveltejs/kit';
 import { message } from 'sveltekit-superforms';
-import type { Actions } from './$types';
+import type { Actions } from '../superforms/noaa_area/$types';
 
 export const load = async () => {
 	const form = await superValidate(valibot(NoaaSeverityData));

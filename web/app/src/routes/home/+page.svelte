@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { initSeverityTypeReceiver, severityData } from '$lib/noaa_alerts/severity_type_reciever';
-
+	import Search from '../superforms/noaa_area/+page.svelte';
 	onMount(() => {
 		console.log('Component mounted, initializing receiver...');
 		const cleanup = initSeverityTypeReceiver();
@@ -12,6 +12,13 @@
 			}
 		};
 	});
+	
+	let data = {
+		form: {
+			areaDescription: '',
+			severity: ''
+		}
+	};
 
 	$effect(() => {
 		console.log('severityData updated:', $severityData);
@@ -33,13 +40,7 @@
 		</div>
 		<div class="col-span-1 rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">
 			<div class="flex flex-col">
-			<form method="POST" action="/superforms/noaa_area/search_alerts_area">
-			<label for="areaDescription">Search Alert Area</label>
-				<input type="text" name="areaDescription" />
-				<button class="bg-blue-500 text-white p-2 rounded-md" formaction="/superforms/noaa_area/search_alerts_area">
-					Search Alerts
-				</button>
-			</form>	
+				<Search data={data} />
 			</div>
 			
 		</div>
