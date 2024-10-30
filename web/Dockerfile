@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY ./app/package.json ./
 
-RUN npm install
+RUN npm install -g pnpm && pnpm install
 
 COPY ./app .
 
@@ -16,7 +16,7 @@ WORKDIR /app
 
 COPY --from=build /app .
 
-RUN npm install -g vite && npm install
+RUN npm install -g vite pnpm && pnpm install
 
 EXPOSE 4173
 
