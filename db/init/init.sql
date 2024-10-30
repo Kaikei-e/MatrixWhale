@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 CREATE DATABASE sea;
 
 \connect sea
@@ -13,8 +15,8 @@ CREATE TABLE IF NOT EXISTS sea.severity (
   UNIQUE (area_desc, severity, datetime)
 );
 
+CREATE INDEX idx_area_desc ON sea.severity(area_desc);
+
 CREATE INDEX idx_severity_area_desc_datetime ON sea.severity (severity, area_desc, datetime);
 
-CREATE INDEX idx_severity_datetime ON sea.severity(datetime);
-
-CREATE INDEX idx_severity_datetime_severity ON sea.severity(datetime, severity);
+CREATE INDEX area_desc_trgm ON sea.severity USING GIN (area_desc gin_trgm_ops);
