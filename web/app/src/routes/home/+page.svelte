@@ -14,8 +14,8 @@
 			}
 		};
 	});
-	let { data }: { data: ActionData } = $props();
-	let searchWord = '';
+	let { form, data }: { form: FormData, data: ActionData } = $props();
+	let searchWord = form?.get('areaDescription') as string;
 
 	$effect(() => {
 		console.log('severityData updated:', $severityData);

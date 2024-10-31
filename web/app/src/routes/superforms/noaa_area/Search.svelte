@@ -27,7 +27,7 @@
 </script>
 
 <div class="flex flex-col">
-	<form method="POST" on:submit|preventDefault={handleSubmit}>
+	<form class="flex flex-col gap-2 bg-gray-50 p-4 rounded-lg" method="POST" on:submit|preventDefault={handleSubmit}>
 		<label for="areaDescription">Search Alerts Area By Words</label>
 		<input type="text" name="areaDescription" bind:value={searchWord} />
 		<button type="submit">Search</button>
