@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import type { ActionData } from '../superforms/noaa_area/$types';
 	import { initSeverityTypeReceiver, severityData } from '$lib/noaa_alerts/severity_type_reciever';
-	import Search from '../superforms/noaa_area/+page.svelte';
+	import Search from '../superforms/noaa_area/Search.svelte';
+
 	onMount(() => {
 		console.log('Component mounted, initializing receiver...');
 		const cleanup = initSeverityTypeReceiver();
@@ -12,13 +14,8 @@
 			}
 		};
 	});
-
-	let data = {
-		form: {
-			areaDescription: '',
-			severity: ''
-		}
-	};
+	let { data }: { data: ActionData } = $props();
+	let searchWord = '';
 
 	$effect(() => {
 		console.log('severityData updated:', $severityData);
@@ -39,9 +36,7 @@
 			{/if}
 		</div>
 		<div class="col-span-1 rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">
-			<div class="flex flex-col">
-				<Search {data} />
-			</div>
+			<Search {searchWord} />
 		</div>
 		<div class="rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">04</div>
 		<div class="rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">05</div>
