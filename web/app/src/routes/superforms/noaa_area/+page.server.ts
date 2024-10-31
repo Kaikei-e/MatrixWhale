@@ -6,6 +6,8 @@ import type { RequestEvent } from '@sveltejs/kit';
 import type { Actions } from './$types';
 import type { PageServerLoad } from './$types';
 
+const matrixWhaleUrl = import.meta.env.VITE_MATRIX_WHALE_URL;
+
 export const load: PageServerLoad = async () => {
 	const noaaSeverityData = await superValidate(valibot(NoaaSeverityData));
 	return { noaaSeverityData };
@@ -19,8 +21,20 @@ export const actions = {
 			return fail(400, { form: null });
 		}
 
-		console.log(searchWord);
+		const url = new URL('/api/v1/noaa_data/search_alerts/by_area', matrixWhaleUrl);
+		const response = await fetch(url.toString(), {
+			method: 'POST',
+			body: JSON.stringify({ searchWord }),
+		});
 
-		return { success: true };
+		const json = await response.json();
+		if (!response.ok) {
+			return fail(500, { form: null });
+		}
+		
+		console.log(json);
+
+		
+		return json;
 	}
 } satisfies Actions;
