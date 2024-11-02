@@ -21,20 +21,23 @@ export const actions = {
 			return fail(400, { form: null });
 		}
 
-		const url = new URL('/api/v1/noaa_data/search_alerts/by_area', matrixWhaleUrl);
+		console.log(searchWord);
+
+		const body = JSON.stringify({ areaDescription: searchWord });
+
+		const url = new URL('/api/v1/noaa_data/search_area_description', matrixWhaleUrl);
 		const response = await fetch(url.toString(), {
 			method: 'POST',
-			body: JSON.stringify({ searchWord }),
+			body: body
 		});
 
 		const json = await response.json();
 		if (!response.ok) {
 			return fail(500, { form: null });
 		}
-		
+
 		console.log(json);
 
-		
 		return json;
 	}
 } satisfies Actions;

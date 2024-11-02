@@ -22,8 +22,8 @@
 	});
 </script>
 
-<div class="h-screen w-screen bg-gradient-to-r from-indigo-400 to-blue-400 p-8">
-	<div class="absolute inset-0 bg-gradient-to-r from-white to-gray-500 opacity-20 -z-10"></div>
+<div class="h-screen w-screen bg-gradient-to-r from-indigo-300 to-blue-300 p-8">
+	<div class="absolute inset-0 -z-10 bg-gradient-to-r from-white to-gray-500 opacity-20"></div>
 	<div class="w-1/6">
 		<p class="text-2xl text-black">Stats</p>
 	</div>
