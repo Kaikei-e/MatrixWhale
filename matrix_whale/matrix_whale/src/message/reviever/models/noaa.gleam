@@ -7,6 +7,7 @@ import gleam/list
 import gleam/option.{type Option}
 import gleam/result
 import gleam/string
+import wisp
 
 pub type Alerts {
   Alerts(
@@ -219,24 +220,25 @@ pub fn prepare_feature_for_decoding(
 pub fn extract_and_decode_features(
   json_string: String,
 ) -> List(Result(FeatureElement, List(String))) {
-  let decoded_result =
+  case
     json.decode(
       from: json_string,
       using: dynamic.field("features", dynamic.list(dynamic.dynamic)),
     )
-
-  case decoded_result {
-    Ok(features) -> {
-      features
-      |> list.map(fn(feature) {
-        decode_feature(feature)
-        |> result.map_error(fn(errors) { errors |> list.map(string.inspect) })
-      })
-    }
+  {
+    Ok(features) -> features
     Error(err) -> {
-      [Error([string.inspect(err)])]
+      wisp.log_error("Error decoding JSON: " <> string.inspect(err))
+      []
     }
   }
+  |> list.map(fn(feature) {
+    decode_feature(feature)
+    |> result.map_error(fn(errors) {
+      wisp.log_error("Error decoding feature: " <> string.inspect(errors))
+      errors |> list.map(string.inspect)
+    })
+  })
 }
 
 pub fn decode_alerts(data: String) -> Result(Alerts, json.DecodeError) {

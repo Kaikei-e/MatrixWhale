@@ -48,10 +48,12 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
         Ok(feature) -> Ok(feature)
         Error(err) -> {
           wisp.log_error("Error parsing feature: " <> string.inspect(err))
-          Error(err)
+          Error(Nil)
         }
       }
     })
+
+  io.debug(list.length(handled_features))
 
   let result = noaa_controller(handled_features, ctx)
   case result {
