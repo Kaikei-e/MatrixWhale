@@ -2,10 +2,12 @@ import adapter/context.{type Context}
 import birl.{get_day, get_time_of_day, now}
 import gleam/bit_array
 import gleam/bytes_builder
+import gleam/dynamic
 import gleam/erlang/process
 import gleam/function
 import gleam/http/request
 import gleam/http/response
+import gleam/io
 import gleam/json
 import gleam/list
 import gleam/otp/actor
@@ -25,6 +27,12 @@ pub type EventState {
 pub type Event {
   Severity(String)
   Down(process.ProcessDown)
+}
+
+// "{\"areaDescription\":\"Calcasieu, LA\"}"
+
+type SearchAreaDescriptionWords {
+  SearchAreaDescriptionWords(area_desc: String)
 }
 
 pub fn streamer(ctx: Context) {
@@ -119,21 +127,36 @@ pub fn streamer(ctx: Context) {
         }
         ["api", "v1", "noaa_data", "search_area_description"] -> {
           wisp.log_info("Received request for search_area_description")
-          // let content_type =
-          //   req
-          //   |> request.get_header("Content-Type")
-          //   |> result.unwrap("application/json")
 
           mist.read_body(req, 1024 * 1024 * 10)
           |> result.map(fn(req) {
             let search_word =
               bit_array.to_string(req.body)
-              |> result.unwrap("No search word provided")
+              |> result.then(fn(body_string) {
+                io.debug(body_string)
+                json.decode(
+                  body_string,
+                  dynamic.decode1(
+                    SearchAreaDescriptionWords,
+                    dynamic.field("areaDescription", dynamic.string),
+                  ),
+                )
+                |> result.map_error(fn(_) { Nil })
+              })
+              |> result.unwrap(SearchAreaDescriptionWords(""))
 
-            wisp.log_info("Searching for area description: " <> search_word)
+            io.debug(search_word)
+
+            // let search_area_description_words = search_word
+
+            // io.debug(search_area_description_words)
+
+            wisp.log_info(
+              "Searching for area description: " <> search_word.area_desc,
+            )
 
             let result =
-              search_alerts_by_area_description(search_word, ctx)
+              search_alerts_by_area_description(search_word.area_desc, ctx)
               |> result.map_error(fn(error) {
                 wisp.log_error(
                   "Error searching for area description: " <> error,
@@ -146,17 +169,23 @@ pub fn streamer(ctx: Context) {
 
             case result {
               Ok(severities) -> {
+                let json_body =
+                  severities
+                  |> list.map(fn(severity) {
+                    json.object([
+                      #("area_desc", json.string(severity.area_desc)),
+                      #("severity", json.string(severity.severity)),
+                    ])
+                  })
+                  |> json.array(fn(x) { x })
+                  |> json.to_string
+
+                io.debug(json_body)
+
                 response.new(200)
                 |> response.set_header("Content-Type", "application/json")
                 |> response.set_body(
-                  mist.Bytes(
-                    bytes_builder.from_string(
-                      json.to_string(json.array(
-                        list.map(severities, fn(severity) { severity.area_desc }),
-                        of: json.string,
-                      )),
-                    ),
-                  ),
+                  mist.Bytes(bytes_builder.from_string(json_body)),
                 )
               }
               Error(error) -> {
