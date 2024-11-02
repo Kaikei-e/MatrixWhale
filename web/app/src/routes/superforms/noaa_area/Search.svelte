@@ -7,16 +7,25 @@
 	let searchWord: string;
 
 	const handleSubmit = async (event: SubmitEvent) => {
-		const targetUrl = new URL('/api/v1/noaa_data/search_area_description', matrixWhaleUrlBasePath);
-
 		event.preventDefault();
 		const form = event.target as HTMLFormElement;
-		const data = new FormData(form);
+		const formData = new FormData(form);
+
+		// Convert FormData to JSON
+		const jsonData = {
+			areaDescription: formData.get('areaDescription')
+		};
+
+		const targetUrl = new URL('/api/v1/noaa_data/search_area_description', matrixWhaleUrlBasePath);
 
 		try {
 			const response = await fetch(targetUrl, {
 				method: 'POST',
-				body: data
+				headers: {
+					'Content-Type': 'application/json',
+					Accept: 'application/json'
+				},
+				body: JSON.stringify(jsonData)
 			});
 
 			const result: ActionResult = deserialize(await response.text());
