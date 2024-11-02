@@ -1,13 +1,18 @@
 import adapter/context.{type Context}
 import birl.{get_day, get_time_of_day, now}
+import gleam/bit_array
 import gleam/bytes_builder
 import gleam/erlang/process
 import gleam/function
 import gleam/http/request
 import gleam/http/response
+import gleam/json
+import gleam/list
 import gleam/otp/actor
+import gleam/result
 import gleam/string
 import gleam/string_builder
+import message/streamer/search_alerts.{search_alerts_by_area_description}
 import message/streamer/severity_streamer.{severity_streamer}
 import mist
 import repeatedly
@@ -111,6 +116,67 @@ pub fn streamer(ctx: Context) {
               }
             },
           )
+        }
+        ["api", "v1", "noaa_data", "search_area_description"] -> {
+          wisp.log_info("Received request for search_area_description")
+          // let content_type =
+          //   req
+          //   |> request.get_header("Content-Type")
+          //   |> result.unwrap("application/json")
+
+          mist.read_body(req, 1024 * 1024 * 10)
+          |> result.map(fn(req) {
+            let search_word =
+              bit_array.to_string(req.body)
+              |> result.unwrap("No search word provided")
+
+            wisp.log_info("Searching for area description: " <> search_word)
+
+            let result =
+              search_alerts_by_area_description(search_word, ctx)
+              |> result.map_error(fn(error) {
+                wisp.log_error(
+                  "Error searching for area description: " <> error,
+                )
+                response.new(401)
+                |> response.set_body(
+                  mist.Bytes(bytes_builder.from_string("Not Found")),
+                )
+              })
+
+            case result {
+              Ok(severities) -> {
+                response.new(200)
+                |> response.set_header("Content-Type", "application/json")
+                |> response.set_body(
+                  mist.Bytes(
+                    bytes_builder.from_string(
+                      json.to_string(json.array(
+                        list.map(severities, fn(severity) { severity.area_desc }),
+                        of: json.string,
+                      )),
+                    ),
+                  ),
+                )
+              }
+              Error(error) -> {
+                wisp.log_error(
+                  "Error searching for area description: "
+                  <> string.inspect(error),
+                )
+                response.new(400)
+                |> response.set_body(
+                  mist.Bytes(bytes_builder.from_string("Bad Request")),
+                )
+              }
+            }
+          })
+          |> result.lazy_unwrap(fn() {
+            response.new(400)
+            |> response.set_body(
+              mist.Bytes(bytes_builder.from_string("Bad Request")),
+            )
+          })
         }
         _ -> {
           wisp.log_info("Received request for unknown path")
