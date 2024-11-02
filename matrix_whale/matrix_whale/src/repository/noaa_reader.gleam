@@ -10,6 +10,10 @@ pub type NOAASeverity {
   // datetime: Time)
 }
 
+pub type SearchAreaDescription {
+  SearchAreaDescription(area_desc: String)
+}
+
 pub fn read_noaa_severity(conn: pgo.Connection) -> Result(NOAASeverity, String) {
   let decoder =
     dynamic.decode2(
@@ -64,7 +68,10 @@ pub fn search_area_description(
     )
 
   case rows {
-    Ok(rows) -> Ok(rows.rows)
+    Ok(rows) -> {
+      list.map(rows.rows, fn(row) { NOAASeverity(row.area_desc, row.severity) })
+      |> Ok
+    }
     Error(error) -> Error("Failed to fetch severity: " <> string.inspect(error))
   }
 }
