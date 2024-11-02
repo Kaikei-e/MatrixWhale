@@ -1,4 +1,17 @@
 services:
+  proxy:
+    build:
+      context: ./proxy
+    ports:
+      - "80:80"
+    volumes:
+      - ./proxy:/proxy
+    tty: true
+    restart: always
+    networks:
+      matrix_network:
+        ipv4_address: 10.254.100.5
+
   web:
     build:
       context: ./web
