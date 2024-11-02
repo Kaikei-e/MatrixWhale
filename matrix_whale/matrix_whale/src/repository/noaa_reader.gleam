@@ -43,6 +43,31 @@ pub fn read_noaa_severity(conn: pgo.Connection) -> Result(NOAASeverity, String) 
     Error(error) -> Error("Failed to fetch severity: " <> string.inspect(error))
   }
 }
+
+pub fn search_area_description(
+  area_desc: String,
+  conn: pgo.Connection,
+) -> Result(List(NOAASeverity), String) {
+  let decoder =
+    dynamic.decode2(
+      NOAASeverity,
+      dynamic.element(0, dynamic.string),
+      dynamic.element(1, dynamic.string),
+    )
+
+  let rows =
+    pgo.execute(
+      "SELECT area_desc, severity FROM sea.severity WHERE area_desc = $1",
+      conn,
+      [pgo.text(area_desc)],
+      decoder,
+    )
+
+  case rows {
+    Ok(rows) -> Ok(rows.rows)
+    Error(error) -> Error("Failed to fetch severity: " <> string.inspect(error))
+  }
+}
 // fn decode_timestamp(
 //   dyn: dynamic.Dynamic,
 // ) -> Result(Time, List(dynamic.DecodeError)) {
