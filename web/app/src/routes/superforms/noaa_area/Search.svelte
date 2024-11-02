@@ -3,15 +3,18 @@
 	import { applyAction, deserialize } from '$app/forms';
 	import type { ActionResult } from '@sveltejs/kit';
 
+	const matrixWhaleUrlBasePath = import.meta.env.VITE_MATRIX_WHALE_URL;
 	let searchWord: string;
 
 	const handleSubmit = async (event: SubmitEvent) => {
+		const targetUrl = new URL('/api/v1/noaa_data/search_area_description', matrixWhaleUrlBasePath);
+
 		event.preventDefault();
 		const form = event.target as HTMLFormElement;
 		const data = new FormData(form);
 
 		try {
-			const response = await fetch('/superforms/noaa_area?/search_alerts_area', {
+			const response = await fetch(targetUrl, {
 				method: 'POST',
 				body: data
 			});
