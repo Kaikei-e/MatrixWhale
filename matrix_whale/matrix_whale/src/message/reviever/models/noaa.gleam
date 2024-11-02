@@ -204,14 +204,13 @@ pub fn prepare_feature_for_decoding(
 ) -> Result(String, List(dynamic.DecodeError)) {
   case dynamic.string(feature) {
     Ok(json_string) -> Ok(json_string)
-    Error(errs) as error -> {
+    Error(_) as error -> {
       // Convert the list of dynamic.DecodeError to a string for logging
-      let err_string =
-        errs
-        |> list.map(fn(err) { "Error: " <> string.inspect(err) <> ". " })
-        |> string.join("")
+      // let err_string =
+      //   errs
+      //   |> list.map(fn(err) { "Error: " <> string.inspect(err) <> ". " })
+      //   |> string.join("")
 
-      io.debug("Error converting feature to string: " <> err_string)
       error
     }
   }

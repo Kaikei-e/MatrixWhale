@@ -7,7 +7,6 @@ import gleam/erlang/process
 import gleam/function
 import gleam/http/request
 import gleam/http/response
-import gleam/io
 import gleam/json
 import gleam/list
 import gleam/otp/actor
@@ -133,7 +132,6 @@ pub fn streamer(ctx: Context) {
             let search_word =
               bit_array.to_string(req.body)
               |> result.then(fn(body_string) {
-                io.debug(body_string)
                 json.decode(
                   body_string,
                   dynamic.decode1(
@@ -144,12 +142,6 @@ pub fn streamer(ctx: Context) {
                 |> result.map_error(fn(_) { Nil })
               })
               |> result.unwrap(SearchAreaDescriptionWords(""))
-
-            io.debug(search_word)
-
-            // let search_area_description_words = search_word
-
-            // io.debug(search_area_description_words)
 
             wisp.log_info(
               "Searching for area description: " <> search_word.area_desc,
@@ -179,8 +171,6 @@ pub fn streamer(ctx: Context) {
                   })
                   |> json.array(fn(x) { x })
                   |> json.to_string
-
-                io.debug(json_body)
 
                 response.new(200)
                 |> response.set_header("Content-Type", "application/json")
