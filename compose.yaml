@@ -78,7 +78,7 @@ services:
     volumes:
       - ./noaa_adapter/app:/app
     depends_on:
-      - db
+      - matrix_whale
     networks:
       matrix_network:
         ipv4_address: 10.254.100.40
