@@ -69,10 +69,16 @@ pub fn search_area_description(
 
   case rows {
     Ok(rows) -> {
+      wisp.log_info(
+        "Found severity: " <> string.inspect(list.length(rows.rows)),
+      )
       list.map(rows.rows, fn(row) { NOAASeverity(row.area_desc, row.severity) })
       |> Ok
     }
-    Error(error) -> Error("Failed to fetch severity: " <> string.inspect(error))
+    Error(error) -> {
+      wisp.log_error("Failed to fetch severity: " <> string.inspect(error))
+      Error("Failed to fetch severity: " <> string.inspect(error))
+    }
   }
 }
 // fn decode_timestamp(
