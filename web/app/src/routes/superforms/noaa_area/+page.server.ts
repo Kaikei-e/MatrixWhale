@@ -28,6 +28,10 @@ export const actions = {
 		const url = new URL('/api/v1/noaa_data/search_area_description', matrixWhaleUrl);
 		const response = await fetch(url.toString(), {
 			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				Accept: 'application/json'
+			},
 			body: body
 		});
 
