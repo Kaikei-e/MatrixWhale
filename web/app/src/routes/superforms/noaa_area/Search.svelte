@@ -1,46 +1,33 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
-	import { applyAction, deserialize } from '$app/forms';
-	import type { ActionResult } from '@sveltejs/kit';
-
+	import type { PageData, ActionData } from './$types';
+	import type { NoaaSeverityData } from '$lib/types/noaa';
+	import { enhance, applyAction } from '$app/forms';
+	import { goto } from '$app/navigation';
 	const matrixWhaleUrlBasePath = import.meta.env.VITE_MATRIX_WHALE_URL;
-	let searchWord: string;
+	let searchWord: string = $state('');
+	let noaaSeverityData: NoaaSeverityData = $state({
+		areaDescription: ''
+	});
+	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	const handleSubmit = async (event: SubmitEvent) => {
-		event.preventDefault();
-		const form = event.target as HTMLFormElement;
-		const formData = new FormData(form);
-
-		// Convert FormData to JSON
-		const jsonData = {
-			areaDescription: formData.get('areaDescription')
-		};
-
-		const targetUrl = new URL('/api/v1/noaa_data/search_area_description', matrixWhaleUrlBasePath);
-
-		try {
-			const response = await fetch(targetUrl, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					Accept: 'application/json'
-				},
-				body: JSON.stringify(jsonData)
-			});
-
-			const result: ActionResult = deserialize(await response.text());
-			if (result.type === 'success') {
-				await invalidateAll();
-			}
-			applyAction(result);
-		} catch (error) {
-			console.error('Submit error:', error);
-		}
-	};
+	let loading = $state(false);
 </script>
 
 <div class="w-full">
-	<form method="POST" on:submit={handleSubmit} class="flex w-full flex-col gap-4">
+	<!-- <form method="POST" onsubmit={handleSubmit} class="flex w-full flex-col gap-4"> -->
+	<form
+		method="POST"
+		class="flex w-full flex-col gap-4"
+		use:enhance={({ formElement, formData, action, cancel }) => {
+			return async ({ result }) => {
+				if (result.type === 'redirect') {
+					goto(result.location);
+				} else {
+					await applyAction(result);
+				}
+			};
+		}}
+	>
 		<div class="flex flex-col gap-2">
 			<label for="areaDescription" class="text-sm font-medium text-gray-700">
 				Search Alerts Area By Words
@@ -50,7 +37,7 @@
 				id="areaDescription"
 				name="areaDescription"
 				bind:value={searchWord}
-				class="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
+				class="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500"
 			/>
 		</div>
 		<button
@@ -60,4 +47,23 @@
 			Search
 		</button>
 	</form>
+	<div class="flex flex-col justify-center">
+		{#if loading}
+			<div class="flex justify-center">
+				<div
+					class="h-10 w-10 animate-spin rounded-full border-4 border-white border-b-transparent border-t-transparent"
+				></div>
+			</div>
+		{:else if form?.noaaSeverityData.areaDescription !== ''}
+			<div class="flex justify-center">
+				<div class="h-5 w-5">
+					<p>{data?.noaaSeverityData.areaDescription}</p>
+				</div>
+			</div>
+		{:else}
+			<div class="flex justify-center">
+				<div class="flex h-5/6 w-5/6 flex-row items-center justify-center">Waiting for input</div>
+			</div>
+		{/if}
+	</div>
 </div>

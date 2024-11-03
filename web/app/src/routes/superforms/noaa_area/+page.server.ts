@@ -1,47 +1,63 @@
 import { superValidate } from 'sveltekit-superforms';
 import { valibot } from 'sveltekit-superforms/adapters';
-import { NoaaSeverityData } from '$lib/schema/noaa_data';
+import { NoaaSeverityData, NoaaSeverityDataList } from '$lib/schema/noaa_data';
 import { fail } from '@sveltejs/kit';
-import type { RequestEvent } from '@sveltejs/kit';
-import type { Actions } from './$types';
-import type { PageServerLoad } from './$types';
+import type { Actions, PageServerLoad } from './$types';
 
 const matrixWhaleUrl = import.meta.env.VITE_MATRIX_WHALE_URL;
 
 export const load: PageServerLoad = async () => {
-	const noaaSeverityData = await superValidate(valibot(NoaaSeverityData));
-	return { noaaSeverityData };
+    const form = await superValidate(valibot(NoaaSeverityDataList));
+    return {
+        form,
+        noaaSeverityData: { areaDescription: '' }
+    };
 };
 
 export const actions = {
-	search_alerts_area: async ({ request }: RequestEvent) => {
-		const data = await request.formData();
-		const searchWord = data.get('areaDescription');
-		if (!searchWord) {
-			return fail(400, { form: null });
+	search_alerts_area: async ({ request }) => {
+		const form = await superValidate(request, valibot(NoaaSeverityData));
+
+		if (!form.valid) {
+			return fail(400, { form });
 		}
 
-		console.log(searchWord);
+		try {
+			const formData = new URLSearchParams();
+			formData.append('areaDescription', form.data.areaDescription);
 
-		const body = JSON.stringify({ areaDescription: searchWord });
+			const response = await fetch(
+				new URL('/api/v1/noaa_data/search_area_description', matrixWhaleUrl),
+				{
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/x-www-form-urlencoded',
+						Accept: 'application/json',
+						'x-sveltekit-action': 'true'
 
-		const url = new URL('/api/v1/noaa_data/search_area_description', matrixWhaleUrl);
-		const response = await fetch(url.toString(), {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Accept: 'application/json'
-			},
-			body: body
-		});
+					},
+					body: formData
+				}
+			);
 
-		const json = await response.json();
-		if (!response.ok) {
-			return fail(500, { form: null });
+			if (!response.ok) {
+				return fail(response.status, {
+					form,
+					noaaSeverityData: { areaDescription: '' }
+				});
+			}
+
+			const result = await response.json();
+			return {
+				form,
+				noaaSeverityData: result
+			};
+		} catch (error) {
+			console.error(error);
+			return fail(500, {
+				form,
+				noaaSeverityData: { areaDescription: '' }
+			});
 		}
-
-		console.log(json);
-
-		return json;
 	}
 } satisfies Actions;
