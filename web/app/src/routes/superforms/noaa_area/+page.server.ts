@@ -10,12 +10,12 @@ export const load: PageServerLoad = async () => {
 	const form = await superValidate(valibot(NoaaSeverityDataList));
 	return {
 		form,
-		noaaSeverityData: { areaDescription: '' }
+		noaaSeverityData: { searchArea: '' }
 	};
 };
 
-export const actions = {
-	search_alerts_area: async ({ request }) => {
+export const actions: Actions = {
+	default: async ({ request }) => {
 		const form = await superValidate(request, valibot(NoaaSeverityData));
 
 		if (!form.valid) {
@@ -57,4 +57,4 @@ export const actions = {
 			});
 		}
 	}
-} satisfies Actions;
+};

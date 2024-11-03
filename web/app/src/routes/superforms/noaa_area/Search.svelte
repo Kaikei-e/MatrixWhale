@@ -1,36 +1,16 @@
 <script lang="ts">
 	import type { PageData, ActionData } from './$types';
-	import type { NoaaSeverityData } from '$lib/types/noaa';
-	import { enhance, applyAction } from '$app/forms';
-	import { goto } from '$app/navigation';
-	const matrixWhaleUrlBasePath = import.meta.env.VITE_MATRIX_WHALE_URL;
+
 	let searchWord: string = $state('');
-	let noaaSeverityData: NoaaSeverityData = $state({
-		areaDescription: ''
-	});
+
+	const matrixWhaleUrlBasePath = import.meta.env.VITE_MATRIX_WHALE_URL;
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let loading = $state(false);
 </script>
 
 <div class="w-full">
-	<!-- <form method="POST" onsubmit={handleSubmit} class="flex w-full flex-col gap-4"> -->
-	<form
-		method="POST"
-		action="/superforms/noaa_area?/search_alerts_area"
-		class="flex w-full flex-col gap-4"
-		use:enhance={({ formElement, formData, action, cancel }) => {
-			loading = true;
-			return async ({ result }) => {
-				if (result.type === 'redirect') {
-					await goto(result.location);
-				} else {
-					await applyAction(result);
-				}
-				loading = false;
-			};
-		}}
-	>
+	<form method="POST" class="flex w-full flex-col gap-4">
 		<div class="flex flex-col gap-2">
 			<label for="areaDescription" class="text-sm font-medium text-gray-700">
 				Search Alerts Area By Words
@@ -57,14 +37,14 @@
 					class="h-10 w-10 animate-spin rounded-full border-4 border-white border-b-transparent border-t-transparent"
 				></div>
 			</div>
-		{:else if form?.noaaSeverityData.areaDescription !== ''}
+		{:else if form?.noaaSeverityData?.searchArea !== undefined}
 			<div class="flex justify-center">
 				<div class="h-5 w-5">
 					<p>{data?.noaaSeverityData.areaDescription}</p>
 				</div>
 			</div>
 		{:else}
-			<div class="flex justify-center">
+			<div class="mt-4 flex justify-center">
 				<div class="flex h-5/6 w-5/6 flex-row items-center justify-center">Waiting for input</div>
 			</div>
 		{/if}
