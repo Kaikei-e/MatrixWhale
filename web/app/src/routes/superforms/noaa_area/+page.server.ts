@@ -7,11 +7,11 @@ import type { Actions, PageServerLoad } from './$types';
 const matrixWhaleUrl = import.meta.env.VITE_MATRIX_WHALE_URL;
 
 export const load: PageServerLoad = async () => {
-    const form = await superValidate(valibot(NoaaSeverityDataList));
-    return {
-        form,
-        noaaSeverityData: { areaDescription: '' }
-    };
+	const form = await superValidate(valibot(NoaaSeverityDataList));
+	return {
+		form,
+		noaaSeverityData: { areaDescription: '' }
+	};
 };
 
 export const actions = {
@@ -23,20 +23,17 @@ export const actions = {
 		}
 
 		try {
-			const formData = new URLSearchParams();
-			formData.append('areaDescription', form.data.areaDescription);
-
 			const response = await fetch(
 				new URL('/api/v1/noaa_data/search_area_description', matrixWhaleUrl),
 				{
 					method: 'POST',
 					headers: {
-						'Content-Type': 'application/x-www-form-urlencoded',
-						Accept: 'application/json',
-						'x-sveltekit-action': 'true'
-
+						'Content-Type': 'application/json',
+						Accept: 'application/json'
 					},
-					body: formData
+					body: JSON.stringify({
+						areaDescription: form.data.areaDescription
+					})
 				}
 			);
 

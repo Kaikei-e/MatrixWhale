@@ -17,14 +17,17 @@
 	<!-- <form method="POST" onsubmit={handleSubmit} class="flex w-full flex-col gap-4"> -->
 	<form
 		method="POST"
+		action="/superforms/noaa_area?/search_alerts_area"
 		class="flex w-full flex-col gap-4"
 		use:enhance={({ formElement, formData, action, cancel }) => {
+			loading = true;
 			return async ({ result }) => {
 				if (result.type === 'redirect') {
-					goto(result.location);
+					await goto(result.location);
 				} else {
 					await applyAction(result);
 				}
+				loading = false;
 			};
 		}}
 	>
