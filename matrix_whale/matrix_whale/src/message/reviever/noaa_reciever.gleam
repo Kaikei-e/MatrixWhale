@@ -1,6 +1,7 @@
 import adapter/context.{type Context}
 import controller/noaa_controller.{noaa_controller}
 import gleam/bit_array
+import gleam/io
 import gleam/list
 import gleam/result
 import gleam/string
@@ -20,6 +21,7 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
   let body_string =
     bit_array.to_string(req_body)
     |> result.map_error(fn(err) {
+      io.debug(err)
       string_builder.from_string("Invalid data format: " <> string.inspect(err))
     })
     |> result.unwrap("Invalid data format")
@@ -31,6 +33,7 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
     |> string.replace("\\\"", "\"")
     |> string.replace("\n", " ")
     |> string.replace("\\r", " ")
+    |> string.replace("\t", " ")
     |> string.trim
 
   let features_result = noaa.extract_and_decode_features(unescaped_body_string)
