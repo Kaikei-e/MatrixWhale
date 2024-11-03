@@ -39,9 +39,10 @@ WORKDIR /app
 
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY --from=build ./app/build /app/build
+COPY ./app/.env ./app/.env
 ENV NODE_ENV=production
 
 EXPOSE 4173
 ENV PORT=4173
 
-CMD ["node", "build"]
+CMD ["node", "--env-file=./app/.env", "build"]
