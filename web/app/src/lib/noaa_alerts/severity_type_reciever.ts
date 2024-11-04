@@ -3,7 +3,7 @@ import { writable } from 'svelte/store';
 
 export const severityData = writable<string | null>(null);
 
-const apiUrl = import.meta.env.VITE_MATRIX_WHALE_URL;
+const apiUrl = import.meta.env.VITE_MATRIX_WHALE_STREAM_URL;
 
 export function initSeverityTypeReceiver(): () => void {
 	if (browser) {

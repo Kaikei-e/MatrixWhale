@@ -1,2 +1,3 @@
-VITE_MATRIX_WHALE_URL=http://localhost
+VITE_MATRIX_WHALE_STREAM_URL=http://localhost/api
+VITE_MATRIX_WHALE_FETCH_URL=http://matrix_whale:8080/
 ORIGIN=http://localhost

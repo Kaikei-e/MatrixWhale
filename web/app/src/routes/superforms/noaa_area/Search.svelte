@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { enhance } from '$app/forms';
 	import type { PageData, ActionData } from './$types';
 
 	let searchWord: string = $state('');
@@ -10,7 +11,7 @@
 </script>
 
 <div class="w-full">
-	<form method="POST" class="flex w-full flex-col gap-4">
+	<form method="POST" action="/superforms/noaa_area?/searchArea" use:enhance class="flex w-full flex-col gap-4">
 		<div class="flex flex-col gap-2">
 			<label for="areaDescription" class="text-sm font-medium text-gray-700">
 				Search Alerts Area By Words
@@ -40,7 +41,7 @@
 		{:else if form?.noaaSeverityData?.searchArea !== undefined}
 			<div class="flex justify-center">
 				<div class="h-5 w-5">
-					<p>{data?.noaaSeverityData.areaDescription}</p>
+					<p>{data?.noaaSeverityData.searchArea}</p>
 				</div>
 			</div>
 		{:else}

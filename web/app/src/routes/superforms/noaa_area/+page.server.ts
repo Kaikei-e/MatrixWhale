@@ -4,7 +4,7 @@ import { NoaaSeverityData, NoaaSeverityDataList } from '$lib/schema/noaa_data';
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
-const matrixWhaleUrl = import.meta.env.VITE_MATRIX_WHALE_URL;
+const matrixWhaleUrl = import.meta.env.VITE_MATRIX_WHALE_FETCH_URL;
 
 export const load: PageServerLoad = async () => {
 	const form = await superValidate(valibot(NoaaSeverityDataList));
@@ -15,7 +15,7 @@ export const load: PageServerLoad = async () => {
 };
 
 export const actions: Actions = {
-	default: async ({ request }) => {
+	searchArea: async ({ request }) => {
 		const form = await superValidate(request, valibot(NoaaSeverityData));
 
 		if (!form.valid) {
