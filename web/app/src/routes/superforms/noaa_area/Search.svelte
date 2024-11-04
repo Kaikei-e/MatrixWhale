@@ -4,7 +4,6 @@
 
 	let searchWord: string = $state('');
 
-	const matrixWhaleUrlBasePath = import.meta.env.VITE_MATRIX_WHALE_URL;
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let loading = $state(false);
