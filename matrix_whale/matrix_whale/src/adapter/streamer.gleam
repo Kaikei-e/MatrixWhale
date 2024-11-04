@@ -5,8 +5,10 @@ import gleam/bytes_builder
 import gleam/dynamic
 import gleam/erlang/process
 import gleam/function
+import gleam/http.{Post}
 import gleam/http/request
 import gleam/http/response
+import gleam/io
 import gleam/json
 import gleam/list
 import gleam/otp/actor
@@ -127,78 +129,93 @@ pub fn streamer(ctx: Context) {
         ["api", "v1", "noaa_data", "search_area_description"] -> {
           wisp.log_info("Received request for search_area_description")
 
-          mist.read_body(req, 1024 * 1024 * 10)
-          |> result.map(fn(req) {
-            let search_word =
-              bit_array.to_string(req.body)
-              |> result.then(fn(body_string) {
-                json.decode(
-                  body_string,
-                  dynamic.decode1(
-                    SearchAreaDescriptionWords,
-                    dynamic.field("areaDescription", dynamic.string),
-                  ),
-                )
-                |> result.map_error(fn(_) { Nil })
-              })
-              |> result.unwrap(SearchAreaDescriptionWords(""))
-
-            wisp.log_info(
-              "Searching for area description: " <> search_word.area_desc,
-            )
-
-            let result =
-              search_alerts_by_area_description(search_word.area_desc, ctx)
-              |> result.map_error(fn(error) {
-                wisp.log_error(
-                  "Error searching for area description: " <> error,
-                )
-                response.new(401)
-                |> response.set_body(
-                  mist.Bytes(bytes_builder.from_string("Not Found")),
-                )
-              })
-
-            case result {
-              Ok(severities) -> {
-                let json_body =
-                  severities
-                  |> list.map(fn(severity) {
-                    json.object([
-                      #("area_desc", json.string(severity.area_desc)),
-                      #("severity", json.string(severity.severity)),
-                    ])
+          case req.method {
+            Post -> {
+              mist.read_body(req, 1024 * 1024 * 10)
+              |> result.map(fn(req) {
+                let search_word =
+                  bit_array.to_string(req.body)
+                  |> result.then(fn(body_string) {
+                    json.decode(
+                      body_string,
+                      dynamic.decode1(
+                        SearchAreaDescriptionWords,
+                        dynamic.field("areaDescription", dynamic.string),
+                      ),
+                    )
+                    |> result.map_error(fn(_) { Nil })
                   })
-                  |> json.array(fn(x) { x })
-                  |> json.to_string
+                  |> result.unwrap(SearchAreaDescriptionWords(""))
 
-                response.new(200)
-                |> response.set_header("Content-Type", "application/json")
-                |> response.set_body(
-                  mist.Bytes(bytes_builder.from_string(json_body)),
+                wisp.log_info(
+                  "Searching for area description: " <> search_word.area_desc,
                 )
-              }
-              Error(error) -> {
-                wisp.log_error(
-                  "Error searching for area description: "
-                  <> string.inspect(error),
-                )
+
+                let result =
+                  search_alerts_by_area_description(search_word.area_desc, ctx)
+                  |> result.map_error(fn(error) {
+                    wisp.log_error(
+                      "Error searching for area description: " <> error,
+                    )
+                    response.new(401)
+                    |> response.set_body(
+                      mist.Bytes(bytes_builder.from_string("Not Found")),
+                    )
+                  })
+
+                case result {
+                  Ok(severities) -> {
+                    let json_body =
+                      severities
+                      |> list.map(fn(severity) {
+                        json.object([
+                          #("area_desc", json.string(severity.area_desc)),
+                          #("severity", json.string(severity.severity)),
+                        ])
+                      })
+                      |> json.preprocessed_array
+                      |> json.to_string
+
+                    io.debug(json_body)
+
+                    response.new(200)
+                    |> response.set_header("Content-Type", "application/json")
+                    |> response.set_body(
+                      mist.Bytes(bytes_builder.from_string(json_body)),
+                    )
+                  }
+                  Error(error) -> {
+                    wisp.log_error(
+                      "Error searching for area description: "
+                      <> string.inspect(error),
+                    )
+                    response.new(400)
+                    |> response.set_body(
+                      mist.Bytes(bytes_builder.from_string("Bad Request")),
+                    )
+                  }
+                }
+              })
+              |> result.lazy_unwrap(fn() {
                 response.new(400)
                 |> response.set_body(
                   mist.Bytes(bytes_builder.from_string("Bad Request")),
                 )
-              }
+              })
             }
-          })
-          |> result.lazy_unwrap(fn() {
-            response.new(400)
-            |> response.set_body(
-              mist.Bytes(bytes_builder.from_string("Bad Request")),
-            )
-          })
+            _ -> {
+              wisp.log_info("Received request for unknown path")
+              response.new(405)
+              |> response.set_body(
+                mist.Bytes(bytes_builder.from_string("Not Allowed")),
+              )
+            }
+          }
         }
         _ -> {
-          wisp.log_info("Received request for unknown path")
+          wisp.log_alert(
+            "Received request for unknown path: " <> string.inspect(req.path),
+          )
           response.new(404)
           |> response.set_body(
             mist.Bytes(bytes_builder.from_string("Not Found")),
