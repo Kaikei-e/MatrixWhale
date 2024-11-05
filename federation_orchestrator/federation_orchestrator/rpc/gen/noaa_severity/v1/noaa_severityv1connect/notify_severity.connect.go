@@ -5,10 +5,10 @@
 package noaa_severityv1connect
 
 import (
-	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
 	v1 "federation_orchestrator/rpc/gen/noaa_severity/v1"
+	connect_go "github.com/bufbuild/connect-go"
 	http "net/http"
 	strings "strings"
 )
@@ -18,7 +18,7 @@ import (
 // generated with a version of connect newer than the one compiled into your binary. You can fix the
 // problem by either regenerating this code with an older version of connect or updating the connect
 // version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
+const _ = connect_go.IsAtLeastVersion0_1_0
 
 const (
 	// NotifySeverityServiceName is the fully-qualified name of the NotifySeverityService service.
@@ -38,15 +38,9 @@ const (
 	NotifySeverityServiceNotifySeverityProcedure = "/noaa_severity.v1.NotifySeverityService/NotifySeverity"
 )
 
-// These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
-var (
-	notifySeverityServiceServiceDescriptor              = v1.File_noaa_severity_v1_notify_severity_proto.Services().ByName("NotifySeverityService")
-	notifySeverityServiceNotifySeverityMethodDescriptor = notifySeverityServiceServiceDescriptor.Methods().ByName("NotifySeverity")
-)
-
 // NotifySeverityServiceClient is a client for the noaa_severity.v1.NotifySeverityService service.
 type NotifySeverityServiceClient interface {
-	NotifySeverity(context.Context, *connect.Request[v1.NotifySeverityRequest]) (*connect.Response[v1.NotifySeverityResponse], error)
+	NotifySeverity(context.Context, *connect_go.Request[v1.NotifySeverityRequest]) (*connect_go.Response[v1.NotifySeverityResponse], error)
 }
 
 // NewNotifySeverityServiceClient constructs a client for the noaa_severity.v1.NotifySeverityService
@@ -56,32 +50,31 @@ type NotifySeverityServiceClient interface {
 //
 // The URL supplied here should be the base URL for the Connect or gRPC server (for example,
 // http://api.acme.com or https://acme.com/grpc).
-func NewNotifySeverityServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) NotifySeverityServiceClient {
+func NewNotifySeverityServiceClient(httpClient connect_go.HTTPClient, baseURL string, opts ...connect_go.ClientOption) NotifySeverityServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
 	return &notifySeverityServiceClient{
-		notifySeverity: connect.NewClient[v1.NotifySeverityRequest, v1.NotifySeverityResponse](
+		notifySeverity: connect_go.NewClient[v1.NotifySeverityRequest, v1.NotifySeverityResponse](
 			httpClient,
 			baseURL+NotifySeverityServiceNotifySeverityProcedure,
-			connect.WithSchema(notifySeverityServiceNotifySeverityMethodDescriptor),
-			connect.WithClientOptions(opts...),
+			opts...,
 		),
 	}
 }
 
 // notifySeverityServiceClient implements NotifySeverityServiceClient.
 type notifySeverityServiceClient struct {
-	notifySeverity *connect.Client[v1.NotifySeverityRequest, v1.NotifySeverityResponse]
+	notifySeverity *connect_go.Client[v1.NotifySeverityRequest, v1.NotifySeverityResponse]
 }
 
 // NotifySeverity calls noaa_severity.v1.NotifySeverityService.NotifySeverity.
-func (c *notifySeverityServiceClient) NotifySeverity(ctx context.Context, req *connect.Request[v1.NotifySeverityRequest]) (*connect.Response[v1.NotifySeverityResponse], error) {
+func (c *notifySeverityServiceClient) NotifySeverity(ctx context.Context, req *connect_go.Request[v1.NotifySeverityRequest]) (*connect_go.Response[v1.NotifySeverityResponse], error) {
 	return c.notifySeverity.CallUnary(ctx, req)
 }
 
 // NotifySeverityServiceHandler is an implementation of the noaa_severity.v1.NotifySeverityService
 // service.
 type NotifySeverityServiceHandler interface {
-	NotifySeverity(context.Context, *connect.Request[v1.NotifySeverityRequest]) (*connect.Response[v1.NotifySeverityResponse], error)
+	NotifySeverity(context.Context, *connect_go.Request[v1.NotifySeverityRequest]) (*connect_go.Response[v1.NotifySeverityResponse], error)
 }
 
 // NewNotifySeverityServiceHandler builds an HTTP handler from the service implementation. It
@@ -89,12 +82,11 @@ type NotifySeverityServiceHandler interface {
 //
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
-func NewNotifySeverityServiceHandler(svc NotifySeverityServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	notifySeverityServiceNotifySeverityHandler := connect.NewUnaryHandler(
+func NewNotifySeverityServiceHandler(svc NotifySeverityServiceHandler, opts ...connect_go.HandlerOption) (string, http.Handler) {
+	notifySeverityServiceNotifySeverityHandler := connect_go.NewUnaryHandler(
 		NotifySeverityServiceNotifySeverityProcedure,
 		svc.NotifySeverity,
-		connect.WithSchema(notifySeverityServiceNotifySeverityMethodDescriptor),
-		connect.WithHandlerOptions(opts...),
+		opts...,
 	)
 	return "/noaa_severity.v1.NotifySeverityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -109,6 +101,6 @@ func NewNotifySeverityServiceHandler(svc NotifySeverityServiceHandler, opts ...c
 // UnimplementedNotifySeverityServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedNotifySeverityServiceHandler struct{}
 
-func (UnimplementedNotifySeverityServiceHandler) NotifySeverity(context.Context, *connect.Request[v1.NotifySeverityRequest]) (*connect.Response[v1.NotifySeverityResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("noaa_severity.v1.NotifySeverityService.NotifySeverity is not implemented"))
+func (UnimplementedNotifySeverityServiceHandler) NotifySeverity(context.Context, *connect_go.Request[v1.NotifySeverityRequest]) (*connect_go.Response[v1.NotifySeverityResponse], error) {
+	return nil, connect_go.NewError(connect_go.CodeUnimplemented, errors.New("noaa_severity.v1.NotifySeverityService.NotifySeverity is not implemented"))
 }
