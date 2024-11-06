@@ -1,28 +1,22 @@
-import { superValidate } from 'sveltekit-superforms';
-import { valibot } from 'sveltekit-superforms/adapters';
-import { NoaaSeverityData, NoaaSeverityDataList } from '$lib/schema/noaa_data';
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
+import type { NoaaSeverityData } from '$lib/types/noaa';
 
 const matrixWhaleUrl = import.meta.env.VITE_MATRIX_WHALE_FETCH_URL;
 
-export const load: PageServerLoad = async () => {
-	const form = await superValidate(valibot(NoaaSeverityDataList));
+export const load = (async () => {
+	const noaaSeverityData: NoaaSeverityData[] = [] as NoaaSeverityData[];
 	return {
-		form,
-		noaaSeverityData: { searchArea: '' }
+		noaaSeverityData
 	};
-};
+}) satisfies PageServerLoad;
 
-export const actions: Actions = {
-	searchArea: async ({ request }) => {
-		const form = await superValidate(request, valibot(NoaaSeverityData));
-
-		if (!form.valid) {
-			return fail(400, { form });
-		}
-
+export const actions = {
+	search: async ({ request }) => {
 		try {
+			const data = await request.formData();
+			const searchWord = data.get('searchWord')?.toString() || '';
+
 			const response = await fetch(
 				new URL('/api/v1/noaa_data/search_area_description', matrixWhaleUrl),
 				{
@@ -32,29 +26,25 @@ export const actions: Actions = {
 						Accept: 'application/json'
 					},
 					body: JSON.stringify({
-						areaDescription: form.data.areaDescription
+						areaDescription: searchWord
 					})
 				}
 			);
 
 			if (!response.ok) {
-				return fail(response.status, {
-					form,
-					noaaSeverityData: { areaDescription: '' }
-				});
+				throw new Error(`API responded with status ${response.status}`);
 			}
 
-			const result = await response.json();
+			const noaaSeverityList: NoaaSeverityData[] = await response.json();
+
 			return {
-				form,
-				noaaSeverityData: result
+				noaaSeverityData: noaaSeverityList
 			};
 		} catch (error) {
-			console.error(error);
+			console.error('Server error:', error);
 			return fail(500, {
-				form,
-				noaaSeverityData: { areaDescription: '' }
+				noaaSeverityData: []
 			});
 		}
 	}
-};
+} satisfies Actions;

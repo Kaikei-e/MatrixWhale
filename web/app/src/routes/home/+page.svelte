@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { ActionData } from '../superforms/noaa_area/$types';
 	import { initSeverityTypeReceiver, severityData } from '$lib/noaa_alerts/severity_type_reciever';
 	import Search from '../superforms/noaa_area/Search.svelte';
 
@@ -14,8 +13,6 @@
 			}
 		};
 	});
-	let { form, data }: { form: FormData; data: ActionData } = $props();
-	let searchWord = form?.get('areaDescription') as string;
 </script>
 
 <div class="h-screen w-screen bg-gradient-to-r from-indigo-300 to-blue-300 p-8">
@@ -31,7 +28,7 @@
 			{/if}
 		</div>
 		<div class="col-span-1 rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">
-			<Search {data} />
+			<Search />
 		</div>
 		<div class="rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">04</div>
 		<div class="rounded-lg border border-gray-200 bg-sky-100 p-4 shadow">05</div>
