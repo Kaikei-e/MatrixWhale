@@ -6,7 +6,7 @@ import gleam/option.{None, Some}
 import gleam/pgo
 import gleam/result
 import gleam/string
-import message/reviever/models/noaa.{type FeatureElement}
+import message/reciever/models/noaa.{type FeatureElement}
 import string_tools/list_element_to_int.{list_element_to_int}
 import wisp
 
@@ -21,11 +21,17 @@ pub fn write_noaa_alerts(
   let insert_alert = fn(feature: FeatureElement) -> Result(Int, String) {
     let area_desc = feature.properties.area_desc
     let severity = feature.properties.severity
+    let sent_datetime = feature.properties.sent
 
-    let datetime = case feature.properties.sent {
+    let datetime = case sent_datetime {
       Some(sent) -> birl.parse(sent)
       None -> birl.parse(feature.properties.effective)
     }
+
+    // let datetime = case sent_datetime {
+    //   Some(sent) -> birl.parse(sent)
+    //   None -> birl.parse(feature.properties.effective)
+    // }
 
     let datetime_parsed = case datetime {
       Ok(datetime) -> datetime
