@@ -1,7 +1,6 @@
 import decode.{type Decoder}
 import gleam/dict.{type Dict}
-import gleam/dynamic.{type Dynamic, field, list, string}
-import gleam/json
+import gleam/dynamic.{type Dynamic, list, string}
 import gleam/list
 import gleam/option.{type Option}
 import gleam/result
@@ -12,7 +11,7 @@ pub type Alerts {
   Alerts(
     context: String,
     type_: String,
-    features: List(String),
+    features: List(Dynamic),
     title: String,
     updated: String,
     pagination: String,
@@ -29,7 +28,7 @@ pub type ContextClass {
 
 pub type ContextElement {
   ContextClassElement(context_class: ContextClass)
-  String(string: String)
+  URL(url: String)
 }
 
 pub type FeatureElement {
@@ -175,25 +174,31 @@ pub type CustomTypesList {
   ResponseType(Response)
 }
 
-pub fn extract_features(
-  json_string: String,
-) -> List(Result(FeatureElement, List(String))) {
+pub fn extract_and_decode_features(data: Dynamic) -> List(FeatureElement) {
   let decoded_result =
-    json.decode(
-      from: json_string,
-      using: dynamic.field("features", dynamic.list(dynamic.dynamic)),
-    )
+    dynamic.field("features", dynamic.list(dynamic.dynamic))(data)
+
+  wisp.log_info("Extracted features: ")
 
   case decoded_result {
     Ok(features) -> {
+      wisp.log_info(
+        "Decoded features count: " <> string.inspect(list.length(features)),
+      )
       features
-      |> list.map(fn(feature) {
-        decode_feature(feature)
-        |> result.map_error(fn(errors) { errors |> list.map(string.inspect) })
+      |> list.filter_map(fn(feature) {
+        case decode_feature(feature) {
+          Ok(feature) -> Ok(feature)
+          Error(error) -> {
+            wisp.log_error("Error decoding feature: " <> string.inspect(error))
+            Error(error)
+          }
+        }
       })
     }
     Error(err) -> {
-      [Error([string.inspect(err)])]
+      wisp.log_error("Error decoding features JSON: " <> string.inspect(err))
+      []
     }
   }
 }
@@ -204,73 +209,12 @@ pub fn prepare_feature_for_decoding(
   case dynamic.string(feature) {
     Ok(json_string) -> Ok(json_string)
     Error(_) as error -> {
-      // Convert the list of dynamic.DecodeError to a string for logging
-      // let err_string =
-      //   errs
-      //   |> list.map(fn(err) { "Error: " <> string.inspect(err) <> ". " })
-      //   |> string.join("")
-
       error
     }
   }
 }
 
-pub fn extract_and_decode_features(
-  json_string: String,
-) -> List(Result(FeatureElement, List(String))) {
-  case
-    json.decode(
-      from: json_string,
-      using: dynamic.field("features", dynamic.list(dynamic.dynamic)),
-    )
-  {
-    Ok(features) -> {
-      let feature_count = list.length(features)
-      wisp.log_info("Starting to process " <> string.inspect(feature_count) <> " features")
-
-      features
-      |> list.index_map(fn(feature, index) {
-        case decode_feature(feature) {
-          Ok(decoded) -> {
-            wisp.log_info(
-              "Successfully decoded feature " <> string.inspect(index + 1) <> "/" <> string.inspect(feature_count),
-            )
-            Ok(decoded)
-          }
-          Error(errors) -> {
-            wisp.log_error(
-              "Error decoding feature " <> string.inspect(index + 1) <> "/" <> string.inspect(feature_count) <> ": " <> string.inspect(errors),
-            )
-            Error(errors |> list.map(string.inspect))
-          }
-        }
-      })
-    }
-    Error(err) -> {
-      wisp.log_error("Failed to parse JSON document: " <> string.inspect(err))
-      [Error([string.inspect(err)])]
-    }
-  }
-}
-
-pub fn decode_alerts(data: String) -> Result(Alerts, json.DecodeError) {
-  let decoder =
-    dynamic.decode6(
-      Alerts,
-      field("@context", of: string),
-      field("type", of: string),
-      field("features", of: list(string)),
-      field("title", of: string),
-      field("updated", of: string),
-      field("pagination", of: string),
-    )
-
-  json.decode(from: data, using: decoder)
-}
-
-pub fn decode_feature(
-  data: Dynamic,
-) -> Result(FeatureElement, List(dynamic.DecodeError)) {
+pub fn decode_feature(data: Dynamic) -> Result(FeatureElement, List(String)) {
   let decoder =
     decode.into({
       use id <- decode.parameter
@@ -284,7 +228,13 @@ pub fn decode_feature(
     |> decode.field("geometry", decode_geometry())
     |> decode.field("properties", decode_properties(data))
 
-  decoder |> decode.from(data)
+  decoder
+  |> decode.from(data)
+  |> result.map_error(fn(error) {
+    wisp.log_error("Error decoding feature: " <> string.inspect(error))
+    list.new()
+    |> list.append(list.map([error], string.inspect))
+  })
 }
 
 fn decode_properties(data: Dynamic) {
