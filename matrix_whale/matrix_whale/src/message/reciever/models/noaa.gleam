@@ -1,7 +1,6 @@
 import decode.{type Decoder}
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic, field, list, string}
-import gleam/io
 import gleam/json
 import gleam/list
 import gleam/option.{type Option}
@@ -225,19 +224,25 @@ pub fn extract_and_decode_features(
       using: dynamic.field("features", dynamic.list(dynamic.dynamic)),
     )
   {
-    Ok(features) -> features
+    Ok(features) -> {
+      // Process each feature independently, logging errors but continuing
+      features
+      |> list.map(fn(feature) {
+        case decode_feature(feature) {
+          Ok(decoded) -> Ok(decoded)
+          Error(errors) -> {
+            wisp.log_error("Error decoding feature: " <> string.inspect(errors))
+            Error(errors |> list.map(string.inspect))
+            // Continue to next feature instead of stopping
+          }
+        }
+      })
+    }
     Error(err) -> {
       wisp.log_error("Error decoding JSON: " <> string.inspect(err))
       []
     }
   }
-  |> list.map(fn(feature) {
-    decode_feature(feature)
-    |> result.map_error(fn(errors) {
-      wisp.log_error("Error decoding feature: " <> string.inspect(errors))
-      errors |> list.map(string.inspect)
-    })
-  })
 }
 
 pub fn decode_alerts(data: String) -> Result(Alerts, json.DecodeError) {

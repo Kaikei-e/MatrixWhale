@@ -2,7 +2,7 @@ import adapter/context.{type Context}
 import gleam/erlang/process
 import gleam/string_builder
 import logs/reciever/noaa_adapter
-import message/reviever/noaa_reciever
+import message/reciever/noaa_reciever
 
 // import message/streamer/noaa_severity_streamrer
 import mist

@@ -1,6 +1,6 @@
 import adapter/context.{type Context}
 import gleam/string
-import message/reviever/models/noaa.{type FeatureElement}
+import message/reciever/models/noaa.{type FeatureElement}
 import repository/noaa_writer.{write_noaa_alerts}
 import wisp
 
