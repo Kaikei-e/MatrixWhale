@@ -1,6 +1,7 @@
 import adapter/context.{type Context}
+import gleam/list
 import gleam/string
-import message/reciever/models/noaa.{type FeatureElement}
+import message/reciever/models/noaa.{type FeatureElement, Test}
 import repository/noaa_writer.{write_noaa_alerts}
 import wisp
 
@@ -8,7 +9,15 @@ pub fn noaa_controller(
   features: List(FeatureElement),
   ctx: Context,
 ) -> Result(String, String) {
-  let result = write_noaa_alerts(features, ctx.db)
+  wisp.log_info(
+    "Processing " <> string.inspect(list.length(features)) <> " features",
+  )
+
+  let test_data_removed_list =
+    features
+    |> list.filter(fn(feature) { feature.properties.status != Test })
+
+  let result = write_noaa_alerts(test_data_removed_list, ctx.db)
   case result {
     Ok(count) -> {
       let message =
