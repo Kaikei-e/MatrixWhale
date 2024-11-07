@@ -225,22 +225,30 @@ pub fn extract_and_decode_features(
     )
   {
     Ok(features) -> {
-      // Process each feature independently, logging errors but continuing
+      let feature_count = list.length(features)
+      wisp.log_info("Starting to process " <> string.inspect(feature_count) <> " features")
+
       features
-      |> list.map(fn(feature) {
+      |> list.index_map(fn(feature, index) {
         case decode_feature(feature) {
-          Ok(decoded) -> Ok(decoded)
+          Ok(decoded) -> {
+            wisp.log_info(
+              "Successfully decoded feature " <> string.inspect(index + 1) <> "/" <> string.inspect(feature_count),
+            )
+            Ok(decoded)
+          }
           Error(errors) -> {
-            wisp.log_error("Error decoding feature: " <> string.inspect(errors))
+            wisp.log_error(
+              "Error decoding feature " <> string.inspect(index + 1) <> "/" <> string.inspect(feature_count) <> ": " <> string.inspect(errors),
+            )
             Error(errors |> list.map(string.inspect))
-            // Continue to next feature instead of stopping
           }
         }
       })
     }
     Error(err) -> {
-      wisp.log_error("Error decoding JSON: " <> string.inspect(err))
-      []
+      wisp.log_error("Failed to parse JSON document: " <> string.inspect(err))
+      [Error([string.inspect(err)])]
     }
   }
 }

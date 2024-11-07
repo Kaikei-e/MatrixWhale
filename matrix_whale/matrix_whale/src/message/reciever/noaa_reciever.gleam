@@ -31,15 +31,9 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
     string.trim(body_string)
     |> string.replace("\\\\", "\\")
     |> string.replace("\\\"", "\"")
-    // Handle special characters in description fields
-    |> string.replace("\n", "\\n")
-    // Properly escape newlines
-    |> string.replace("\".", "\\\".")
-    // Escape quotes followed by periods
-    |> string.replace("...", "…")
-    // Replace triple dots with ellipsis
-    |> string.replace("\r", "\\r")
-    |> string.replace("\t", "\\t")
+    |> string.replace("\n", " ")
+    |> string.replace("\\r", " ")
+    |> string.replace("\t", " ")
     |> string.trim
 
   let features_result = noaa.extract_and_decode_features(unescaped_body_string)
