@@ -15,7 +15,18 @@ pub fn noaa_controller(
 
   let test_data_removed_list =
     features
-    |> list.filter(fn(feature) { feature.properties.status != Test })
+    |> list.filter(fn(feature) {
+      feature.properties.status != Test
+      && feature.properties.severity != noaa.UnknownSeverity
+    })
+
+  wisp.log_info(
+    "Removed "
+    <> string.inspect(
+      list.length(features) - list.length(test_data_removed_list),
+    )
+    <> " test features",
+  )
 
   let result = write_noaa_alerts(test_data_removed_list, ctx.db)
   case result {

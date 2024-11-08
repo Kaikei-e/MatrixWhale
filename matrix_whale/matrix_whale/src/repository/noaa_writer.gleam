@@ -1,13 +1,11 @@
-import birl
+import birl.{type Time}
 import gleam/dynamic
-import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/pgo
 import gleam/result
 import gleam/string
 import message/reciever/models/noaa.{type FeatureElement}
-import string_tools/list_element_to_int.{list_element_to_int}
 import wisp
 
 pub fn write_noaa_alerts(
@@ -23,46 +21,48 @@ pub fn write_noaa_alerts(
     let severity = feature.properties.severity
     let sent_datetime = feature.properties.sent
 
-    let datetime = case sent_datetime {
-      Some(sent) -> birl.parse(sent)
-      None -> birl.parse(feature.properties.effective)
-    }
+    // 1905-12-22T16:38:23.000+03:30 -> 1905-12-22T16:38:23.000+03:30 parse func example
+    // 2024-11-07T11:05:21+00:00 actual format
 
-    // let datetime = case sent_datetime {
-    //   Some(sent) -> birl.parse(sent)
-    //   None -> birl.parse(feature.properties.effective)
-    // }
+    let datetime = case sent_datetime {
+      Some(sent) -> parse_formatted_datetime(sent)
+      None -> parse_formatted_datetime(feature.properties.effective)
+    }
 
     let datetime_parsed = case datetime {
-      Ok(datetime) -> datetime
-      Error(_) -> birl.now()
+      Ok(datetime) -> {
+        datetime
+      }
+      Error(_) -> {
+        birl.now()
+      }
     }
 
-    let timestamp_parsed_list =
-      birl.to_iso8601(datetime_parsed)
-      |> string.split("-")
-      |> list.map(fn(s) { string.split(s, "T") })
-      |> list.flatten
-      |> list.map(fn(s) { string.split(s, ":") })
-      |> list.flatten
-      |> list.map(fn(s) { string.split(s, ".") })
-      |> list.flatten
+    let day = datetime_parsed |> birl.get_day
+    let month = datetime_parsed |> birl.month
+    let time_of_day = datetime_parsed |> birl.get_time_of_day
 
-    // #(#(year, month, day), #(hour, minute, second))
-    let year =
-      list_element_to_int(timestamp_parsed_list, 0)
-      |> result.unwrap(-1)
-    let month =
-      list_element_to_int(timestamp_parsed_list, 1) |> result.unwrap(-1)
-    let day = list_element_to_int(timestamp_parsed_list, 2) |> result.unwrap(-1)
-    let hour =
-      list_element_to_int(timestamp_parsed_list, 3) |> result.unwrap(-1)
-    let minute =
-      list_element_to_int(timestamp_parsed_list, 4) |> result.unwrap(-1)
-    let second =
-      list_element_to_int(timestamp_parsed_list, 5) |> result.unwrap(-1)
+    let year = day.year
+    let month_num = case month {
+      birl.Jan -> 1
+      birl.Feb -> 2
+      birl.Mar -> 3
+      birl.Apr -> 4
+      birl.May -> 5
+      birl.Jun -> 6
+      birl.Jul -> 7
+      birl.Aug -> 8
+      birl.Sep -> 9
+      birl.Oct -> 10
+      birl.Nov -> 11
+      birl.Dec -> 12
+    }
+    let day_num = day.date
+    let hour = time_of_day.hour
+    let minute = time_of_day.minute
+    let second = time_of_day.second
 
-    let ts = #(#(year, month, day), #(hour, minute, second))
+    let ts = #(#(year, month_num, day_num), #(hour, minute, second))
 
     case
       pgo.execute(
@@ -81,14 +81,12 @@ pub fn write_noaa_alerts(
         dynamic.dynamic,
       )
     {
-      Ok(result) -> {
-        result.rows
-        |> list.length
-        |> Ok
+      Ok(_) -> {
+        Ok(1)
       }
       Error(err) -> {
         wisp.log_error("Failed to insert severity: " <> string.inspect(err))
-        Ok(0)
+        Error("Failed to insert: " <> string.inspect(err))
       }
     }
   }
@@ -119,7 +117,11 @@ pub fn write_noaa_alerts(
 
   case insert_result {
     Ok(count_list) -> {
-      let total_count = list.fold(count_list, 0, int.add)
+      let total_count =
+        count_list
+        |> list.filter(fn(count) { count > 0 })
+        |> list.length
+
       wisp.log_info(
         "Inserted or updated " <> string.inspect(total_count) <> " alerts",
       )
@@ -130,4 +132,11 @@ pub fn write_noaa_alerts(
       Error(err)
     }
   }
+}
+
+fn parse_formatted_datetime(sent_datetime: String) -> Result(Time, Nil) {
+  sent_datetime
+  |> string.split("+")
+  |> string.join(".000+00:00")
+  |> birl.parse
 }
