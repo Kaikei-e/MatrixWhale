@@ -4,12 +4,12 @@ import type { NoaaSeverityData } from '$lib/types/noaa';
 
 const matrixWhaleUrl = import.meta.env.VITE_MATRIX_WHALE_FETCH_URL;
 
-export const load = (async () => {
+export const load: PageServerLoad = async () => {
 	const noaaSeverityData: NoaaSeverityData[] = [] as NoaaSeverityData[];
 	return {
 		noaaSeverityData
 	};
-}) satisfies PageServerLoad;
+};
 
 export const actions = {
 	search: async ({ request }) => {

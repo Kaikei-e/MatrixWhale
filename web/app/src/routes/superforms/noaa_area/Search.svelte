@@ -38,7 +38,6 @@
 				id="areaDescription"
 				name="areaDescription"
 				bind:value={searchWord}
-				disabled={loading}
 				class="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500"
 				required
 			/>
@@ -57,7 +56,7 @@
 		{:else if loading}
 			<div class="flex justify-center">
 				<div
-					class="h-5 w-5 mt-4 animate-spin rounded-full border-4 border-white border-b-transparent border-t-transparent"
+					class="mt-4 h-5 w-5 animate-spin rounded-full border-4 border-white border-b-transparent border-t-transparent"
 				></div>
 			</div>
 		{:else if !loading && form?.noaaSeverityData && form.noaaSeverityData.length > 0}
@@ -72,7 +71,7 @@
 		{:else if loading}
 			<div class="flex justify-center">
 				<div
-					class="h-5 w-5 mt-4 animate-spin rounded-full border-4 border-white border-b-transparent border-t-transparent"
+					class="mt-4 h-5 w-5 animate-spin rounded-full border-4 border-white border-b-transparent border-t-transparent"
 				></div>
 			</div>
 		{:else}
