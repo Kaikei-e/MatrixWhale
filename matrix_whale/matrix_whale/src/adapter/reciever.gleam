@@ -1,6 +1,6 @@
 import adapter/context.{type Context}
 import gleam/erlang/process
-import gleam/string_builder
+import gleam/string_tree
 import logs/reciever/noaa_adapter
 import message/reciever/noaa_reciever
 
@@ -27,7 +27,7 @@ fn reciever_router(request: Request, ctx: Context) -> Response {
 
   case wisp.path_segments(request) {
     ["api", "v1", "health"] -> {
-      string_builder.from_string("system is alive") |> wisp.json_response(200)
+      string_tree.from_string("system is alive") |> wisp.json_response(200)
     }
     ["api", "v1", "logs"] -> noaa_adapter.noaa_logs_handler(req)
     ["api", "v1", "noaa_data", "send"] ->

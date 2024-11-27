@@ -1,6 +1,6 @@
 import adapter/context.{type Context}
 import gleam/erlang/process
-import gleam/string_builder
+import gleam/string_tree
 import message/streamer/noaa_severity_streamrer.{sse_noaa_severity}
 import mist
 import wisp.{type Request, type Response}
@@ -24,7 +24,7 @@ fn streamer_mine_router(request: Request, ctx: Context) -> Response {
 
   case wisp.path_segments(req) {
     ["api", "v1", "streamer", "health"] ->
-      string_builder.from_string("system is alive")
+      string_tree.from_string("system is alive")
       |> wisp.json_response(200)
     ["api", "v1", "noaa_data2", "noaa_severity"] -> sse_noaa_severity(req, ctx)
     _ -> wisp.response(404)

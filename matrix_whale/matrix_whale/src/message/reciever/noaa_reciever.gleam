@@ -2,7 +2,7 @@ import adapter/context.{type Context}
 import controller/noaa_controller.{noaa_controller}
 import gleam/list
 import gleam/string
-import gleam/string_builder
+import gleam/string_tree
 import message/reciever/models/noaa
 import wisp.{type Request, type Response}
 
@@ -52,7 +52,7 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
   )
 
   wisp.json_response(
-    string_builder.from_string(
+    string_tree.from_string(
       "Processed "
       <> string.inspect(processed_count)
       <> " features successfully",
@@ -78,7 +78,7 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
 
   wisp.log_info("Data successfully received and parsed.")
   wisp.json_response(
-    string_builder.from_string(
+    string_tree.from_string(
       "Parsing procces. First element's alert type is "
       <> string.inspect(severity),
     ),

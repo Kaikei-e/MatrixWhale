@@ -4,8 +4,7 @@ import gleam/erlang/process
 import gleam/function
 import gleam/otp/actor.{type InitResult}
 import gleam/string
-import gleam/string_builder
-import message/streamer/severity_streamer.{severity_streamer}
+import gleam/string_tree
 import mist.{type SSEConnection}
 import repeatedly
 import wisp.{type Request, type Response}
@@ -85,7 +84,7 @@ fn keep_connection_alive(message: Event, conn: SSEConnection, state: EventState)
   wisp.log_info("Received message in SSE loop")
   case message {
     Severity(value) -> {
-      let event = mist.event(string_builder.from_string(value))
+      let event = mist.event(string_tree.from_string(value))
       case mist.send_event(conn, event) {
         Ok(_) -> {
           wisp.log_info("Sent event: " <> string.inspect(value))

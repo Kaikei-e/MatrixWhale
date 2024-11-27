@@ -2,7 +2,7 @@
 import gleam/dynamic
 import gleam/list
 import gleam/string
-import pog.{type Connection}
+import pog
 import wisp
 
 pub type NOAASeverity {

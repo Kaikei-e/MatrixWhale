@@ -1,11 +1,11 @@
 import gleam/int
-import gleam/iterator
 import gleam/result
+import gleam/yielder
 
 pub fn list_element_to_int(list: List(String), index: Int) -> Result(Int, Nil) {
   let parsed =
-    iterator.from_list(list)
-    |> iterator.at(index)
+    yielder.from_list(list)
+    |> yielder.at(index)
     |> result.map(fn(s) { int.parse(s) })
     |> result.map(fn(e) {
       case e {

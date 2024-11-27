@@ -1,7 +1,7 @@
 import adapter/context.{type Context}
 import birl.{get_day, get_time_of_day, now}
 import gleam/bit_array
-import gleam/bytes_builder
+import gleam/bytes_tree
 import gleam/dynamic
 import gleam/erlang/process
 import gleam/function
@@ -14,7 +14,7 @@ import gleam/list
 import gleam/otp/actor
 import gleam/result
 import gleam/string
-import gleam/string_builder
+import gleam/string_tree
 import message/streamer/search_alerts.{search_alerts_by_area_description}
 import message/streamer/severity_streamer.{severity_streamer}
 import mist
@@ -102,7 +102,7 @@ pub fn streamer(ctx: Context) {
               wisp.log_info("Received message in SSE loop")
               case message {
                 Severity(value) -> {
-                  let event = mist.event(string_builder.from_string(value))
+                  let event = mist.event(string_tree.from_string(value))
                   case mist.send_event(conn, event) {
                     Ok(_) -> {
                       wisp.log_info("Sent event: " <> string.inspect(value))
@@ -159,7 +159,7 @@ pub fn streamer(ctx: Context) {
                     )
                     response.new(401)
                     |> response.set_body(
-                      mist.Bytes(bytes_builder.from_string("Not Found")),
+                      mist.Bytes(bytes_tree.from_string("Not Found")),
                     )
                   })
 
@@ -181,7 +181,7 @@ pub fn streamer(ctx: Context) {
                     response.new(200)
                     |> response.set_header("Content-Type", "application/json")
                     |> response.set_body(
-                      mist.Bytes(bytes_builder.from_string(json_body)),
+                      mist.Bytes(bytes_tree.from_string(json_body)),
                     )
                   }
                   Error(error) -> {
@@ -191,7 +191,7 @@ pub fn streamer(ctx: Context) {
                     )
                     response.new(400)
                     |> response.set_body(
-                      mist.Bytes(bytes_builder.from_string("Bad Request")),
+                      mist.Bytes(bytes_tree.from_string("Bad Request")),
                     )
                   }
                 }
@@ -199,7 +199,7 @@ pub fn streamer(ctx: Context) {
               |> result.lazy_unwrap(fn() {
                 response.new(400)
                 |> response.set_body(
-                  mist.Bytes(bytes_builder.from_string("Bad Request")),
+                  mist.Bytes(bytes_tree.from_string("Bad Request")),
                 )
               })
             }
@@ -207,7 +207,7 @@ pub fn streamer(ctx: Context) {
               wisp.log_info("Received request for unknown path")
               response.new(405)
               |> response.set_body(
-                mist.Bytes(bytes_builder.from_string("Not Allowed")),
+                mist.Bytes(bytes_tree.from_string("Not Allowed")),
               )
             }
           }
@@ -217,9 +217,7 @@ pub fn streamer(ctx: Context) {
             "Received request for unknown path: " <> string.inspect(req.path),
           )
           response.new(404)
-          |> response.set_body(
-            mist.Bytes(bytes_builder.from_string("Not Found")),
-          )
+          |> response.set_body(mist.Bytes(bytes_tree.from_string("Not Found")))
         }
       }
     }

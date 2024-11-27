@@ -2,7 +2,6 @@ import birl.{type Time}
 import gleam/dynamic
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/result
 import gleam/string
 import message/reciever/models/noaa.{type FeatureElement}
 import pog
