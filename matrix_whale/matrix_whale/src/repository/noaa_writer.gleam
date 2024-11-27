@@ -2,15 +2,15 @@ import birl.{type Time}
 import gleam/dynamic
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/pgo
 import gleam/result
 import gleam/string
 import message/reciever/models/noaa.{type FeatureElement}
+import pog
 import wisp
 
 pub fn write_noaa_alerts(
   features: List(FeatureElement),
-  conn: pgo.Connection,
+  conn: pog.Connection,
 ) -> Result(Int, String) {
   wisp.log_info(
     "Writing " <> string.inspect(list.length(features)) <> " features",
@@ -62,58 +62,35 @@ pub fn write_noaa_alerts(
     let minute = time_of_day.minute
     let second = time_of_day.second
 
-    let ts = #(#(year, month_num, day_num), #(hour, minute, second))
+    let ts_date = pog.Date(year, month_num, day_num)
+    let ts_time = pog.Time(hour, minute, second, 0)
+    let ts = pog.Timestamp(ts_date, ts_time)
 
-    case
-      pgo.execute(
-        "INSERT INTO sea.severity (area_desc, severity, datetime) VALUES ($1, $2, $3)
+    let query =
+      "INSERT INTO sea.severity (area_desc, severity, datetime) VALUES ($1, $2, $3)
         ON CONFLICT (area_desc, severity, datetime)
         DO UPDATE SET
           area_desc = EXCLUDED.area_desc,
           severity = EXCLUDED.severity,
-          datetime = EXCLUDED.datetime;",
-        conn,
-        [
-          pgo.text(area_desc),
-          pgo.text(string.inspect(severity)),
-          pgo.timestamp(ts),
-        ],
-        dynamic.dynamic,
-      )
-    {
-      Ok(_) -> {
-        Ok(1)
-      }
-      Error(err) -> {
-        wisp.log_error("Failed to insert severity: " <> string.inspect(err))
-        Error("Failed to insert: " <> string.inspect(err))
-      }
-    }
+          datetime = EXCLUDED.datetime;"
+
+    let row_decoder =
+      dynamic.tuple3(dynamic.string, dynamic.string, dynamic.string)
+
+    let assert Ok(response) =
+      pog.query(query)
+      |> pog.parameter(pog.text(area_desc))
+      |> pog.parameter(pog.text(string.inspect(severity)))
+      |> pog.parameter(pog.timestamp(ts))
+      |> pog.returning(row_decoder)
+      |> pog.execute(conn)
+
+    Ok(list.length(response.rows))
   }
 
   let insert_result =
-    pgo.transaction(conn, fn(_) {
-      features
-      |> list.try_map(fn(feature) { insert_alert(feature) })
-    })
-    |> result.map_error(fn(err) {
-      case err {
-        pgo.TransactionRolledBack(reason) -> {
-          wisp.log_error("Transaction rolled back: " <> string.inspect(reason))
-          reason
-        }
-        pgo.TransactionQueryError(query_error) -> {
-          wisp.log_error(
-            "Transaction query error: " <> string.inspect(query_error),
-          )
-          string.inspect(query_error)
-        }
-      }
-    })
-    |> result.map_error(fn(err) {
-      wisp.log_error("Error writing noaa alerts: " <> string.inspect(err))
-      err
-    })
+    features
+    |> list.try_map(fn(feature) { insert_alert(feature) })
 
   case insert_result {
     Ok(count_list) -> {

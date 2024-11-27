@@ -1,8 +1,8 @@
 import dot_env as dot
 import dot_env/env
 import gleam/int
-import gleam/pgo.{type Connection}
 import gleam/string
+import pog.{type Connection}
 import wisp
 
 pub fn initialize_db() -> Connection {
@@ -49,7 +49,7 @@ pub fn initialize_db() -> Connection {
   }
 
   let conf =
-    pgo.url_config(
+    pog.url_config(
       "postgres://"
       <> db_user
       <> ":"
@@ -69,5 +69,5 @@ pub fn initialize_db() -> Connection {
     }
   }
 
-  pgo.connect(config)
+  pog.connect(config)
 }

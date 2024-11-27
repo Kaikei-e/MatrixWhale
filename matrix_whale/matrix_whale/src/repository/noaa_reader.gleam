@@ -1,8 +1,8 @@
 // import birl.{type Time}
 import gleam/dynamic
 import gleam/list
-import gleam/pgo
 import gleam/string
+import pog.{type Connection}
 import wisp
 
 pub type NOAASeverity {
@@ -14,7 +14,7 @@ pub type SearchAreaDescription {
   SearchAreaDescription(area_desc: String)
 }
 
-pub fn read_noaa_severity(conn: pgo.Connection) -> Result(NOAASeverity, String) {
+pub fn read_noaa_severity(conn: pog.Connection) -> Result(NOAASeverity, String) {
   let decoder =
     dynamic.decode2(
       NOAASeverity,
@@ -23,13 +23,12 @@ pub fn read_noaa_severity(conn: pgo.Connection) -> Result(NOAASeverity, String) 
     )
 
   let row =
-    pgo.execute(
+    pog.query(
       "SELECT area_desc, severity, datetime FROM sea.severity "
-        <> "WHERE severity != 'UnknownSeverity' ORDER BY datetime DESC LIMIT 1",
-      conn,
-      [],
-      decoder,
+      <> "WHERE severity != 'UnknownSeverity' ORDER BY datetime DESC LIMIT 1",
     )
+    |> pog.returning(decoder)
+    |> pog.execute(conn)
 
   case row {
     Ok(row) -> {
@@ -50,7 +49,7 @@ pub fn read_noaa_severity(conn: pgo.Connection) -> Result(NOAASeverity, String) 
 
 pub fn search_area_description(
   area_desc: String,
-  conn: pgo.Connection,
+  conn: pog.Connection,
 ) -> Result(List(NOAASeverity), String) {
   let decoder =
     dynamic.decode2(
@@ -60,12 +59,12 @@ pub fn search_area_description(
     )
 
   let rows =
-    pgo.execute(
+    pog.query(
       "SELECT area_desc, severity FROM sea.severity WHERE area_desc = $1",
-      conn,
-      [pgo.text(area_desc)],
-      decoder,
     )
+    |> pog.parameter(pog.text(area_desc))
+    |> pog.returning(decoder)
+    |> pog.execute(conn)
 
   case rows {
     Ok(rows) -> {
@@ -81,24 +80,3 @@ pub fn search_area_description(
     }
   }
 }
-// fn decode_timestamp(
-//   dyn: dynamic.Dynamic,
-// ) -> Result(Time, List(dynamic.DecodeError)) {
-//   // let decode_tuple3 = dynamic.tuple3(dynamic.int, dynamic.int, dynamic.int)
-
-//   // use date <- dynamic.tuple2(decode_tuple3, decode_tuple3)
-
-//   // let #(#(year, month, day), #(hour, minute, second)) = date
-//   // case time.new(year, month, day, hour, minute, second, 0) {
-//   //   Ok(datetime) -> Ok(datetime)
-//   //   Error(_) -> Error([dynamic.DecodeError("Invalid datetime", "DateTime", [])])
-//   // }
-
-//   todo
-// }
-
-// fn decode_tuple3(dyn: dynamic.Dynamic) -> #(Int, Int, Int) {
-//   let decoder = dynamic.tuple3(dynamic.int, dynamic.int, dynamic.int)
-
-//   todo
-// }
