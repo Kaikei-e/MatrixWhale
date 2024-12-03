@@ -1,11 +1,18 @@
 import birl.{type Time}
 import gleam/dynamic
+import gleam/int
+import gleam/io
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/string
 import message/reciever/models/noaa.{type FeatureElement}
 import pog
 import wisp
+
+type ParsedDatetime {
+  ParsedDatetime(datetime: Time, timezone_offset: String)
+}
 
 pub fn write_noaa_alerts(
   features: List(FeatureElement),
@@ -21,7 +28,7 @@ pub fn write_noaa_alerts(
     let sent_datetime = feature.properties.sent
 
     // 1905-12-22T16:38:23.000+03:30 -> 1905-12-22T16:38:23.000+03:30 parse func example
-    // 2024-11-07T11:05:21+00:00 actual format
+    // "2024-12-03T07:37:00-09:00" actual format
 
     let datetime = case sent_datetime {
       Some(sent) -> parse_formatted_datetime(sent)
@@ -30,40 +37,66 @@ pub fn write_noaa_alerts(
 
     let datetime_parsed = case datetime {
       Ok(datetime) -> {
-        datetime
+        io.debug("Successfully parsed datetime")
+
+        // 09:00 -> 9 is hours
+        let offset_seconds =
+          datetime.timezone_offset
+          |> int.parse
+          |> result.map(fn(offset) { offset * 60 * 60 })
+          |> result.unwrap(0)
+
+        let unixtime_with_offset =
+          birl.to_unix(datetime.datetime) + offset_seconds
+
+        let datetime_utc = birl.from_unix(unixtime_with_offset)
+
+        let time_of_day = datetime_utc |> birl.get_time_of_day
+        let day = datetime_utc |> birl.get_day
+
+        io.debug("Time components (UTC):")
+        io.debug("Hour: " <> string.inspect(time_of_day.hour))
+        io.debug("Minute: " <> string.inspect(time_of_day.minute))
+        io.debug("Second: " <> string.inspect(time_of_day.second))
+
+        let ts_date =
+          pog.Date(
+            year: day.year,
+            month: datetime_utc |> birl.month |> month_to_int,
+            day: day.date,
+          )
+
+        let ts_time =
+          pog.Time(
+            hours: time_of_day.hour,
+            minutes: time_of_day.minute,
+            seconds: time_of_day.second,
+            microseconds: 0,
+          )
+
+        let ts = pog.Timestamp(ts_date, ts_time)
+        ts
       }
       Error(_) -> {
-        birl.now()
+        let now = birl.utc_now()
+        let time_of_day = now |> birl.get_time_of_day
+        let day = now |> birl.get_day
+
+        pog.Timestamp(
+          pog.Date(
+            year: day.year,
+            month: now |> birl.month |> month_to_int,
+            day: day.date,
+          ),
+          pog.Time(
+            hours: time_of_day.hour,
+            minutes: time_of_day.minute,
+            seconds: time_of_day.second,
+            microseconds: 0,
+          ),
+        )
       }
     }
-
-    let day = datetime_parsed |> birl.get_day
-    let month = datetime_parsed |> birl.month
-    let time_of_day = datetime_parsed |> birl.get_time_of_day
-
-    let year = day.year
-    let month_num = case month {
-      birl.Jan -> 1
-      birl.Feb -> 2
-      birl.Mar -> 3
-      birl.Apr -> 4
-      birl.May -> 5
-      birl.Jun -> 6
-      birl.Jul -> 7
-      birl.Aug -> 8
-      birl.Sep -> 9
-      birl.Oct -> 10
-      birl.Nov -> 11
-      birl.Dec -> 12
-    }
-    let day_num = day.date
-    let hour = time_of_day.hour
-    let minute = time_of_day.minute
-    let second = time_of_day.second
-
-    let ts_date = pog.Date(year, month_num, day_num)
-    let ts_time = pog.Time(hour, minute, second, 0)
-    let ts = pog.Timestamp(ts_date, ts_time)
 
     let query =
       "INSERT INTO sea.severity (area_desc, severity, datetime) VALUES ($1, $2, $3)
@@ -80,7 +113,7 @@ pub fn write_noaa_alerts(
       pog.query(query)
       |> pog.parameter(pog.text(area_desc))
       |> pog.parameter(pog.text(string.inspect(severity)))
-      |> pog.parameter(pog.timestamp(ts))
+      |> pog.parameter(pog.timestamp(datetime_parsed))
       |> pog.returning(row_decoder)
       |> pog.execute(conn)
 
@@ -110,9 +143,66 @@ pub fn write_noaa_alerts(
   }
 }
 
-fn parse_formatted_datetime(sent_datetime: String) -> Result(Time, Nil) {
-  sent_datetime
-  |> string.split("+")
-  |> string.join(".000+00:00")
-  |> birl.parse
+fn parse_formatted_datetime(
+  sent_datetime: String,
+) -> Result(ParsedDatetime, Nil) {
+  // Example input: "2024-12-03T07:37:00-09:00"
+  let timezone_offset = extract_timezone_offset(sent_datetime)
+
+  let datetime_result =
+    sent_datetime
+    |> string.replace("-", "+")
+    |> string.split("+")
+    |> fn(parts) {
+      case parts {
+        [datetime, timezone] -> {
+          datetime <> "+" <> timezone
+        }
+        _ -> sent_datetime
+      }
+    }
+    |> birl.parse
+    |> result.map(fn(datetime) { ParsedDatetime(datetime, timezone_offset) })
+
+  datetime_result
+}
+
+fn extract_timezone_offset(sent_datetime: String) -> String {
+  // Example input: "2024-12-03T07:37:00-09:00"
+  case string.split(sent_datetime, "-") {
+    [_, _, timezone] -> {
+      case string.split(timezone, ":") {
+        [hours, _] -> "-" <> hours
+        _ -> "00"
+      }
+    }
+    _ -> {
+      case string.split(sent_datetime, "+") {
+        [_, timezone] -> {
+          case string.split(timezone, ":") {
+            [hours, _] -> "+" <> hours
+            _ -> "00"
+          }
+        }
+        _ -> "00"
+      }
+    }
+  }
+}
+
+fn month_to_int(month: birl.Month) -> Int {
+  case month {
+    birl.Jan -> 1
+    birl.Feb -> 2
+    birl.Mar -> 3
+    birl.Apr -> 4
+    birl.May -> 5
+    birl.Jun -> 6
+    birl.Jul -> 7
+    birl.Aug -> 8
+    birl.Sep -> 9
+    birl.Oct -> 10
+    birl.Nov -> 11
+    birl.Dec -> 12
+  }
 }
