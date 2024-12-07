@@ -176,8 +176,6 @@ pub fn streamer(ctx: Context) {
                       |> json.preprocessed_array
                       |> json.to_string
 
-                    io.debug(json_body)
-
                     response.new(200)
                     |> response.set_header("Content-Type", "application/json")
                     |> response.set_body(

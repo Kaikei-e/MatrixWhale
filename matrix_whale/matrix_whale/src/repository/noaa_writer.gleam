@@ -37,8 +37,6 @@ pub fn write_noaa_alerts(
 
     let datetime_parsed = case datetime {
       Ok(datetime) -> {
-        io.debug("Successfully parsed datetime")
-
         // 09:00 -> 9 is hours
         let offset_seconds =
           datetime.timezone_offset
@@ -53,11 +51,6 @@ pub fn write_noaa_alerts(
 
         let time_of_day = datetime_utc |> birl.get_time_of_day
         let day = datetime_utc |> birl.get_day
-
-        io.debug("Time components (UTC):")
-        io.debug("Hour: " <> string.inspect(time_of_day.hour))
-        io.debug("Minute: " <> string.inspect(time_of_day.minute))
-        io.debug("Second: " <> string.inspect(time_of_day.second))
 
         let ts_date =
           pog.Date(
