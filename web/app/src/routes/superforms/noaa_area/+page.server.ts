@@ -15,7 +15,7 @@ export const actions = {
 	search: async ({ request }) => {
 		try {
 			const data = await request.formData();
-			const searchWord = data.get('searchWord')?.toString() || '';
+			const searchWord = data.get('areaDescription')?.toString() || '';
 
 			const response = await fetch(
 				new URL('/api/v1/noaa_data/search_area_description', matrixWhaleUrl),

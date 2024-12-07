@@ -1,10 +1,12 @@
 <script lang="ts">
 	import type { PageData, ActionData } from './$types';
-	import { enhance } from '$app/forms';
 	import type { NoaaSeverityData } from '$lib/types/noaa';
+	import { enhance } from '$app/forms';
 
-	let { data, form = undefined } = $props() as { data: PageData; form?: ActionData | undefined };
-	let searchWord = $state('');
+	let { object = { areaDescription: '' } } = $props();
+
+	let data: PageData;
+	let form: ActionData;
 	let loading = $state(false);
 	let noaaSeverityData: NoaaSeverityData[] | null = null;
 
@@ -19,14 +21,7 @@
 	<form
 		method="POST"
 		action="/superforms/noaa_area?/search"
-		use:enhance={() => {
-			loading = true;
-
-			return async ({ update }) => {
-				await update();
-				loading = false;
-			};
-		}}
+		use:enhance
 		class="flex w-full flex-col gap-4"
 	>
 		<div class="flex flex-col gap-2">
@@ -37,7 +32,7 @@
 				type="text"
 				id="areaDescription"
 				name="areaDescription"
-				bind:value={searchWord}
+				value={object.areaDescription}
 				class="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500"
 				required
 			/>
