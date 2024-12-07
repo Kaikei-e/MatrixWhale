@@ -1,20 +1,8 @@
 <script lang="ts">
-	import type { PageData, ActionData } from './$types';
-	import type { NoaaSeverityData } from '$lib/types/noaa';
 	import { enhance } from '$app/forms';
 
-	let { object = { areaDescription: '' } } = $props();
-
-	let data: PageData;
-	let form: ActionData;
+	let { object = { areaDescription: '' }, data, form } = $props();
 	let loading = $state(false);
-	let noaaSeverityData: NoaaSeverityData[] | null = null;
-
-	$effect(() => {
-		console.log('data changed:', data);
-		console.log('form changed:', form);
-		console.log('noaaSeverityData changed:', noaaSeverityData);
-	});
 </script>
 
 <div class="w-full">
