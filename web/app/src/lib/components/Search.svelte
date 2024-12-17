@@ -37,7 +37,7 @@
 	}
 </script>
 
-<div class="w-full">
+<div class="h-full w-full">
 	<form method="POST" onsubmit={search} class="flex w-full flex-col gap-4">
 		<div class="flex flex-col gap-2">
 			<label for="areaDescription" class="text-sm font-medium text-gray-700">
@@ -61,7 +61,7 @@
 			<span>Search</span>
 		</button>
 	</form>
-	<div class="flex flex-col justify-center">
+	<div class="flex h-[calc(100%-8rem)] flex-col overflow-y-auto">
 		{#if !loading && objectForSearch?.data?.noaaSeverityData && objectForSearch?.data?.noaaSeverityData.length === 0}
 			<p class="text-red-400">No data found</p>
 		{:else if loading}
@@ -71,7 +71,7 @@
 				></div>
 			</div>
 		{:else if !loading && objectForSearch?.data?.noaaSeverityData && objectForSearch?.data?.noaaSeverityData.length > 0}
-			<div class="mt-4 flex flex-col gap-2">
+			<div class="mt-4 flex w-full flex-col gap-2">
 				{#each objectForSearch?.data?.noaaSeverityData as alert}
 					<div class="rounded-lg border p-4 shadow-sm">
 						<p class="text-lg font-medium">Area: {alert.area_desc}</p>
