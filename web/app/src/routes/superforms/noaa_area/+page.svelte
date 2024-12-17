@@ -3,10 +3,11 @@
 	import type { PageData, ActionData } from './$types';
 	import type { NoaaSeverityData } from '$lib/types/noaa';
 
-	let { object } = $props();
-
-	let data: PageData;
-	let form: ActionData;
+	let {
+		object,
+		data,
+		form
+	}: { object: { areaDescription: string }; data: PageData; form: ActionData } = $props();
 	let noaaSeverityData: NoaaSeverityData[] | null = null;
 
 	$effect(() => {
