@@ -22,5 +22,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		});
 	}
 
+	response.headers.set('Content-Security-Policy', "connect-src 'self' http://localhost:8080");
+
 	return response;
 };
