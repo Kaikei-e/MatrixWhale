@@ -34,7 +34,7 @@
 		</button>
 	</form>
 	<div class="flex flex-col justify-center">
-		{#if !loading && form?.noaaSeverityData && form.noaaSeverityData.length === 0}
+		{#if !loading && form?.data?.noaaSeverityData && form.data.noaaSeverityData.length === 0}
 			<p class="text-red-400">No data found</p>
 		{:else if loading}
 			<div class="flex justify-center">
@@ -42,13 +42,13 @@
 					class="mt-4 h-5 w-5 animate-spin rounded-full border-4 border-white border-b-transparent border-t-transparent"
 				></div>
 			</div>
-		{:else if !loading && form?.noaaSeverityData && form.noaaSeverityData.length > 0}
+		{:else if !loading && form?.data?.noaaSeverityData && form.data.noaaSeverityData.length > 0}
 			<div class="flex justify-center">
 				<div class="h-5 w-5">
-					<p>{form.noaaSeverityData[0].area_desc}</p>
+					<p>{form.data.noaaSeverityData[0].area_desc}</p>
 				</div>
 				<div class="h-5 w-5">
-					<p>{form.noaaSeverityData[0].severity}</p>
+					<p>{form.data.noaaSeverityData[0].severity}</p>
 				</div>
 			</div>
 		{:else if loading}
