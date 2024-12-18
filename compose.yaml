@@ -68,6 +68,25 @@ services:
       timeout: 5s
       retries: 5
 
+  rss_feed_adapter:
+    build:
+      context: ./rss_feed_adapter
+    ports:
+      - "8085:8085"
+    volumes:
+      - ./rss_feed_adapter:/app/rss_feed_adapter
+    tty: true
+    restart: always
+    networks:
+      matrix_network:
+        ipv4_address: 10.254.100.41
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8085/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   noaa_adapter:
     build:
       context: ./noaa_adapter
