@@ -1,10 +1,9 @@
 <script lang="ts">
 	import type { NoaaSeverityData } from '$lib/types/noaa';
-	import type { PageData, ActionData } from '../../routes/superforms/noaa_area/$types';
-
+	import type { PageData } from '../../routes/home/$types';
 	const matrixWhaleUrl = import.meta.env.VITE_MATRIX_WHALE_FETCH_URL;
 
-	let { objectForSearch }: { objectForSearch: { data: PageData; form: ActionData } } = $props();
+	let { objectForSearch }: { objectForSearch: { data: PageData } } = $props();
 
 	let areaDescription = $state('');
 	let loading = $state(false);
@@ -29,7 +28,7 @@
 
 		const noaaSeverityList: NoaaSeverityData[] = await response.json();
 
-		objectForSearch.data.noaaSeverityData = noaaSeverityList;
+		objectForSearch.data = noaaSeverityList;
 		loading = false;
 		return {
 			noaaSeverityData: noaaSeverityList
@@ -62,7 +61,7 @@
 		</button>
 	</form>
 	<div class="flex h-[calc(100%-8rem)] flex-col overflow-y-auto">
-		{#if !loading && objectForSearch?.data?.noaaSeverityData && objectForSearch?.data?.noaaSeverityData.length === 0}
+		{#if !loading && objectForSearch?.data && objectForSearch?.data.length === 0}
 			<p class="text-red-400">No data found</p>
 		{:else if loading}
 			<div class="flex justify-center">
@@ -70,9 +69,9 @@
 					class="mt-4 h-5 w-5 animate-spin rounded-full border-4 border-white border-b-transparent border-t-transparent"
 				></div>
 			</div>
-		{:else if !loading && objectForSearch?.data?.noaaSeverityData && objectForSearch?.data?.noaaSeverityData.length > 0}
+		{:else if !loading && objectForSearch?.data && objectForSearch?.data.length > 0}
 			<div class="mt-4 flex w-full flex-col gap-2">
-				{#each objectForSearch?.data?.noaaSeverityData as alert}
+				{#each objectForSearch?.data as alert}
 					<div class="rounded-lg border p-4 shadow-sm">
 						<p class="text-lg font-medium">Area: {alert.area_desc}</p>
 						<p class="text-sm text-gray-600">Severity: {alert.severity}</p>
