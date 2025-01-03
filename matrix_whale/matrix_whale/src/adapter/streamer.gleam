@@ -1,20 +1,13 @@
 import adapter/context.{type Context}
 import birl.{get_day, get_time_of_day, now}
-import gleam/bit_array
 import gleam/bytes_tree
-import gleam/dynamic
 import gleam/erlang/process
 import gleam/function
-import gleam/http.{Post}
 import gleam/http/request
 import gleam/http/response
-import gleam/json
-import gleam/list
 import gleam/otp/actor
-import gleam/result
 import gleam/string
 import gleam/string_tree
-import message/streamer/search_alerts.{search_alerts_by_area_description}
 import message/streamer/severity_streamer.{severity_streamer}
 import mist
 import repeatedly
@@ -29,34 +22,17 @@ pub type Event {
   Down(process.ProcessDown)
 }
 
-// "{\"areaDescription\":\"Calcasieu, LA\"}"
-
-type SearchAreaDescriptionWords {
-  SearchAreaDescriptionWords(area_desc: String)
-}
-
 pub fn streamer(ctx: Context) {
   wisp.log_info("Starting severity streamer")
-
   let init_severity = "Initial SSE"
   let assert Ok(_) =
     fn(req) {
       case request.path_segments(req) {
         ["api", "v1", "noaa_data", "stream"] -> {
-          wisp.log_info("Handling SSE request")
-          let resp =
-            response.new(200)
-            |> response.set_header("Content-Type", "text/event-stream")
-            |> response.set_header("Cache-Control", "no-cache")
-            |> response.set_header("Connection", "keep-alive")
-            |> response.set_header("Access-Control-Allow-Origin", "*")
-            |> response.set_header("X-Accel-Buffering", "no")
-
           mist.server_sent_events(
             req,
-            resp,
+            response.new(200),
             init: fn() {
-              wisp.log_info("Initializing SSE connection")
               let subj = process.new_subject()
               let monitor = process.monitor_process(process.self())
               let selector =
@@ -125,94 +101,8 @@ pub fn streamer(ctx: Context) {
             },
           )
         }
-        ["api", "v1", "noaa_data", "search_area_description"] -> {
-          wisp.log_info("Received request for search_area_description")
-
-          case req.method {
-            Post -> {
-              mist.read_body(req, 1024 * 1024 * 10)
-              |> result.map(fn(req) {
-                let search_word =
-                  bit_array.to_string(req.body)
-                  |> result.then(fn(body_string) {
-                    json.decode(
-                      body_string,
-                      dynamic.decode1(
-                        SearchAreaDescriptionWords,
-                        dynamic.field("areaDescription", dynamic.string),
-                      ),
-                    )
-                    |> result.map_error(fn(_) { Nil })
-                  })
-                  |> result.unwrap(SearchAreaDescriptionWords(""))
-
-                wisp.log_info(
-                  "Searching for area description: " <> search_word.area_desc,
-                )
-
-                let result =
-                  search_alerts_by_area_description(search_word.area_desc, ctx)
-                  |> result.map_error(fn(error) {
-                    wisp.log_error(
-                      "Error searching for area description: " <> error,
-                    )
-                    response.new(401)
-                    |> response.set_body(
-                      mist.Bytes(bytes_tree.from_string("Not Found")),
-                    )
-                  })
-
-                case result {
-                  Ok(severities) -> {
-                    let json_body =
-                      severities
-                      |> list.map(fn(severity) {
-                        json.object([
-                          #("area_desc", json.string(severity.area_desc)),
-                          #("severity", json.string(severity.severity)),
-                        ])
-                      })
-                      |> json.preprocessed_array
-                      |> json.to_string
-
-                    response.new(200)
-                    |> response.set_header("Content-Type", "application/json")
-                    |> response.set_body(
-                      mist.Bytes(bytes_tree.from_string(json_body)),
-                    )
-                  }
-                  Error(error) -> {
-                    wisp.log_error(
-                      "Error searching for area description: "
-                      <> string.inspect(error),
-                    )
-                    response.new(400)
-                    |> response.set_body(
-                      mist.Bytes(bytes_tree.from_string("Bad Request")),
-                    )
-                  }
-                }
-              })
-              |> result.lazy_unwrap(fn() {
-                response.new(400)
-                |> response.set_body(
-                  mist.Bytes(bytes_tree.from_string("Bad Request")),
-                )
-              })
-            }
-            _ -> {
-              wisp.log_info("Received request for unknown path")
-              response.new(405)
-              |> response.set_body(
-                mist.Bytes(bytes_tree.from_string("Not Allowed")),
-              )
-            }
-          }
-        }
         _ -> {
-          wisp.log_alert(
-            "Received request for unknown path: " <> string.inspect(req.path),
-          )
+          wisp.log_error("Invalid path segments")
           response.new(404)
           |> response.set_body(mist.Bytes(bytes_tree.from_string("Not Found")))
         }
@@ -220,14 +110,7 @@ pub fn streamer(ctx: Context) {
     }
     |> mist.new
     |> mist.port(8080)
-    |> mist.start_http
-
-  wisp.log_info("Server started on port 8080")
+    |> mist.start_http()
+  wisp.log_info("Severity streamer started")
   process.sleep_forever()
 }
-// type Unit {
-//   Millisecond
-// }
-
-// @external(erlang, "erlang", "system_time")
-// fn system_time(unit: Unit) -> Int
