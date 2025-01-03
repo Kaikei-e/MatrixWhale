@@ -35,7 +35,7 @@ pub fn noaa_logs_handler(req: Request) -> Response {
         #("service", json.string(log_format.service)),
       ])
 
-    Ok(json.to_string_builder(object))
+    Ok(json.to_string_tree(object))
   }
 
   case result {

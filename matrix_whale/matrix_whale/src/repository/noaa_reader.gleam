@@ -62,7 +62,7 @@ pub fn search_area_description(
     pog.query(
       "SELECT area_desc, severity FROM sea.severity WHERE area_desc = $1",
     )
-    |> pog.parameter(pog.text(area_desc))
+    |> pog.parameter(pog.text("%" <> area_desc <> "%"))
     |> pog.returning(decoder)
     |> pog.execute(conn)
 
