@@ -1,24 +1,23 @@
 import gleam/dynamic.{type Dynamic}
+import gleam/dynamic/decode
 import gleam/json
 import gleam/result
-import gleam/string_tree
 import wisp.{type Request, type Response}
 
 pub type LogFormat {
   LogFormat(time: String, level: String, message: String, service: String)
 }
 
-fn decode_logs(json: Dynamic) -> Result(LogFormat, List(dynamic.DecodeError)) {
-  let decoder =
-    dynamic.decode4(
-      LogFormat,
-      dynamic.field("time", dynamic.string),
-      dynamic.field("level", dynamic.string),
-      dynamic.field("msg", dynamic.string),
-      dynamic.field("service", dynamic.string),
-    )
+fn decode_logs(json: Dynamic) -> Result(LogFormat, List(decode.DecodeError)) {
+  let decoder = {
+    use time <- decode.field("time", decode.string)
+    use level <- decode.field("level", decode.string)
+    use message <- decode.field("msg", decode.string)
+    use service <- decode.field("service", decode.string)
+    decode.success(LogFormat(time: time, level: level, message: message, service: service))
+  }
 
-  decoder(json)
+  decode.run(json, decoder)
 }
 
 pub fn noaa_logs_handler(req: Request) -> Response {
@@ -40,12 +39,10 @@ pub fn noaa_logs_handler(req: Request) -> Response {
 
   case result {
     Ok(_) -> {
-      string_tree.from_string("Log recieved")
-      |> wisp.json_response(200)
+      wisp.json_response("\"Log recieved\"", 200)
     }
     Error(_) -> {
-      string_tree.from_string("Invalid log format")
-      |> wisp.json_response(400)
+      wisp.json_response("\"Invalid log format\"", 400)
     }
   }
 }

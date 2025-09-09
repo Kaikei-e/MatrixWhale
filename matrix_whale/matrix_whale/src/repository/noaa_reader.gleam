@@ -1,5 +1,5 @@
 // import birl.{type Time}
-import gleam/dynamic
+import gleam/dynamic/decode
 import gleam/list
 import gleam/string
 import pog
@@ -15,12 +15,7 @@ pub type SearchAreaDescription {
 }
 
 pub fn read_noaa_severity(conn: pog.Connection) -> Result(NOAASeverity, String) {
-  let decoder =
-    dynamic.decode2(
-      NOAASeverity,
-      dynamic.element(0, dynamic.string),
-      dynamic.element(1, dynamic.string),
-    )
+  let decoder = decode.success(NOAASeverity("", ""))
 
   let row =
     pog.query(
@@ -51,12 +46,7 @@ pub fn search_area_description(
   area_desc: String,
   conn: pog.Connection,
 ) -> Result(List(NOAASeverity), String) {
-  let decoder =
-    dynamic.decode2(
-      NOAASeverity,
-      dynamic.element(0, dynamic.string),
-      dynamic.element(1, dynamic.string),
-    )
+  let decoder = decode.success(NOAASeverity("", ""))
 
   let rows =
     pog.query(
@@ -71,7 +61,7 @@ pub fn search_area_description(
       wisp.log_info(
         "Found severity: " <> string.inspect(list.length(rows.rows)),
       )
-      list.map(rows.rows, fn(row) { NOAASeverity(row.area_desc, row.severity) })
+      rows.rows
       |> Ok
     }
     Error(error) -> {

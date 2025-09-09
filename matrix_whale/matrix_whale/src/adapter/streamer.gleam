@@ -2,7 +2,6 @@ import adapter/context.{type Context}
 import birl.{get_day, get_time_of_day, now}
 import gleam/bytes_tree
 import gleam/erlang/process
-import gleam/function
 import gleam/http/request
 import gleam/http/response
 import gleam/otp/actor
@@ -19,7 +18,7 @@ pub type EventState {
 
 pub type Event {
   Severity(String)
-  Down(process.ProcessDown)
+  Down(process.Down)
 }
 
 pub fn streamer(ctx: Context) {
@@ -32,13 +31,11 @@ pub fn streamer(ctx: Context) {
           mist.server_sent_events(
             req,
             response.new(200),
-            init: fn() {
-              let subj = process.new_subject()
-              let monitor = process.monitor_process(process.self())
-              let selector =
+            init: fn(subj) {
+              let _monitor = process.monitor(process.self())
+              let _selector =
                 process.new_selector()
-                |> process.selecting(subj, function.identity)
-                |> process.selecting_process_down(monitor, Down)
+                |> process.select(subj)
               let repeater =
                 repeatedly.call(5000, Nil, fn(_state, _count) {
                   let t_now = now()
@@ -71,9 +68,9 @@ pub fn streamer(ctx: Context) {
                   wisp.log_info("Sending severity: " <> severity_state)
                   process.send(subj, Severity(severity_state))
                 })
-              actor.Ready(EventState(init_severity, repeater), selector)
+              Ok(actor.initialised(EventState(init_severity, repeater)))
             },
-            loop: fn(message, conn, state) {
+            loop: fn(state: EventState, message: Event, conn: mist.SSEConnection) -> actor.Next(EventState, Event) {
               wisp.log_info("Received message in SSE loop")
               case message {
                 Severity(value) -> {
@@ -81,21 +78,21 @@ pub fn streamer(ctx: Context) {
                   case mist.send_event(conn, event) {
                     Ok(_) -> {
                       wisp.log_info("Sent event: " <> string.inspect(value))
-                      actor.continue(EventState(..state, severity: value))
+                      actor.continue(EventState(value, state.repeater))
                     }
                     Error(error) -> {
                       wisp.log_error(
                         "Failed to send event: " <> string.inspect(error),
                       )
                       repeatedly.stop(state.repeater)
-                      actor.Stop(process.Normal)
+                      actor.stop()
                     }
                   }
                 }
-                Down(_process_down) -> {
+                Down(_) -> {
                   wisp.log_info("Client disconnected")
                   repeatedly.stop(state.repeater)
-                  actor.Stop(process.Normal)
+                  actor.stop()
                 }
               }
             },
@@ -110,7 +107,7 @@ pub fn streamer(ctx: Context) {
     }
     |> mist.new
     |> mist.port(8080)
-    |> mist.start_http()
+    |> mist.start()
   wisp.log_info("Severity streamer started")
   process.sleep_forever()
 }

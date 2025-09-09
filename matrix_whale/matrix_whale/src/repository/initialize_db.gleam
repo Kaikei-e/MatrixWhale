@@ -2,10 +2,11 @@ import dot_env as dot
 import dot_env/env
 import gleam/int
 import gleam/string
-import pog.{type Connection}
+import gleam/erlang/process
+import pog
 import wisp
 
-pub fn initialize_db() -> Connection {
+pub fn initialize_db() -> pog.Connection {
   dot.load_default()
 
   let db_host = case env.get_string("POSTGRES_HOST") {
@@ -48,20 +49,20 @@ pub fn initialize_db() -> Connection {
     }
   }
 
-  let conf =
-    pog.url_config(
-      "postgres://"
-      <> db_user
-      <> ":"
-      <> db_password
-      <> "@"
-      <> db_host
-      <> ":"
-      <> int.to_string(db_port)
-      <> "/"
-      <> db_name,
-    )
-  let config = case conf {
+  let database_url = "postgres://"
+    <> db_user
+    <> ":"
+    <> db_password
+    <> "@"
+    <> db_host
+    <> ":"
+    <> int.to_string(db_port)
+    <> "/"
+    <> db_name
+  
+  let pool_name = process.new_name("matrix_whale_db")
+  let conf = pog.url_config(pool_name, database_url)
+  let _config = case conf {
     Ok(config) -> config
     Error(err) -> {
       wisp.log_error("Error creating database config: " <> string.inspect(err))
@@ -69,5 +70,5 @@ pub fn initialize_db() -> Connection {
     }
   }
 
-  pog.connect(config)
+  pog.named_connection(pool_name)
 }

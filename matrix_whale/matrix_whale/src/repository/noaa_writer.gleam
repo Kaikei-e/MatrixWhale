@@ -1,5 +1,5 @@
 import birl.{type Time}
-import gleam/dynamic
+import gleam/dynamic/decode
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -48,45 +48,18 @@ pub fn write_noaa_alerts(
 
         let datetime_utc = birl.from_unix(unixtime_with_offset)
 
-        let time_of_day = datetime_utc |> birl.get_time_of_day
-        let day = datetime_utc |> birl.get_day
+        let _time_of_day = datetime_utc |> birl.get_time_of_day
+        let _day = datetime_utc |> birl.get_day
 
-        let ts_date =
-          pog.Date(
-            year: day.year,
-            month: datetime_utc |> birl.month |> month_to_int,
-            day: day.date,
-          )
-
-        let ts_time =
-          pog.Time(
-            hours: time_of_day.hour,
-            minutes: time_of_day.minute,
-            seconds: time_of_day.second,
-            microseconds: 0,
-          )
-
-        let ts = pog.Timestamp(ts_date, ts_time)
+        let ts = datetime_utc |> birl.to_iso8601
         ts
       }
       Error(_) -> {
         let now = birl.utc_now()
-        let time_of_day = now |> birl.get_time_of_day
-        let day = now |> birl.get_day
+        let _time_of_day = now |> birl.get_time_of_day
+        let _day = now |> birl.get_day
 
-        pog.Timestamp(
-          pog.Date(
-            year: day.year,
-            month: now |> birl.month |> month_to_int,
-            day: day.date,
-          ),
-          pog.Time(
-            hours: time_of_day.hour,
-            minutes: time_of_day.minute,
-            seconds: time_of_day.second,
-            microseconds: 0,
-          ),
-        )
+        now |> birl.to_iso8601
       }
     }
 
@@ -98,14 +71,13 @@ pub fn write_noaa_alerts(
           severity = EXCLUDED.severity,
           datetime = EXCLUDED.datetime;"
 
-    let row_decoder =
-      dynamic.tuple3(dynamic.string, dynamic.string, dynamic.string)
+    let row_decoder = decode.success(Nil)
 
     let assert Ok(response) =
       pog.query(query)
       |> pog.parameter(pog.text(area_desc))
       |> pog.parameter(pog.text(string.inspect(severity)))
-      |> pog.parameter(pog.timestamp(datetime_parsed))
+      |> pog.parameter(pog.text(datetime_parsed))
       |> pog.returning(row_decoder)
       |> pog.execute(conn)
 
@@ -182,19 +154,3 @@ fn extract_timezone_offset(sent_datetime: String) -> String {
   }
 }
 
-fn month_to_int(month: birl.Month) -> Int {
-  case month {
-    birl.Jan -> 1
-    birl.Feb -> 2
-    birl.Mar -> 3
-    birl.Apr -> 4
-    birl.May -> 5
-    birl.Jun -> 6
-    birl.Jul -> 7
-    birl.Aug -> 8
-    birl.Sep -> 9
-    birl.Oct -> 10
-    birl.Nov -> 11
-    birl.Dec -> 12
-  }
-}

@@ -1,6 +1,6 @@
-import decode.{type Decoder}
+import gleam/dynamic/decode
 import gleam/dict.{type Dict}
-import gleam/dynamic.{type Dynamic, list, string}
+import gleam/dynamic.{type Dynamic}
 import gleam/list
 import gleam/option.{type Option}
 import gleam/result
@@ -176,7 +176,10 @@ pub type CustomTypesList {
 
 pub fn extract_and_decode_features(data: Dynamic) -> List(FeatureElement) {
   let decoded_result =
-    dynamic.field("features", dynamic.list(dynamic.dynamic))(data)
+    decode.run(data, {
+      use features <- decode.field("features", decode.list(decode.dynamic))
+      decode.success(features)
+    })
 
   wisp.log_info("Extracted features: ")
 
@@ -205,31 +208,20 @@ pub fn extract_and_decode_features(data: Dynamic) -> List(FeatureElement) {
 
 pub fn prepare_feature_for_decoding(
   feature: Dynamic,
-) -> Result(String, List(dynamic.DecodeError)) {
-  case dynamic.string(feature) {
-    Ok(json_string) -> Ok(json_string)
-    Error(_) as error -> {
-      error
-    }
-  }
+) -> Result(String, List(decode.DecodeError)) {
+  decode.run(feature, decode.string)
 }
 
 pub fn decode_feature(data: Dynamic) -> Result(FeatureElement, List(String)) {
-  let decoder =
-    decode.into({
-      use id <- decode.parameter
-      use type_ <- decode.parameter
-      use geometry <- decode.parameter
-      use properties <- decode.parameter
-      FeatureElement(id, type_, geometry, properties)
-    })
-    |> decode.field("id", decode.string)
-    |> decode.field("type", decode.string)
-    |> decode.field("geometry", decode_geometry())
-    |> decode.field("properties", decode_properties(data))
+  let decoder = {
+    use id <- decode.field("id", decode.string)
+    use type_ <- decode.field("type", decode.string)
+    use geometry <- decode.field("geometry", decode_geometry())
+    use properties <- decode.field("properties", decode_properties())
+    decode.success(FeatureElement(id, type_, geometry, properties))
+  }
 
-  decoder
-  |> decode.from(data)
+  decode.run(data, decoder)
   |> result.map_error(fn(error) {
     wisp.log_error("Error decoding feature: " <> string.inspect(error))
     list.new()
@@ -237,37 +229,71 @@ pub fn decode_feature(data: Dynamic) -> Result(FeatureElement, List(String)) {
   })
 }
 
-fn decode_properties(data: Dynamic) {
-  decode.into({
-    use id <- decode.parameter
-    use type_ <- decode.parameter
-    use properties_id <- decode.parameter
-    use area_desc <- decode.parameter
-    use geocode <- decode.parameter
-    use affected_zones <- decode.parameter
-    use references <- decode.parameter
-    use sent <- decode.parameter
-    use effective <- decode.parameter
-    use onset <- decode.parameter
-    use expires <- decode.parameter
-    use ends <- decode.parameter
-    use status <- decode.parameter
-    use message_type <- decode.parameter
-    use category <- decode.parameter
-    use severity <- decode.parameter
-    use certainty <- decode.parameter
-    use urgency <- decode.parameter
-    use event <- decode.parameter
-    use sender <- decode.parameter
-    use sender_name <- decode.parameter
-    use headline <- decode.parameter
-    use description <- decode.parameter
-    use instruction <- decode.parameter
-    use response <- decode.parameter
-    use parameters <- decode.parameter
-    use replaced_by <- decode.parameter
-    use replaced_at <- decode.parameter
-    Properties(
+fn decode_properties() -> decode.Decoder(Properties) {
+  {
+    use id <- decode.field("id", decode.optional(decode.string))
+    use type_ <- decode.field("type", decode.optional(decode.string))
+    use properties_id <- decode.field("properties_id", decode.optional(decode.string))
+    use area_desc <- decode.field("areaDesc", decode.string)
+    use geocode <- decode.field(
+      "geocode",
+      decode.optional(decode_geocode())
+        |> decode.map(fn(maybe_geocode) {
+          case maybe_geocode {
+            option.Some(geocode) -> geocode
+            option.None -> Geocode([], [])
+          }
+        }),
+    )
+    use affected_zones <- decode.field(
+      "affectedZones",
+      decode.optional(decode.list(decode.string))
+        |> decode.map(fn(maybe_zones) {
+          case maybe_zones {
+            option.Some(zones) -> zones
+            _ -> []
+          }
+        }),
+    )
+    use references <- decode.field(
+      "references",
+      decode.optional(decode.list(decode_reference()))
+        |> decode.map(fn(x) { x |> option.unwrap([]) }),
+    )
+    use sent <- decode.field("sent", decode.optional(decode.string))
+    use effective <- decode.field("effective", decode.string)
+    use onset <- decode.field("onset", decode.optional(decode.string))
+    use expires <- decode.field("expires", decode.string)
+    use ends <- decode.field("ends", decode.optional(decode.string))
+    use status <- decode.field("status", decode_status())
+    use message_type <- decode.field("messageType", decode.optional(decode_message_type()))
+    use category <- decode.field("category", decode_category())
+    use severity <- decode.field("severity", decode_severity())
+    use certainty <- decode.field("certainty", decode_certainty())
+    use urgency <- decode.field("urgency", decode_urgency())
+    use event <- decode.field("event", decode.string)
+    use sender <- decode.field(
+      "sender",
+      decode.optional(decode_sender())
+        |> decode.map(fn(maybe_sender) {
+          case maybe_sender {
+            option.Some(sender) -> sender
+            option.None -> Sender("NOAA")
+          }
+        }),
+    )
+    use sender_name <- decode.field("senderName", decode.optional(decode.string))
+    use headline <- decode.field("headline", decode.optional(decode.string))
+    use description <- decode.field("description", decode.optional(decode.string))
+    use instruction <- decode.field("instruction", decode.optional(decode.string))
+    use response <- decode.field("response", decode_response())
+    use parameters <- decode.field(
+      "parameters",
+      decode.dict(decode.string, decode.list(decode.string)),
+    )
+    use replaced_by <- decode.field("replacedBy", decode.optional(decode.string))
+    use replaced_at <- decode.field("replacedAt", decode.optional(decode.string))
+    decode.success(Properties(
       id,
       type_,
       properties_id,
@@ -296,73 +322,11 @@ fn decode_properties(data: Dynamic) {
       parameters,
       replaced_by,
       replaced_at,
-    )
-  })
-  |> decode.field("id", decode.optional(decode.string))
-  |> decode.field("type", decode.optional(decode.string))
-  |> decode.field("properties_id", decode.optional(decode.string))
-  |> decode.field("areaDesc", decode.string)
-  |> decode.field(
-    "geocode",
-    decode.optional(decode_geocode())
-      |> decode.map(fn(maybe_geocode) {
-        case maybe_geocode {
-          option.Some(geocode) -> geocode
-          option.None -> Geocode([], [])
-        }
-      }),
-  )
-  |> decode.field(
-    "affectedZones",
-    decode.optional(decode.list(decode.string))
-      |> decode.map(fn(maybe_zones) {
-        case maybe_zones {
-          option.Some(zones) -> zones
-          _ -> []
-        }
-      }),
-  )
-  |> decode.field(
-    "references",
-    decode.optional(decode.list(decode_reference()))
-      |> decode.map(fn(x) { x |> option.unwrap([]) }),
-  )
-  |> decode.field("sent", decode.optional(decode.string))
-  |> decode.field("effective", decode.string)
-  |> decode.field("onset", decode.optional(decode.string))
-  |> decode.field("expires", decode.string)
-  |> decode.field("ends", decode.optional(decode.string))
-  |> decode.field("status", decode_status())
-  |> decode.field("messageType", decode.optional(decode_message_type()))
-  |> decode.field("category", decode_category())
-  |> decode.field("severity", decode_severity())
-  |> decode.field("certainty", decode_certainty())
-  |> decode.field("urgency", decode_urgency())
-  |> decode.field("event", decode.string)
-  |> decode.field(
-    "sender",
-    decode.optional(decode_sender())
-      |> decode.map(fn(maybe_sender) {
-        case maybe_sender {
-          option.Some(sender) -> sender
-          option.None -> Sender("NOAA")
-        }
-      }),
-  )
-  |> decode.field("senderName", decode.optional(decode.string))
-  |> decode.field("headline", decode.optional(decode.string))
-  |> decode.field("description", decode.optional(decode.string))
-  |> decode.field("instruction", decode.optional(decode.string))
-  |> decode.field("response", decode_response())
-  |> decode.field(
-    "parameters",
-    decode.dict(decode.string, decode.list(decode.string)),
-  )
-  |> decode.field("replacedBy", decode.optional(decode.string))
-  |> decode.field("replacedAt", decode.optional(decode.string))
+    ))
+  }
 }
 
-fn decode_status() -> Decoder(Status) {
+fn decode_status() -> decode.Decoder(Status) {
   decode.map(decode.string, fn(string) {
     case string {
       "Actual" -> Actual
@@ -372,35 +336,33 @@ fn decode_status() -> Decoder(Status) {
   })
 }
 
-fn decode_geocode() -> Decoder(Geocode) {
-  decode.into({
-    use same <- decode.parameter
-    use ugc <- decode.parameter
-    Geocode(same, ugc)
-  })
-  |> decode.field(
-    "same",
-    decode.optional(decode.list(decode.string))
-      |> decode.map(fn(maybe_same) {
-        case maybe_same {
-          option.Some(same) -> same
-          option.None -> []
-        }
-      }),
-  )
-  |> decode.field(
-    "ugc",
-    decode.optional(decode.list(decode.string))
-      |> decode.map(fn(maybe_ugc) {
-        case maybe_ugc {
-          option.Some(ugc) -> ugc
-          option.None -> []
-        }
-      }),
-  )
+fn decode_geocode() -> decode.Decoder(Geocode) {
+  {
+    use same <- decode.field(
+      "same",
+      decode.optional(decode.list(decode.string))
+        |> decode.map(fn(maybe_same) {
+          case maybe_same {
+            option.Some(same) -> same
+            option.None -> []
+          }
+        }),
+    )
+    use ugc <- decode.field(
+      "ugc",
+      decode.optional(decode.list(decode.string))
+        |> decode.map(fn(maybe_ugc) {
+          case maybe_ugc {
+            option.Some(ugc) -> ugc
+            option.None -> []
+          }
+        }),
+    )
+    decode.success(Geocode(same, ugc))
+  }
 }
 
-fn decode_message_type() -> Decoder(MessageType) {
+fn decode_message_type() -> decode.Decoder(MessageType) {
   decode.map(decode.string, fn(string) {
     case string {
       "Alert" -> Alert
@@ -411,7 +373,7 @@ fn decode_message_type() -> Decoder(MessageType) {
   })
 }
 
-fn decode_category() -> Decoder(Category) {
+fn decode_category() -> decode.Decoder(Category) {
   decode.map(decode.string, fn(string) {
     case string {
       "Met" -> Met
@@ -420,7 +382,7 @@ fn decode_category() -> Decoder(Category) {
   })
 }
 
-fn decode_severity() -> Decoder(Severity) {
+fn decode_severity() -> decode.Decoder(Severity) {
   decode.map(decode.string, fn(string) {
     case string {
       "Minor" -> Minor
@@ -431,7 +393,7 @@ fn decode_severity() -> Decoder(Severity) {
   })
 }
 
-fn decode_certainty() -> Decoder(Certainty) {
+fn decode_certainty() -> decode.Decoder(Certainty) {
   decode.map(decode.string, fn(string) {
     case string {
       "Unknown" -> Unknown
@@ -443,7 +405,7 @@ fn decode_certainty() -> Decoder(Certainty) {
   })
 }
 
-fn decode_urgency() -> Decoder(Urgency) {
+fn decode_urgency() -> decode.Decoder(Urgency) {
   decode.map(decode.string, fn(string) {
     case string {
       "Expected" -> Expected
@@ -455,12 +417,12 @@ fn decode_urgency() -> Decoder(Urgency) {
   })
 }
 
-fn decode_sender() -> Decoder(Sender) {
+fn decode_sender() -> decode.Decoder(Sender) {
   decode.string
   |> decode.map(fn(s) { Sender(s) })
 }
 
-fn decode_response() -> Decoder(Response) {
+fn decode_response() -> decode.Decoder(Response) {
   decode.map(decode.string, fn(string) {
     case string {
       "AllClear" -> AllClear
@@ -475,72 +437,64 @@ fn decode_response() -> Decoder(Response) {
   })
 }
 
-fn decode_geometry() -> Decoder(Option(Geometry)) {
-  decode.optional(
-    decode.into({
-      use type_ <- decode.parameter
-      use coordinates <- decode.parameter
-      Geometry(type_, coordinates)
-    })
-    |> decode.field("type", decode.string)
-    |> decode.field(
+fn decode_geometry() -> decode.Decoder(Option(Geometry)) {
+  decode.optional({
+    use type_ <- decode.field("type", decode.string)
+    use coordinates <- decode.field(
       "coordinates",
       decode.list(decode.list(decode.list(decode_coordinates()))),
-    ),
-  )
+    )
+    decode.success(Geometry(type_, coordinates))
+  })
 }
 
-fn decode_coordinates() -> Decoder(Coordinate) {
+fn decode_coordinates() -> decode.Decoder(Coordinate) {
   decode.float
   |> decode.map(FloatType)
 }
 
-fn decode_reference() -> Decoder(Reference) {
-  decode.into({
-    use id <- decode.parameter
-    use identifier <- decode.parameter
-    use sender <- decode.parameter
-    use sent <- decode.parameter
-    Reference(id, identifier, sender, sent)
-  })
-  |> decode.field(
-    "id",
-    decode.optional(decode.string)
-      |> decode.map(fn(maybe_id) {
-        case maybe_id {
-          option.Some(id) -> id
-          option.None -> ""
-        }
-      }),
-  )
-  |> decode.field(
-    "identifier",
-    decode.optional(decode.string)
-      |> decode.map(fn(maybe_identifier) {
-        case maybe_identifier {
-          option.Some(identifier) -> identifier
-          option.None -> ""
-        }
-      }),
-  )
-  |> decode.field(
-    "sender",
-    decode.optional(decode_sender())
-      |> decode.map(fn(maybe_sender) {
-        case maybe_sender {
-          option.Some(sender) -> sender
-          option.None -> Sender("UNKNOWN")
-        }
-      }),
-  )
-  |> decode.field(
-    "sent",
-    decode.optional(decode.string)
-      |> decode.map(fn(maybe_sent) {
-        case maybe_sent {
-          option.Some(sent) -> sent
-          option.None -> ""
-        }
-      }),
-  )
+fn decode_reference() -> decode.Decoder(Reference) {
+  {
+    use id <- decode.field(
+      "id",
+      decode.optional(decode.string)
+        |> decode.map(fn(maybe_id) {
+          case maybe_id {
+            option.Some(id) -> id
+            option.None -> ""
+          }
+        }),
+    )
+    use identifier <- decode.field(
+      "identifier",
+      decode.optional(decode.string)
+        |> decode.map(fn(maybe_identifier) {
+          case maybe_identifier {
+            option.Some(identifier) -> identifier
+            option.None -> ""
+          }
+        }),
+    )
+    use sender <- decode.field(
+      "sender",
+      decode.optional(decode_sender())
+        |> decode.map(fn(maybe_sender) {
+          case maybe_sender {
+            option.Some(sender) -> sender
+            option.None -> Sender("UNKNOWN")
+          }
+        }),
+    )
+    use sent <- decode.field(
+      "sent",
+      decode.optional(decode.string)
+        |> decode.map(fn(maybe_sent) {
+          case maybe_sent {
+            option.Some(sent) -> sent
+            option.None -> ""
+          }
+        }),
+    )
+    decode.success(Reference(id, identifier, sender, sent))
+  }
 }

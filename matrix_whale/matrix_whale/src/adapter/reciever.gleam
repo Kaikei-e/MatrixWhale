@@ -17,7 +17,7 @@ pub fn reciever_main(ctx: Context) {
     wisp_mist.handler(reciever_router(_, ctx), secret_key_base)
     |> mist.new
     |> mist.port(6000)
-    |> mist.start_http()
+    |> mist.start
 
   process.sleep_forever()
 }
@@ -27,7 +27,7 @@ fn reciever_router(request: Request, ctx: Context) -> Response {
 
   case wisp.path_segments(request) {
     ["api", "v1", "health"] -> {
-      string_tree.from_string("system is alive") |> wisp.json_response(200)
+      wisp.json_response(string_tree.from_string("system is alive") |> string_tree.to_string, 200)
     }
     ["api", "v1", "logs"] -> noaa_adapter.noaa_logs_handler(req)
     ["api", "v1", "noaa_data", "send"] ->

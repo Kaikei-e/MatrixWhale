@@ -51,15 +51,6 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
     <> " total features",
   )
 
-  wisp.json_response(
-    string_tree.from_string(
-      "Processed "
-      <> string.inspect(processed_count)
-      <> " features successfully",
-    ),
-    200,
-  )
-
   let extracted_feature =
     features_result
     |> list.first
@@ -80,8 +71,8 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
   wisp.json_response(
     string_tree.from_string(
       "Parsing procces. First element's alert type is "
-      <> string.inspect(severity),
-    ),
+      <> string.inspect(severity)
+    ) |> string_tree.to_string,
     200,
   )
 }

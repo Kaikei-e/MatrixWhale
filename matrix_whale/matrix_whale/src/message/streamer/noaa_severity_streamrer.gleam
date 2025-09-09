@@ -1,11 +1,8 @@
 import adapter/context.{type Context}
 import birl.{get_day, get_time_of_day, now}
 import gleam/erlang/process
-import gleam/function
-import gleam/otp/actor.{type InitResult}
+import gleam/otp/actor
 import gleam/string
-import gleam/string_tree
-import mist.{type SSEConnection}
 import repeatedly
 import wisp.{type Request, type Response}
 
@@ -15,17 +12,17 @@ pub type EventState {
 
 pub type Event {
   Severity(String)
-  Down(process.ProcessDown)
+  Down(process.Down)
 }
 
 // pub type InitConnectionResult {
 //   InitConnectionResult(actor.InitResult(EventState, Event), process.Selector)
 // }
 
-pub fn sse_noaa_severity(req: Request, ctx: Context) -> Response {
+pub fn sse_noaa_severity(_req: Request, ctx: Context) -> Response {
   wisp.log_info("Starting severity streamer")
 
-  let resp =
+  let _resp =
     wisp.response(200)
     |> wisp.set_header("Content-Type", "text/event-stream")
     |> wisp.set_header("Cache-Control", "no-cache")
@@ -33,24 +30,24 @@ pub fn sse_noaa_severity(req: Request, ctx: Context) -> Response {
     |> wisp.set_header("Access-Control-Allow-Origin", "*")
     |> wisp.set_header("X-Accel-Buffering", "no")
 
-  let init_conn = initialize_streamer(ctx)
+  let _init_conn = initialize_streamer(ctx)
 
   // keep_connection_alive(init_conn.event, init_conn.init_result)
   wisp.log_info("Severity streamer started")
 
-  todo
+  wisp.response(404)
+  |> wisp.string_body("SSE endpoint not implemented")
 }
 
-fn initialize_streamer(ctx: Context) -> InitResult(EventState, Event) {
+fn initialize_streamer(_ctx: Context) -> Result(actor.Initialised(EventState, Event, Nil), String) {
   let init_severity = "Initializing severity streamer"
 
   wisp.log_info("Initializing severity streamer")
   let subj = process.new_subject()
-  let monitor = process.monitor_process(process.self())
-  let selector =
+  let _monitor = process.monitor(process.self())
+  let _selector =
     process.new_selector()
-    |> process.selecting(subj, function.identity)
-    |> process.selecting_process_down(monitor, Down)
+    |> process.select(subj)
 
   let repeater =
     repeatedly.call(5000, Nil, fn(_state, _count) {
@@ -77,30 +74,6 @@ fn initialize_streamer(ctx: Context) -> InitResult(EventState, Event) {
       wisp.log_info("Sending severity: " <> severity_state)
       process.send(subj, Severity(severity_state))
     })
-  actor.Ready(EventState(init_severity, repeater), selector)
+  Ok(actor.initialised(EventState(init_severity, repeater)))
 }
 
-fn keep_connection_alive(message: Event, conn: SSEConnection, state: EventState) {
-  wisp.log_info("Received message in SSE loop")
-  case message {
-    Severity(value) -> {
-      let event = mist.event(string_tree.from_string(value))
-      case mist.send_event(conn, event) {
-        Ok(_) -> {
-          wisp.log_info("Sent event: " <> string.inspect(value))
-          actor.continue(EventState(..state, severity: value))
-        }
-        Error(error) -> {
-          wisp.log_error("Failed to send event: " <> string.inspect(error))
-          repeatedly.stop(state.repeater)
-          actor.Stop(process.Normal)
-        }
-      }
-    }
-    Down(_process_down) -> {
-      wisp.log_info("Client disconnected")
-      repeatedly.stop(state.repeater)
-      actor.Stop(process.Normal)
-    }
-  }
-}
