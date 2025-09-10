@@ -16,28 +16,14 @@ permissions:
 
 jobs:
   test:
-    name: Test (OTP ${{ matrix.otp }}, ${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: Test (OTP ${{ matrix.otp }})
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     
     strategy:
       matrix:
-        include:
-          # Ubuntu tests with multiple OTP versions
-          - otp: "26.2.5"
-            gleam: "1.8.0"
-            os: "ubuntu-latest"
-          - otp: "27.3.4"  
-            gleam: "1.8.0"
-            os: "ubuntu-latest"
-          # macOS 14 (stable) with compatible versions
-          - otp: "27.3.4"
-            gleam: "1.8.0"
-            os: "macos-14"
-          # Windows with compatible versions
-          - otp: "27.3.4"
-            gleam: "1.8.0"
-            os: "windows-latest"
+        otp: ["26.2.5", "27.3.4"]
+        gleam: ["1.8.0"]
     
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +32,7 @@ jobs:
         uses: erlef/setup-beam@v1
         with:
           otp-version: ${{ matrix.otp }}
-          gleam-version: ${{ matrix.gleam }}
+          gleam-version: "1.8.0"
           rebar3-version: "3"
       
       - name: Cache Gleam dependencies
@@ -56,10 +42,10 @@ jobs:
             build/packages
             build/dev
             ~/.hex
-          key: ${{ runner.os }}-gleam-${{ matrix.otp }}-${{ hashFiles('**/manifest.toml', '**/gleam.toml') }}
+          key: ubuntu-gleam-${{ matrix.otp }}-${{ hashFiles('**/manifest.toml', '**/gleam.toml') }}
           restore-keys: |
-            ${{ runner.os }}-gleam-${{ matrix.otp }}-
-            ${{ runner.os }}-gleam-
+            ubuntu-gleam-${{ matrix.otp }}-
+            ubuntu-gleam-
       
       - name: Download dependencies
         run: gleam deps download
