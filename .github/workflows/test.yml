@@ -19,22 +19,22 @@ jobs:
     name: Test (OTP ${{ matrix.otp }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    
+
     strategy:
       matrix:
         otp: ["26.2.5", "27.3.4"]
-        gleam: ["1.8.0"]
-    
+        gleam: ["1.12.0"]
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Gleam
         uses: erlef/setup-beam@v1
         with:
           otp-version: ${{ matrix.otp }}
-          gleam-version: "1.8.0"
+          gleam-version: ${{ matrix.gleam }}
           rebar3-version: "3"
-      
+
       - name: Cache Gleam dependencies
         uses: actions/cache@v4
         with:
@@ -46,19 +46,19 @@ jobs:
           restore-keys: |
             ubuntu-gleam-${{ matrix.otp }}-
             ubuntu-gleam-
-      
+
       - name: Update dependencies
         run: gleam update
         working-directory: matrix_whale/matrix_whale
-      
+
       - name: Build project
         run: gleam build
         working-directory: matrix_whale/matrix_whale
-      
+
       - name: Run tests
         run: gleam test
         working-directory: matrix_whale/matrix_whale
-      
+
       - name: Check formatting
         run: gleam format --check src test
         working-directory: matrix_whale/matrix_whale
