@@ -22,16 +22,22 @@ jobs:
     
     strategy:
       matrix:
-        otp: ["26.2.5", "27.3.4"]
-        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
         include:
+          # Ubuntu tests with multiple OTP versions
           - otp: "26.2.5"
-            gleam: "1.6.0"
+            gleam: "1.8.0"
+            os: "ubuntu-latest"
           - otp: "27.3.4"  
-            gleam: "1.6.0"
-        exclude:
-          - os: "windows-latest"
-            otp: "26.2.5"
+            gleam: "1.8.0"
+            os: "ubuntu-latest"
+          # macOS 14 (stable) with compatible versions
+          - otp: "27.3.4"
+            gleam: "1.8.0"
+            os: "macos-14"
+          # Windows with compatible versions
+          - otp: "27.3.4"
+            gleam: "1.8.0"
+            os: "windows-latest"
     
     steps:
       - uses: actions/checkout@v4
