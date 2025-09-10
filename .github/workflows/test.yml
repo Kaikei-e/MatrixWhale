@@ -47,8 +47,8 @@ jobs:
             ubuntu-gleam-${{ matrix.otp }}-
             ubuntu-gleam-
       
-      - name: Download dependencies
-        run: gleam deps download
+      - name: Update dependencies
+        run: gleam update
         working-directory: matrix_whale/matrix_whale
       
       - name: Build project
