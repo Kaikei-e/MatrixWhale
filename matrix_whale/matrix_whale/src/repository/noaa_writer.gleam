@@ -153,4 +153,3 @@ fn extract_timezone_offset(sent_datetime: String) -> String {
     }
   }
 }
-

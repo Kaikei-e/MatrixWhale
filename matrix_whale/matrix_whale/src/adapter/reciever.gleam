@@ -27,7 +27,10 @@ fn reciever_router(request: Request, ctx: Context) -> Response {
 
   case wisp.path_segments(request) {
     ["api", "v1", "health"] -> {
-      wisp.json_response(string_tree.from_string("system is alive") |> string_tree.to_string, 200)
+      wisp.json_response(
+        string_tree.from_string("system is alive") |> string_tree.to_string,
+        200,
+      )
     }
     ["api", "v1", "logs"] -> noaa_adapter.noaa_logs_handler(req)
     ["api", "v1", "noaa_data", "send"] ->

@@ -14,7 +14,12 @@ fn decode_logs(json: Dynamic) -> Result(LogFormat, List(decode.DecodeError)) {
     use level <- decode.field("level", decode.string)
     use message <- decode.field("msg", decode.string)
     use service <- decode.field("service", decode.string)
-    decode.success(LogFormat(time: time, level: level, message: message, service: service))
+    decode.success(LogFormat(
+      time: time,
+      level: level,
+      message: message,
+      service: service,
+    ))
   }
 
   decode.run(json, decoder)

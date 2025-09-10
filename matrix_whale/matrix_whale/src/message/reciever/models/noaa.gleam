@@ -1,6 +1,6 @@
-import gleam/dynamic/decode
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
+import gleam/dynamic/decode
 import gleam/list
 import gleam/option.{type Option}
 import gleam/result
@@ -233,7 +233,10 @@ fn decode_properties() -> decode.Decoder(Properties) {
   {
     use id <- decode.field("id", decode.optional(decode.string))
     use type_ <- decode.field("type", decode.optional(decode.string))
-    use properties_id <- decode.field("properties_id", decode.optional(decode.string))
+    use properties_id <- decode.field(
+      "properties_id",
+      decode.optional(decode.string),
+    )
     use area_desc <- decode.field("areaDesc", decode.string)
     use geocode <- decode.field(
       "geocode",
@@ -266,7 +269,10 @@ fn decode_properties() -> decode.Decoder(Properties) {
     use expires <- decode.field("expires", decode.string)
     use ends <- decode.field("ends", decode.optional(decode.string))
     use status <- decode.field("status", decode_status())
-    use message_type <- decode.field("messageType", decode.optional(decode_message_type()))
+    use message_type <- decode.field(
+      "messageType",
+      decode.optional(decode_message_type()),
+    )
     use category <- decode.field("category", decode_category())
     use severity <- decode.field("severity", decode_severity())
     use certainty <- decode.field("certainty", decode_certainty())
@@ -282,17 +288,32 @@ fn decode_properties() -> decode.Decoder(Properties) {
           }
         }),
     )
-    use sender_name <- decode.field("senderName", decode.optional(decode.string))
+    use sender_name <- decode.field(
+      "senderName",
+      decode.optional(decode.string),
+    )
     use headline <- decode.field("headline", decode.optional(decode.string))
-    use description <- decode.field("description", decode.optional(decode.string))
-    use instruction <- decode.field("instruction", decode.optional(decode.string))
+    use description <- decode.field(
+      "description",
+      decode.optional(decode.string),
+    )
+    use instruction <- decode.field(
+      "instruction",
+      decode.optional(decode.string),
+    )
     use response <- decode.field("response", decode_response())
     use parameters <- decode.field(
       "parameters",
       decode.dict(decode.string, decode.list(decode.string)),
     )
-    use replaced_by <- decode.field("replacedBy", decode.optional(decode.string))
-    use replaced_at <- decode.field("replacedAt", decode.optional(decode.string))
+    use replaced_by <- decode.field(
+      "replacedBy",
+      decode.optional(decode.string),
+    )
+    use replaced_at <- decode.field(
+      "replacedAt",
+      decode.optional(decode.string),
+    )
     decode.success(Properties(
       id,
       type_,

@@ -70,7 +70,11 @@ pub fn streamer(ctx: Context) {
                 })
               Ok(actor.initialised(EventState(init_severity, repeater)))
             },
-            loop: fn(state: EventState, message: Event, conn: mist.SSEConnection) -> actor.Next(EventState, Event) {
+            loop: fn(
+              state: EventState,
+              message: Event,
+              conn: mist.SSEConnection,
+            ) -> actor.Next(EventState, Event) {
               wisp.log_info("Received message in SSE loop")
               case message {
                 Severity(value) -> {

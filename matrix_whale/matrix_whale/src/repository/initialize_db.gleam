@@ -1,8 +1,8 @@
 import dot_env as dot
 import dot_env/env
+import gleam/erlang/process
 import gleam/int
 import gleam/string
-import gleam/erlang/process
 import pog
 import wisp
 
@@ -49,7 +49,8 @@ pub fn initialize_db() -> pog.Connection {
     }
   }
 
-  let database_url = "postgres://"
+  let database_url =
+    "postgres://"
     <> db_user
     <> ":"
     <> db_password
@@ -59,7 +60,7 @@ pub fn initialize_db() -> pog.Connection {
     <> int.to_string(db_port)
     <> "/"
     <> db_name
-  
+
   let pool_name = process.new_name("matrix_whale_db")
   let conf = pog.url_config(pool_name, database_url)
   let _config = case conf {

@@ -71,8 +71,9 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
   wisp.json_response(
     string_tree.from_string(
       "Parsing procces. First element's alert type is "
-      <> string.inspect(severity)
-    ) |> string_tree.to_string,
+      <> string.inspect(severity),
+    )
+      |> string_tree.to_string,
     200,
   )
 }

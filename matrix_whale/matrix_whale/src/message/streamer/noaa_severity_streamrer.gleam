@@ -39,7 +39,9 @@ pub fn sse_noaa_severity(_req: Request, ctx: Context) -> Response {
   |> wisp.string_body("SSE endpoint not implemented")
 }
 
-fn initialize_streamer(_ctx: Context) -> Result(actor.Initialised(EventState, Event, Nil), String) {
+fn initialize_streamer(
+  _ctx: Context,
+) -> Result(actor.Initialised(EventState, Event, Nil), String) {
   let init_severity = "Initializing severity streamer"
 
   wisp.log_info("Initializing severity streamer")
@@ -76,4 +78,3 @@ fn initialize_streamer(_ctx: Context) -> Result(actor.Initialised(EventState, Ev
     })
   Ok(actor.initialised(EventState(init_severity, repeater)))
 }
-
