@@ -1,0 +1,38 @@
+# proxy/plecto.toml -- replaces proxy/conf/nginx.conf + proxy/conf/conf.d/default.conf.
+# Plain HTTP/1.1 on :80; no [[tls]], no [[filter]], no [trust] -- TLS, WASM filters, and
+# CORS/security-header parity are explicitly deferred for this milestone.
+
+[observability]
+admin_addr = "0.0.0.0:9090"
+access_log = true
+
+[[upstream]]
+name = "web"
+addresses = ["10.254.100.10:4173"]
+
+[upstream.health]
+path = "/"
+
+[[upstream]]
+name = "matrix_whale"
+addresses = ["10.254.100.30:8080"]
+
+[upstream.health]
+path = "/api/v1/streamer/health"
+
+[[route]]
+upstream = "matrix_whale"
+
+[route.match]
+path_prefix = "/api"
+
+[route.rate_limit]
+rate = 5
+burst = 10
+key = "client-ip"
+
+[[route]]
+upstream = "web"
+
+[route.match]
+path_prefix = "/"

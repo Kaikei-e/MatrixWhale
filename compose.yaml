@@ -3,9 +3,8 @@ services:
     build:
       context: ./proxy
     ports:
-      - "80:80"
-    volumes:
-      - ./proxy:/proxy
+      - "8180:80"
+      - "9190:9090"
     tty: true
     restart: always
     networks:
@@ -16,7 +15,7 @@ services:
     build:
       context: ./web
     ports:
-      - "4173:4173"
+      - "4174:4173"
     environment:
       - ENV_VAR=test_value
     volumes:
@@ -51,7 +50,7 @@ services:
     environment:
       - ENV_VAR=test_value
     ports:
-      - "8080:8080"
+      - "8081:8080"
       - "6000:6000"
     tty: true
     restart: always
@@ -111,7 +110,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      - "5440:5432"
     tty: true
     restart: always
     volumes:

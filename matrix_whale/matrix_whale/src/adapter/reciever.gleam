@@ -17,6 +17,7 @@ pub fn reciever_main(ctx: Context) {
     wisp_mist.handler(reciever_router(_, ctx), secret_key_base)
     |> mist.new
     |> mist.port(6000)
+    |> mist.bind("0.0.0.0")
     |> mist.start
 
   process.sleep_forever()

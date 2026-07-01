@@ -27,6 +27,12 @@ pub fn streamer(ctx: Context) {
   let assert Ok(_) =
     fn(req) {
       case request.path_segments(req) {
+        ["api", "v1", "streamer", "health"] -> {
+          response.new(200)
+          |> response.set_body(
+            mist.Bytes(bytes_tree.from_string("system is alive")),
+          )
+        }
         ["api", "v1", "noaa_data", "stream"] -> {
           mist.server_sent_events(
             req,
@@ -111,6 +117,7 @@ pub fn streamer(ctx: Context) {
     }
     |> mist.new
     |> mist.port(8080)
+    |> mist.bind("0.0.0.0")
     |> mist.start()
   wisp.log_info("Severity streamer started")
   process.sleep_forever()

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import type { NoaaSeverityData } from '$lib/types/noaa';
-	import type { PageData } from '../../routes/home/$types';
 	const matrixWhaleUrl = import.meta.env.VITE_MATRIX_WHALE_FETCH_URL;
 
 	let { objectForSearch }: { objectForSearch: { data: NoaaSeverityData[] } } = $props();
@@ -71,7 +70,7 @@
 			</div>
 		{:else if !loading && objectForSearch?.data && objectForSearch?.data.length > 0}
 			<div class="mt-4 flex w-full flex-col gap-2">
-				{#each objectForSearch?.data ?? [] as alert}
+				{#each objectForSearch?.data ?? [] as alert, i (i)}
 					<div class="rounded-lg border p-4 shadow-sm">
 						<p class="text-lg font-medium">Area: {alert.area_desc}</p>
 						<p class="text-sm text-gray-600">Severity: {alert.severity}</p>
