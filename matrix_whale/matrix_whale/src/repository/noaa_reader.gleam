@@ -14,7 +14,9 @@ pub type SearchAreaDescription {
   SearchAreaDescription(area_desc: String)
 }
 
-pub fn read_noaa_severity(conn: pog.Connection) -> Result(NOAASeverity, String) {
+pub fn read_noaa_severity(
+  conn: pog.Connection,
+) -> Result(NOAASeverity, String) {
   let decoder = decode.success(NOAASeverity("", ""))
 
   let row =
