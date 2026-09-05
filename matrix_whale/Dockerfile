@@ -1,4 +1,4 @@
-FROM ghcr.io/gleam-lang/gleam:v1.17.0-erlang
+FROM ghcr.io/gleam-lang/gleam:v1.18.1-erlang
 
 ADD /matrix_whale /app
 WORKDIR /app

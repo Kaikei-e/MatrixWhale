@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { initSeverityTypeReceiver, severityData } from '$lib/noaa_alerts/severity_type_reciever';
 	import Search from '$lib/components/Search.svelte';
+	import type { NoaaSeverityData } from '$lib/types/noaa';
 
 	onMount(() => {
 		console.log('Component mounted, initializing receiver...');
@@ -14,13 +15,9 @@
 		};
 	});
 
-	let data = $state({
-		noaaSeverityData: []
-	});
+	let data = $state<NoaaSeverityData[]>([]);
 
-	let form = $state({
-		noaaSeverityData: []
-	});
+	let form = $state<NoaaSeverityData[]>([]);
 
 	let objectForSearch = $state({
 		data,

@@ -22,11 +22,11 @@ jobs:
 
     strategy:
       matrix:
-        otp: ["26.2.5", "27.3.4"]
-        gleam: ["1.17.0"]
+        otp: ["27.3.4.17", "28.5.0.6", "29.0.6"]
+        gleam: ["1.18.1"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Gleam
         uses: erlef/setup-beam@v1
@@ -36,7 +36,7 @@ jobs:
           rebar3-version: "3"
 
       - name: Cache Gleam dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             matrix_whale/matrix_whale/build/packages
