@@ -74,7 +74,7 @@ pub fn streamer(ctx: Context) {
                   wisp.log_info("Sending severity: " <> severity_state)
                   process.send(subj, Severity(severity_state))
                 })
-              Ok(actor.initialised(EventState(init_severity, repeater)))
+              EventState(init_severity, repeater)
             },
             loop: fn(
               state: EventState,

@@ -53,7 +53,7 @@
 		</div>
 		<button
 			type="submit"
-			class="rounded-md bg-blue-500 px-4 py-2 text-white hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+			class="rounded-md bg-blue-500 px-4 py-2 text-white hover:bg-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none"
 			disabled={loading}
 		>
 			<span>Search</span>
@@ -65,7 +65,7 @@
 		{:else if loading}
 			<div class="flex justify-center">
 				<div
-					class="mt-4 h-5 w-5 animate-spin rounded-full border-4 border-white border-b-transparent border-t-transparent"
+					class="mt-4 h-5 w-5 animate-spin rounded-full border-4 border-white border-t-transparent border-b-transparent"
 				></div>
 			</div>
 		{:else if !loading && objectForSearch?.data && objectForSearch?.data.length > 0}
