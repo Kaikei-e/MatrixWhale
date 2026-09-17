@@ -4,6 +4,23 @@ A Data manager.
 
 MatrixWhale is developed as a foundation for processing large amounts of data, and it consists of a group of applications that allow users to interactively search, manipulate, and analyze this data through a web interface. These applications were initially created with reference to NOAA's API endpoints and are designed to enable users to gain deeper insights from complex, diverse, and large-scale data on their own. (There are plans to expand its functionality in the future.)
 
+## Demo
+
+Live NWS alerts and USGS earthquakes on the nautical chart at `/globe`, day and night palettes.
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="docs/assets/globe-day.png" alt="MatrixWhale /globe chart in the day palette, showing NWS alert polygons and USGS earthquake markers over the continental US" width="100%">
+      <br>Day
+    </td>
+    <td align="center">
+      <img src="docs/assets/globe-night.png" alt="MatrixWhale /globe chart in the night palette, showing NWS alert polygons and USGS earthquake markers over the continental US" width="100%">
+      <br>Night
+    </td>
+  </tr>
+</table>
+
 ## Architecture
 
 The diagram below covers only the paths that carry data today: NOAA alerts and USGS earthquakes flow from their upstream APIs through Go adapters into the Gleam/BEAM core, which persists them in PostgreSQL and fans them out to the browser through the Plecto proxy.
