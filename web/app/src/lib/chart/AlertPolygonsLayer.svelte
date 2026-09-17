@@ -9,6 +9,10 @@
 
 	const DEFAULT_NWS_COLOR = '#B8338F';
 
+	// FeatureState calls setFeatureState as soon as it mounts, which MapLibre
+	// rejects until the source has been added to a loaded style.
+	let source = $state<maplibregl.GeoJSONSource | undefined>(undefined);
+
 	const LIGHT: maplibregl.ExpressionSpecification = [
 		'match',
 		['global-state', 'theme'],
@@ -82,7 +86,7 @@
 	});
 </script>
 
-<GeoJSONSource id="alert-polygons" data={featureCollection} promoteId="id">
+<GeoJSONSource id="alert-polygons" data={featureCollection} promoteId="id" bind:source>
 	<FillLayer
 		id="alert-polygons-fill"
 		paint={{ 'fill-color': ALERT_COLOR, 'fill-opacity': FILL_OPACITY }}
@@ -91,10 +95,16 @@
 		id="alert-polygons-line"
 		paint={{ 'line-color': ALERT_COLOR, 'line-width': LINE_WIDTH }}
 	/>
-	{#each entries as entry (entry.id)}
-		<FeatureState
-			id={entry.id}
-			state={{ severity: entry.severity, blinkBucket: entry.blinkBucket, nwsColor: entry.nwsColor }}
-		/>
-	{/each}
+	{#if source}
+		{#each entries as entry (entry.id)}
+			<FeatureState
+				id={entry.id}
+				state={{
+					severity: entry.severity,
+					blinkBucket: entry.blinkBucket,
+					nwsColor: entry.nwsColor
+				}}
+			/>
+		{/each}
+	{/if}
 </GeoJSONSource>

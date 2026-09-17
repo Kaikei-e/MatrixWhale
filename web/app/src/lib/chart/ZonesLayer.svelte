@@ -129,20 +129,30 @@
 		{ id: 'zones-marine-coastal', data: MARINE_COASTAL_ZONES, zones: marineZones },
 		{ id: 'zones-marine-offshore', data: MARINE_OFFSHORE_ZONES, zones: marineZones }
 	]);
+
+	// FeatureState calls setFeatureState as soon as it mounts, which MapLibre
+	// rejects until the source has been added to a loaded style.
+	let sourceInstances = $state<Record<string, maplibregl.GeoJSONSource | undefined>>({});
 </script>
 
 {#each sources as src (src.id)}
-	<GeoJSONSource id={src.id} data={src.data} promoteId="ugc">
+	<GeoJSONSource id={src.id} data={src.data} promoteId="ugc" bind:source={sourceInstances[src.id]}>
 		<FillLayer
 			id="{src.id}-fill"
 			paint={{ 'fill-color': ALERT_COLOR, 'fill-opacity': FILL_OPACITY }}
 		/>
 		<LineLayer id="{src.id}-line" paint={{ 'line-color': LINE_COLOR, 'line-width': LINE_WIDTH }} />
-		{#each src.zones as zone (zone.ugc)}
-			<FeatureState
-				id={zone.ugc}
-				state={{ severity: zone.severity, blinkBucket: zone.blinkBucket, nwsColor: zone.nwsColor }}
-			/>
-		{/each}
+		{#if sourceInstances[src.id]}
+			{#each src.zones as zone (zone.ugc)}
+				<FeatureState
+					id={zone.ugc}
+					state={{
+						severity: zone.severity,
+						blinkBucket: zone.blinkBucket,
+						nwsColor: zone.nwsColor
+					}}
+				/>
+			{/each}
+		{/if}
 	</GeoJSONSource>
 {/each}
