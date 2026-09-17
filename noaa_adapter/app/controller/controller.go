@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const minPollDelay = 30 * time.Second
+
 func ManageRESTRequest() {
 
 	wg := sync.WaitGroup{}
@@ -15,21 +17,20 @@ func ManageRESTRequest() {
 	go func() {
 		defer wg.Done()
 		for {
-			data, err := adapter.NoaaAlertsAdapter()
+			result, err := adapter.NoaaAlertsAdapter()
 			if err != nil {
 				slog.Error("Error getting data from NOAA", "error", err)
+				time.Sleep(minPollDelay)
+				continue
 			}
 
-			// trimmedData, err := TrimNoaaData(data)
-			// if err != nil {
-			// 	slog.Error("Error trimming data", "error", err)
-			// }
-
-			err = adapter.MatrixWhaleAdapter(data)
-			if err != nil {
+			if err := adapter.MatrixWhaleAdapter(result); err != nil {
 				slog.Error("Error sending data to Matrix Whale", "error", err)
 			}
-			time.Sleep(30 * time.Second)
+
+			delay := adapter.ComputeNextPollDelay(result.Header, minPollDelay)
+			slog.Info("Next NOAA poll scheduled", "delay", delay)
+			time.Sleep(delay)
 		}
 	}()
 

@@ -14,7 +14,7 @@ The project follows a microservices architecture with the following components:
 - **matrix_whale** (Port 8080, 6000) - Main Gleam service that handles data processing and API endpoints
 - **federation_orchestrator** (Port 5000) - Go service that manages service coordination using gRPC/protobuf
 - **noaa_adapter** (No exposed port) - Go service adapter for NOAA data integration
-- **rss_feed_adapter** (Port 8085) - Go service for RSS feed processing
+- **rss_feed_adapter** (Port 8086) - Go service for RSS feed processing
 - **web** (Port 4173) - SvelteKit frontend application with TypeScript
 - **proxy** (Port 80) - Nginx proxy for routing requests
 - **db** (Port 5432) - PostgreSQL database

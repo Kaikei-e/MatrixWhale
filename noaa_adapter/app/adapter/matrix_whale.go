@@ -2,58 +2,93 @@ package adapter
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strconv"
-	"strings"
+	"time"
 )
 
 const MatrixWhaleURL = "http://matrix_whale:6000/api/v1"
 
-func MatrixWhaleAdapter(geoData []byte) error {
-	// unescape the geoData string
-	unescapedData := strings.ReplaceAll(string(geoData), "\n", " ")
+type PollMeta struct {
+	FetchedAt    string `json:"fetched_at"`
+	HTTPStatus   int    `json:"http_status"`
+	FeatureCount int    `json:"feature_count"`
+}
 
-	// err := os.WriteFile("unescapedData.json", []byte(unescapedData), 0644)
-	// if err != nil {
-	// 	slog.Error("Error writing unescaped data to file: " + err.Error())
-	// 	return err
-	// }
+type featureEnvelope struct {
+	Features []json.RawMessage `json:"features"`
+}
+
+type outboundEnvelope struct {
+	PollMeta PollMeta          `json:"poll_meta"`
+	Features []json.RawMessage `json:"features"`
+}
+
+func MatrixWhaleAdapter(result PollResult) error {
+	var parsed featureEnvelope
+	if err := json.Unmarshal(result.Body, &parsed); err != nil {
+		slog.Error("Error parsing NOAA response features", "error", err)
+		return err
+	}
+
+	envelope := outboundEnvelope{
+		PollMeta: PollMeta{
+			FetchedAt:    result.FetchedAt.UTC().Format(time.RFC3339),
+			HTTPStatus:   result.HTTPStatus,
+			FeatureCount: len(parsed.Features),
+		},
+		Features: parsed.Features,
+	}
+
+	payload, err := json.Marshal(envelope)
+	if err != nil {
+		slog.Error("Error marshalling envelope", "error", err)
+		return err
+	}
 
 	targetAPIEndpoint, err := url.JoinPath(MatrixWhaleURL, "noaa_data", "send")
 	if err != nil {
-		slog.Error("Error joining URL path. " + err.Error())
+		slog.Error("Error joining URL path", "error", err)
 		return err
 	}
 
-	req, err := http.NewRequest("POST", targetAPIEndpoint, bytes.NewBuffer([]byte(unescapedData)))
+	req, err := http.NewRequest("POST", targetAPIEndpoint, bytes.NewBuffer(payload))
 	if err != nil {
-		slog.Error("Error creating request is " + err.Error())
+		slog.Error("Error creating request", "error", err)
 		return err
 	}
-
-	slog.Info("Sending data to Matrix Whale. Data size, unit is byte: " + strconv.Itoa(len([]byte(unescapedData))))
-
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
+	slog.Info("Sending data to Matrix Whale", "bytes", len(payload), "feature_count", envelope.PollMeta.FeatureCount)
+
+	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		slog.Error("Error sending request to Matrix Whale" + err.Error())
+		slog.Error("Error sending request to Matrix Whale", "error", err)
 		return err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		slog.Error("Error reading response body: " + err.Error())
+		slog.Error("Error reading response body", "error", err)
 		return err
 	}
 
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		snippet := body
+		if len(snippet) > 200 {
+			snippet = snippet[:200]
+		}
+		slog.Error("Matrix Whale returned non-2xx status", "status", resp.StatusCode, "body", string(snippet))
+		return fmt.Errorf("matrix whale request failed with status %d", resp.StatusCode)
+	}
+
 	slog.Info("Matrix Whale response status is " + resp.Status)
-	slog.Info("Matrix Whale response is " + string(body))
 
 	return nil
 }

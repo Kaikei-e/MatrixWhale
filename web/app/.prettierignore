@@ -2,3 +2,9 @@
 package-lock.json
 pnpm-lock.yaml
 yarn.lock
+
+# Generated geodata (large, machine-formatted)
+static/data/
+
+# Playwright artifacts
+test-results/

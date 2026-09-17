@@ -1,3 +1,4 @@
+import adapter/alert_hub
 import adapter/context
 import adapter/reciever
 import adapter/streamer
@@ -8,8 +9,9 @@ import wisp
 pub fn main() {
   let db = initialize_db.initialize_db()
   let secret = wisp.random_string(256)
+  let assert Ok(hub) = alert_hub.start()
 
-  let ctx = context.Context(secret: secret, db: db)
+  let ctx = context.Context(secret: secret, db: db, hub: hub.data)
 
   // Start both servers - they run in their own processes
   let _ = process.spawn(fn() { reciever.reciever_main(ctx) })

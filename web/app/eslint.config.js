@@ -25,6 +25,19 @@ export default [
 			parserOptions: {
 				parser: ts.parser
 			}
+		},
+		rules: {
+			// TypeScript's own checker (via svelte-check) understands ambient global types
+			// (e.g. the `GeoJSON` namespace); eslint's scope analysis does not.
+			'no-undef': 'off'
+		}
+	},
+	{
+		files: ['**/*.svelte.ts', '**/*.svelte.js'],
+		languageOptions: {
+			parserOptions: {
+				parser: ts.parser
+			}
 		}
 	},
 	{

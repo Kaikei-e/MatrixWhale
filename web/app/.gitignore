@@ -1,4 +1,5 @@
 node_modules
+/.geodata-cache
 
 # Output
 .output
@@ -19,3 +20,6 @@ Thumbs.db
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Playwright artifacts
+/test-results
