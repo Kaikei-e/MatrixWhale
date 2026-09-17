@@ -111,7 +111,8 @@ func runFDSNSync(ctx context.Context, cfg config, updatedAfter string, fetch fet
 	now := time.Now().UTC()
 	start := now.Add(-time.Duration(cfg.backfillDays) * 24 * time.Hour)
 
-	offset := 0
+	// The FDSN offset parameter is 1-based; offset=0 is rejected with a 422.
+	offset := 1
 	var backoff time.Duration
 	for {
 		if ctx.Err() != nil {

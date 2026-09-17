@@ -31,7 +31,7 @@ func TestRunPaginatesBackfillWrapsFeaturesAndRetriesWithoutAdvancingOffset(t *te
 	var fetchOffsets []int
 	fetch := func(_ context.Context, fdsnURL string, q adapter.FDSNQuery) (adapter.FetchResult, error) {
 		fetchOffsets = append(fetchOffsets, q.Offset)
-		idx := q.Offset
+		idx := q.Offset - 1
 		if idx >= len(pages) {
 			idx = len(pages) - 1
 		}
@@ -64,11 +64,11 @@ func TestRunPaginatesBackfillWrapsFeaturesAndRetriesWithoutAdvancingOffset(t *te
 	if len(fetchOffsets) != 4 {
 		t.Fatalf("fetch calls = %v, want 4", fetchOffsets)
 	}
-	if fetchOffsets[0] != 0 || fetchOffsets[1] != 0 {
+	if fetchOffsets[0] != 1 || fetchOffsets[1] != 1 {
 		t.Fatalf("offset advanced after a failed send: %v", fetchOffsets)
 	}
-	if fetchOffsets[2] != 1 || fetchOffsets[3] != 2 {
-		t.Fatalf("offsets after retry = %v, want [.., 1, 2]", fetchOffsets)
+	if fetchOffsets[2] != 2 || fetchOffsets[3] != 3 {
+		t.Fatalf("offsets after retry = %v, want [.., 2, 3]", fetchOffsets)
 	}
 
 	if len(captured) != 3 || len(captured[0]) != 1 || len(captured[1]) != 1 || len(captured[2]) != 0 {
