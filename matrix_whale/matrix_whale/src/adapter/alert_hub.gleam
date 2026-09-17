@@ -35,6 +35,19 @@ pub type PipelineStats {
     last_updated: Int,
     last_ended: Int,
     sse_clients: Int,
+    source_stats: Dict(String, SourceStats),
+  )
+}
+
+pub type SourceStats {
+  SourceStats(
+    last_fetch_at: Option(String),
+    last_http_status: Option(Int),
+    last_received: Int,
+    last_deduped: Int,
+    last_written: Int,
+    last_dropped: Int,
+    last_bytes: Int,
   )
 }
 
@@ -49,6 +62,15 @@ pub type HubMsg {
   RecordPoll(meta: PollMeta)
   RecordDecoded(decoded: Int, dropped: Int)
   RecordWrite(new: Int, updated: Int, ended: Int)
+  RecordSource(
+    source: String,
+    http_status: Int,
+    received: Int,
+    deduped: Int,
+    written: Int,
+    dropped: Int,
+    bytes: Int,
+  )
   GetStats(reply_to: Subject(PipelineStats))
   Tick
 }
@@ -119,8 +141,53 @@ pub fn record_write(
   process.send(hub, RecordWrite(new, updated, ended))
 }
 
+pub fn record_source(
+  hub: Subject(HubMsg),
+  source: String,
+  http_status: Int,
+  received: Int,
+  deduped: Int,
+  written: Int,
+  dropped: Int,
+  bytes: Int,
+) -> Nil {
+  process.send(
+    hub,
+    RecordSource(
+      source,
+      http_status,
+      received,
+      deduped,
+      written,
+      dropped,
+      bytes,
+    ),
+  )
+}
+
 pub fn get_stats(hub: Subject(HubMsg)) -> PipelineStats {
   process.call(hub, call_timeout_ms, GetStats)
+}
+
+pub fn source_stats_to_json(stats: Dict(String, SourceStats)) -> json.Json {
+  stats
+  |> dict.to_list
+  |> list.map(fn(entry) {
+    let #(source, stat) = entry
+    #(
+      source,
+      json.object([
+        #("last_fetch_at", json.nullable(stat.last_fetch_at, json.string)),
+        #("last_http_status", json.nullable(stat.last_http_status, json.int)),
+        #("received", json.int(stat.last_received)),
+        #("deduped", json.int(stat.last_deduped)),
+        #("written", json.int(stat.last_written)),
+        #("dropped", json.int(stat.last_dropped)),
+        #("bytes", json.int(stat.last_bytes)),
+      ]),
+    )
+  })
+  |> json.object
 }
 
 fn initial_state() -> State {
@@ -140,7 +207,22 @@ fn initial_state() -> State {
       last_updated: 0,
       last_ended: 0,
       sse_clients: 0,
+      source_stats: dict.new()
+        |> dict.insert("noaa", empty_source_stats())
+        |> dict.insert("usgs", empty_source_stats()),
     ),
+  )
+}
+
+fn empty_source_stats() -> SourceStats {
+  SourceStats(
+    last_fetch_at: option.None,
+    last_http_status: option.None,
+    last_received: 0,
+    last_deduped: 0,
+    last_written: 0,
+    last_dropped: 0,
+    last_bytes: 0,
   )
 }
 
@@ -240,6 +322,40 @@ fn handle_message(state: State, message: HubMsg) -> actor.Next(State, HubMsg) {
             last_new: new,
             last_updated: updated,
             last_ended: ended,
+          ),
+        ),
+      )
+    }
+
+    RecordSource(
+      source,
+      http_status,
+      received,
+      deduped,
+      written,
+      dropped,
+      bytes,
+    ) -> {
+      let source_stat =
+        SourceStats(
+          last_fetch_at: option.Some(now_rfc3339()),
+          last_http_status: option.Some(http_status),
+          last_received: received,
+          last_deduped: deduped,
+          last_written: written,
+          last_dropped: dropped,
+          last_bytes: bytes,
+        )
+      actor.continue(
+        State(
+          ..state,
+          stats: PipelineStats(
+            ..state.stats,
+            source_stats: dict.insert(
+              state.stats.source_stats,
+              source,
+              source_stat,
+            ),
           ),
         ),
       )

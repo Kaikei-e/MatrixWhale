@@ -175,7 +175,7 @@ pub type CustomTypesList {
 /// fetched. Absent for the legacy adapter, which posts the raw NWS
 /// `FeatureCollection` with no wrapping object.
 pub type PollMeta {
-  PollMeta(fetched_at: String, http_status: Int, feature_count: Int)
+  PollMeta(fetched_at: String, http_status: Int, feature_count: Int, bytes: Int)
 }
 
 /// Decodes the `/api/v1/noaa_data/send` request body. Accepts both the
@@ -228,7 +228,8 @@ fn decode_poll_meta() -> decode.Decoder(Option(PollMeta)) {
     use fetched_at <- decode.field("fetched_at", decode.string)
     use http_status <- decode.field("http_status", decode.int)
     use feature_count <- decode.field("feature_count", decode.int)
-    decode.success(PollMeta(fetched_at, http_status, feature_count))
+    use bytes <- decode.optional_field("bytes", 0, decode.int)
+    decode.success(PollMeta(fetched_at, http_status, feature_count, bytes))
   })
 }
 

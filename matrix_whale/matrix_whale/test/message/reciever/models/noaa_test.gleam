@@ -276,6 +276,7 @@ pub fn decode_body_with_poll_meta_and_dropped_feature_test() {
       fetched_at: "2024-12-03T07:37:00Z",
       http_status: 200,
       feature_count: 2,
+      bytes: 0,
     )),
   )
   list.length(features) |> should.equal(1)

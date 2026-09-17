@@ -83,7 +83,30 @@ pub fn initialize_db() -> pog.Connection {
 
   let conn = pog.named_connection(pool_name)
   ensure_alert_schema(conn)
+  ensure_earthquake_schema(conn)
   conn
+}
+
+fn ensure_earthquake_schema(conn: pog.Connection) -> Nil {
+  [
+    "CREATE TABLE IF NOT EXISTS sea.earthquake (source TEXT NOT NULL, source_id TEXT NOT NULL, contributing_ids TEXT[] NOT NULL DEFAULT '{}', sources TEXT[] NOT NULL DEFAULT '{}', net TEXT, code TEXT, magnitude DOUBLE PRECISION, magnitude_type TEXT, occurred_at TIMESTAMPTZ NOT NULL, occurred_at_ms BIGINT NOT NULL, updated_at TIMESTAMPTZ NOT NULL, updated_at_ms BIGINT NOT NULL, place TEXT, title TEXT, status TEXT, event_type TEXT, tsunami INTEGER, significance INTEGER, alert TEXT, mmi DOUBLE PRECISION, cdi DOUBLE PRECISION, felt INTEGER, nst INTEGER, dmin DOUBLE PRECISION, rms DOUBLE PRECISION, gap DOUBLE PRECISION, url TEXT, detail TEXT, longitude DOUBLE PRECISION NOT NULL, latitude DOUBLE PRECISION NOT NULL, depth_km DOUBLE PRECISION, first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY(source,source_id))",
+    "CREATE INDEX IF NOT EXISTS idx_earthquake_occurred_at ON sea.earthquake(occurred_at DESC)",
+    "CREATE TABLE IF NOT EXISTS sea.earthquake_revision (source TEXT NOT NULL, source_id TEXT NOT NULL, updated_at_ms BIGINT NOT NULL, recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(), earthquake JSONB NOT NULL, PRIMARY KEY(source,source_id,updated_at_ms))",
+    "DO $$ BEGIN ALTER TABLE sea.earthquake_revision ADD CONSTRAINT earthquake_revision_parent_fk FOREIGN KEY(source,source_id) REFERENCES sea.earthquake(source,source_id) ON DELETE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$",
+  ]
+  |> list.each(fn(sql) {
+    case
+      pog.query(sql) |> pog.returning(decode.success(Nil)) |> pog.execute(conn)
+    {
+      Ok(_) -> Nil
+      Error(err) -> {
+        wisp.log_error(
+          "Error ensuring earthquake schema: " <> string.inspect(err),
+        )
+        panic
+      }
+    }
+  })
 }
 
 // The dev Postgres volume persists across restarts, so `db/init/init.sql`

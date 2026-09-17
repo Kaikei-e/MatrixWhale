@@ -37,7 +37,26 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
   )
 
   let result_message = case noaa_controller(features, run_ended_sweep, ctx) {
-    Ok(message) -> message
+    Ok(#(message, new_count, updated_count)) -> {
+      let bytes = case poll_meta {
+        option.Some(meta) -> meta.bytes
+        option.None -> 0
+      }
+      alert_hub.record_source(
+        ctx.hub,
+        "noaa",
+        case poll_meta {
+          option.Some(meta) -> meta.http_status
+          option.None -> 0
+        },
+        received,
+        received - dropped - new_count - updated_count,
+        new_count + updated_count,
+        dropped,
+        bytes,
+      )
+      message
+    }
     Error(err) -> {
       wisp.log_error("Error processing features: " <> err)
       "Error: " <> err

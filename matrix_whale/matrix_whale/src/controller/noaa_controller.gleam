@@ -10,7 +10,7 @@ pub fn noaa_controller(
   features: List(FeatureElement),
   run_ended_sweep: Bool,
   ctx: Context,
-) -> Result(String, String) {
+) -> Result(#(String, Int, Int), String) {
   wisp.log_info(
     "Processing " <> string.inspect(list.length(features)) <> " features",
   )
@@ -44,14 +44,16 @@ pub fn noaa_controller(
       alert_hub.record_write(ctx.hub, new_count, updated_count, ended_count)
       alert_hub.publish(ctx.hub, diff)
 
-      Ok(
+      Ok(#(
         string.inspect(new_count)
-        <> " new, "
-        <> string.inspect(updated_count)
-        <> " updated, "
-        <> string.inspect(ended_count)
-        <> " ended",
-      )
+          <> " new, "
+          <> string.inspect(updated_count)
+          <> " updated, "
+          <> string.inspect(ended_count)
+          <> " ended",
+        new_count,
+        updated_count,
+      ))
     }
     Error(err) -> {
       wisp.log_error("Error writing alerts to database: " <> err)
