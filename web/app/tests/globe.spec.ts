@@ -88,21 +88,39 @@ const PIPELINE_STATUS = {
 	active_by_severity: { Extreme: 0, Severe: 0, Moderate: 0, Minor: 0, Unknown: 0 }
 };
 
+const DATA_SOURCES = [
+	{
+		id: 'usgs',
+		name: 'U.S. Geological Survey',
+		homepage: 'https://earthquake.usgs.gov/',
+		license: 'public-domain',
+		attribution_text: 'Credit: U.S. Geological Survey',
+		redistributable: true,
+		priority: 100
+	},
+	{
+		id: 'emsc',
+		name: 'EMSC',
+		homepage: 'https://www.seismicportal.eu/',
+		license: 'CC-BY-4.0',
+		attribution_text: 'Credit: EMSC/CSEM, https://www.emsc-csem.org',
+		redistributable: true,
+		priority: 90
+	}
+];
+
 const EARTHQUAKES = [
 	{
-		source: 'usgs',
-		source_id: 'us-test-5',
-		contributing_ids: ['us-test-5'],
-		net: 'us',
-		code: 'test-5',
+		id: 4821,
+		kind: 'earthquake',
 		magnitude: 5.3,
 		magnitude_type: 'mww',
 		occurred_at: new Date().toISOString(),
 		occurred_at_ms: Date.now(),
 		updated_at: new Date().toISOString(),
 		updated_at_ms: Date.now(),
-		place: '120 km E of Test Island',
-		title: 'M 5.3 - 120 km E of Test Island',
+		place: 'VALPARAISO, CHILE',
+		title: 'M 5.3 - Valparaiso, Chile',
 		status: 'reviewed',
 		event_type: 'earthquake',
 		tsunami: 1,
@@ -115,20 +133,55 @@ const EARTHQUAKES = [
 		dmin: null,
 		rms: null,
 		gap: null,
+		net: 'us',
+		code: 'test-5',
 		url: 'https://earthquake.usgs.gov/earthquakes/eventpage/us-test-5',
 		detail: null,
 		longitude: 142.2,
 		latitude: 36.1,
 		depth_km: 18.4,
+		preferred_source: 'usgs',
+		sources: ['usgs', 'emsc'],
+		members: [
+			{
+				source: 'usgs',
+				source_id: 'us-test-5',
+				magnitude: 5.3,
+				magnitude_type: 'mww',
+				occurred_at_ms: Date.now(),
+				updated_at_ms: Date.now(),
+				latitude: 36.1,
+				longitude: 142.2,
+				depth_km: 18.4,
+				place: 'VALPARAISO, CHILE',
+				status: 'reviewed',
+				url: 'https://earthquake.usgs.gov/earthquakes/eventpage/us-test-5',
+				matched_by: 'origin',
+				misfit: null
+			},
+			{
+				source: 'emsc',
+				source_id: 'emsc-test-5',
+				magnitude: 5.2,
+				magnitude_type: 'mw',
+				occurred_at_ms: Date.now(),
+				updated_at_ms: Date.now(),
+				latitude: 36.05,
+				longitude: 142.15,
+				depth_km: 15.0,
+				place: 'VALPARAISO, CHILE',
+				status: 'automatic',
+				url: 'https://www.seismicportal.eu/eventdetails.html?unid=emsc-test-5',
+				matched_by: 'misfit',
+				misfit: 0.31
+			}
+		],
 		first_seen_at: new Date().toISOString(),
 		last_seen_at: new Date().toISOString()
 	},
 	{
-		source: 'usgs',
-		source_id: 'us-test-3',
-		contributing_ids: ['us-test-3'],
-		net: 'us',
-		code: 'test-3',
+		id: 4822,
+		kind: 'earthquake',
 		magnitude: 3.2,
 		magnitude_type: 'ml',
 		occurred_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
@@ -149,11 +202,33 @@ const EARTHQUAKES = [
 		dmin: null,
 		rms: null,
 		gap: null,
+		net: 'us',
+		code: 'test-3',
 		url: 'https://earthquake.usgs.gov/earthquakes/eventpage/us-test-3',
 		detail: null,
 		longitude: 139.7,
 		latitude: 35.6,
 		depth_km: 8.2,
+		preferred_source: 'usgs',
+		sources: ['usgs'],
+		members: [
+			{
+				source: 'usgs',
+				source_id: 'us-test-3',
+				magnitude: 3.2,
+				magnitude_type: 'ml',
+				occurred_at_ms: Date.now() - 60 * 60 * 1000,
+				updated_at_ms: Date.now(),
+				latitude: 35.6,
+				longitude: 139.7,
+				depth_km: 8.2,
+				place: 'Test Ridge',
+				status: 'automatic',
+				url: 'https://earthquake.usgs.gov/earthquakes/eventpage/us-test-3',
+				matched_by: 'origin',
+				misfit: null
+			}
+		],
 		first_seen_at: new Date().toISOString(),
 		last_seen_at: new Date().toISOString()
 	}
@@ -176,6 +251,9 @@ async function mockBackend(page: Page): Promise<void> {
 	);
 	await page.route('**/api/v1/earthquakes/stream', (route) =>
 		route.fulfill({ contentType: 'text/event-stream', body: 'event: heartbeat\ndata: {}\n\n' })
+	);
+	await page.route('**/api/v1/sources', (route) =>
+		route.fulfill({ json: { sources: DATA_SOURCES } })
 	);
 }
 
@@ -249,7 +327,9 @@ test('renders USGS points with filters and a correctly labelled event detail', a
 		'href',
 		'https://earthquake.usgs.gov/earthquakes/eventpage/us-test-5'
 	);
-	await expect(sidePanel.getByText('Credit: U.S. Geological Survey')).toBeVisible();
+	await expect(
+		sidePanel.getByTestId('earthquake-event-sources').getByText('Credit: U.S. Geological Survey')
+	).toBeVisible();
 	await expect(earthquakes.nth(1)).toBeVisible();
 
 	const sevenDaySnapshot = page.waitForRequest((request) =>
@@ -267,4 +347,56 @@ test('renders USGS points with filters and a correctly labelled event detail', a
 	);
 	await sidePanel.getByRole('button', { name: 'All magnitudes' }).click();
 	await allMagnitudeSnapshot;
+});
+
+test('lists both members of a matched event with their source, magnitude, and match method', async ({
+	page
+}) => {
+	await mockBackend(page);
+	await page.goto('/globe');
+
+	const sidePanel = page.getByTestId('side-panel');
+	await sidePanel.getByTestId('earthquake-feed-item').nth(0).click();
+
+	await expect(sidePanel.getByText(/U\.S\. Geological Survey.*M5\.3 mww.*origin/)).toBeVisible();
+	await expect(sidePanel.getByText(/EMSC.*M5\.2 mw.*misfit \(misfit 0\.31\)/)).toBeVisible();
+});
+
+test('renders attribution for every source contributing to the selected event', async ({
+	page
+}) => {
+	await mockBackend(page);
+	await page.goto('/globe');
+
+	const sidePanel = page.getByTestId('side-panel');
+	await sidePanel.getByTestId('earthquake-feed-item').nth(0).click();
+
+	const eventSources = sidePanel.getByTestId('earthquake-event-sources');
+	const usgsCredit = eventSources.getByRole('link', { name: 'Credit: U.S. Geological Survey' });
+	await expect(usgsCredit).toHaveAttribute('href', 'https://earthquake.usgs.gov/');
+	const emscCredit = eventSources.getByRole('link', {
+		name: 'Credit: EMSC/CSEM, https://www.emsc-csem.org'
+	});
+	await expect(emscCredit).toHaveAttribute('href', 'https://www.seismicportal.eu/');
+});
+
+test('always shows attribution for every loaded source, ordered by priority, with no selection', async ({
+	page
+}) => {
+	await mockBackend(page);
+	await page.goto('/globe');
+
+	const footer = page.getByTestId('side-panel').getByTestId('earthquake-attribution');
+	const links = footer.getByRole('link');
+	await expect(links).toHaveCount(2);
+	await expect(links.nth(0)).toHaveText('Credit: U.S. Geological Survey');
+	await expect(links.nth(1)).toHaveText('Credit: EMSC/CSEM, https://www.emsc-csem.org');
+});
+
+test('focuses an earthquake event by id from the query string', async ({ page }) => {
+	await mockBackend(page);
+	await page.goto('/globe?focus=4821');
+
+	const sidePanel = page.getByTestId('side-panel');
+	await expect(sidePanel.getByRole('heading', { name: 'Valparaiso, Chile' })).toBeVisible();
 });

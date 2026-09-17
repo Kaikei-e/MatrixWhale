@@ -1,10 +1,10 @@
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import {
-	earthquakeKey,
-	type Earthquake,
-	type EarthquakeBlinkState,
-	type EarthquakeEventType,
-	type EarthquakeFilter
+import type {
+	DataSource,
+	Earthquake,
+	EarthquakeBlinkState,
+	EarthquakeEventType,
+	EarthquakeFilter
 } from './types';
 
 const ARRIVAL_MS = 5000;
@@ -45,8 +45,9 @@ function requestUrl(url: string, filter: EarthquakeFilter): string {
  * only when occurrence time, type, magnitude, or deletion status says so.
  */
 export class EarthquakeStore {
-	earthquakes = new SvelteMap<string, Earthquake>();
-	blink = new SvelteMap<string, EarthquakeBlinkState>();
+	earthquakes = new SvelteMap<number, Earthquake>();
+	blink = new SvelteMap<number, EarthquakeBlinkState>();
+	sources = new SvelteMap<string, DataSource>();
 	reducedMotion = $state(false);
 	connected: 'connecting' | 'open' | 'closed' = $state('closed');
 	snapshotError: string | null = $state(null);
@@ -59,14 +60,14 @@ export class EarthquakeStore {
 	#snapshotByUrl = new SvelteMap<string, { earthquakes: Earthquake[]; streamSequence: number }>();
 	#watchdog: ReturnType<typeof setTimeout> | undefined;
 	#trimTimer: ReturnType<typeof setInterval> | undefined;
-	#blinkTimers = new SvelteMap<string, ReturnType<typeof setTimeout>>();
+	#blinkTimers = new SvelteMap<number, ReturnType<typeof setTimeout>>();
 	#generation = 0;
 	#filterRevision = 0;
 	#snapshotRequest = 0;
 	#streamSequence = 0;
-	#streamSequenceByKey = new SvelteMap<string, number>();
-	#streamOccurredAtByKey = new SvelteMap<string, number>();
-	#streamEarthquakeByKey = new SvelteMap<string, Earthquake>();
+	#streamSequenceByKey = new SvelteMap<number, number>();
+	#streamOccurredAtByKey = new SvelteMap<number, number>();
+	#streamEarthquakeByKey = new SvelteMap<number, Earthquake>();
 
 	sorted = $derived.by(() =>
 		[...this.earthquakes.values()].sort(
@@ -99,6 +100,17 @@ export class EarthquakeStore {
 		// revision/stream sequence, closing the snapshot/SSE race.
 		this.#openStream(streamUrl);
 		this.#trimTimer = setInterval(() => this.trim(), TRIM_INTERVAL_MS);
+	}
+
+	async fetchSources(url: string): Promise<void> {
+		try {
+			const response = await fetch(url);
+			if (!response.ok) return;
+			const body = (await response.json()) as { sources: DataSource[] };
+			for (const source of body.sources) this.sources.set(source.id, source);
+		} catch {
+			// Attribution is supplementary; leave labels/links working without it.
+		}
 	}
 
 	setFilter(filter: Partial<EarthquakeFilter>): void {
@@ -196,9 +208,9 @@ export class EarthquakeStore {
 	}
 
 	#applySnapshot(earthquakes: Earthquake[], baselineStreamSequence: number): void {
-		const snapshotKeys = new SvelteSet<string>();
+		const snapshotKeys = new SvelteSet<number>();
 		for (const earthquake of earthquakes) {
-			const key = earthquakeKey(earthquake);
+			const key = earthquake.id;
 			snapshotKeys.add(key);
 			// An SSE event after the snapshot/cache baseline (including deletion)
 			// is newer than its body and must remain the visible projection.
@@ -259,20 +271,20 @@ export class EarthquakeStore {
 		return earthquake.occurred_at_ms >= now - this.filter.hours * 60 * 60 * 1000;
 	}
 
-	#clearBlinkTimer(key: string): void {
+	#clearBlinkTimer(key: number): void {
 		const timer = this.#blinkTimers.get(key);
 		if (timer) clearTimeout(timer);
 		this.#blinkTimers.delete(key);
 	}
 
-	#remove(key: string): void {
+	#remove(key: number): void {
 		this.#clearBlinkTimer(key);
 		this.earthquakes.delete(key);
 		this.blink.delete(key);
 	}
 
 	#merge(earthquake: Earthquake, source: 'new' | 'update' | 'snapshot'): void {
-		const key = earthquakeKey(earthquake);
+		const key = earthquake.id;
 		const current = this.earthquakes.get(key);
 		if (current && current.updated_at_ms >= earthquake.updated_at_ms) return;
 		if (!this.#matchesFilter(earthquake)) {
@@ -301,7 +313,7 @@ export class EarthquakeStore {
 
 	#handleNew = (event: MessageEvent<string>): void => {
 		const earthquake = JSON.parse(event.data) as Earthquake;
-		const key = earthquakeKey(earthquake);
+		const key = earthquake.id;
 		const streamCurrent = this.#streamEarthquakeByKey.get(key);
 		if (streamCurrent && streamCurrent.updated_at_ms >= earthquake.updated_at_ms) return;
 		this.#streamSequence += 1;
@@ -313,7 +325,7 @@ export class EarthquakeStore {
 
 	#handleUpdate = (event: MessageEvent<string>): void => {
 		const earthquake = JSON.parse(event.data) as Earthquake;
-		const key = earthquakeKey(earthquake);
+		const key = earthquake.id;
 		const streamCurrent = this.#streamEarthquakeByKey.get(key);
 		if (streamCurrent && streamCurrent.updated_at_ms >= earthquake.updated_at_ms) return;
 		this.#streamSequence += 1;

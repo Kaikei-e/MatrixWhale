@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EarthquakeStore } from './store.svelte';
-import type { Earthquake } from './types';
+import type { Earthquake, EarthquakeMember } from './types';
 
 class FakeEventSource {
 	static instances: FakeEventSource[] = [];
@@ -32,14 +32,32 @@ class FakeEventSource {
 	}
 }
 
-function makeEarthquake(overrides: Partial<Earthquake> = {}): Earthquake {
+function makeMember(overrides: Partial<EarthquakeMember> = {}): EarthquakeMember {
 	const now = Date.now();
 	return {
 		source: 'usgs',
 		source_id: 'us123',
-		contributing_ids: ['us123'],
-		net: 'us',
-		code: '123',
+		magnitude: 4.2,
+		magnitude_type: 'mb',
+		occurred_at_ms: now,
+		updated_at_ms: now,
+		latitude: 35.6,
+		longitude: 139.7,
+		depth_km: 12,
+		place: 'Test location',
+		status: 'reviewed',
+		url: 'https://earthquake.usgs.gov/earthquakes/eventpage/us123',
+		matched_by: 'origin',
+		misfit: null,
+		...overrides
+	};
+}
+
+function makeEarthquake(overrides: Partial<Earthquake> = {}): Earthquake {
+	const now = Date.now();
+	return {
+		id: 1,
+		kind: 'earthquake',
 		magnitude: 4.2,
 		magnitude_type: 'mb',
 		occurred_at: new Date(now).toISOString(),
@@ -60,11 +78,16 @@ function makeEarthquake(overrides: Partial<Earthquake> = {}): Earthquake {
 		dmin: null,
 		rms: null,
 		gap: null,
+		net: 'us',
+		code: '123',
 		url: 'https://earthquake.usgs.gov/earthquakes/eventpage/us123',
 		detail: null,
 		longitude: 139.7,
 		latitude: 35.6,
 		depth_km: 12,
+		preferred_source: 'usgs',
+		sources: ['usgs'],
+		members: [makeMember()],
 		first_seen_at: new Date(now).toISOString(),
 		last_seen_at: new Date(now).toISOString(),
 		...overrides
@@ -121,14 +144,14 @@ describe('EarthquakeStore', () => {
 		resolveSnapshot!(new Response(JSON.stringify([makeEarthquake({ updated_at_ms: 10 })])));
 		await settle();
 
-		expect(store.earthquakes.get('usgs:us123')?.updated_at_ms).toBe(20);
-		expect(store.blink.get('usgs:us123')?.mode).toBe('arrival');
+		expect(store.earthquakes.get(1)?.updated_at_ms).toBe(20);
+		expect(store.blink.get(1)?.mode).toBe('arrival');
 		store.disconnect();
 	});
 
 	it('uses the resync snapshot as a baseline while preserving later SSE events', async () => {
-		const first = makeEarthquake({ source_id: 'first' });
-		const removed = makeEarthquake({ source_id: 'removed' });
+		const first = makeEarthquake({ id: 1 });
+		const removed = makeEarthquake({ id: 2 });
 		fetchMock
 			.mockResolvedValueOnce(new Response(JSON.stringify([first, removed])))
 			.mockResolvedValueOnce(new Response(JSON.stringify([first])));
@@ -141,7 +164,7 @@ describe('EarthquakeStore', () => {
 
 		stream.emit('resync', { reason: 'event_gap' });
 		await settle();
-		expect([...store.earthquakes.keys()]).toEqual(['usgs:first']);
+		expect([...store.earthquakes.keys()]).toEqual([1]);
 		store.disconnect();
 	});
 
@@ -165,6 +188,25 @@ describe('EarthquakeStore', () => {
 		store.disconnect();
 	});
 
+	it('applies a higher-revision update and ignores a lower-revision one, keyed by id', async () => {
+		fetchMock.mockResolvedValue(new Response(JSON.stringify([])));
+		const store = new EarthquakeStore();
+		await store.connect('/recent', '/stream');
+		const stream = FakeEventSource.instances[0];
+		stream.open();
+		await settle();
+
+		stream.emit('new', makeEarthquake({ id: 42, updated_at_ms: 10, magnitude: 4 }));
+		expect(store.earthquakes.get(42)?.magnitude).toBe(4);
+
+		stream.emit('update', makeEarthquake({ id: 42, updated_at_ms: 5, magnitude: 9 }));
+		expect(store.earthquakes.get(42)?.magnitude).toBe(4);
+
+		stream.emit('update', makeEarthquake({ id: 42, updated_at_ms: 20, magnitude: 6 }));
+		expect(store.earthquakes.get(42)?.magnitude).toBe(6);
+		store.disconnect();
+	});
+
 	it('uses ETags per filter URL and does not flash a backfill event', async () => {
 		fetchMock
 			.mockResolvedValueOnce(new Response(JSON.stringify([]), { headers: { etag: '"24h"' } }))
@@ -183,14 +225,14 @@ describe('EarthquakeStore', () => {
 		await settle();
 		expect(fetchMock.mock.calls[2][1]).toEqual({ headers: undefined });
 		stream.emit('new', makeEarthquake({ is_backfill: true }));
-		expect(store.blink.get('usgs:us123')?.mode).toBe('persistent');
+		expect(store.blink.get(1)?.mode).toBe('persistent');
 		store.disconnect();
 	});
 
 	it('restores the cached snapshot body when an earlier filter returns 304', async () => {
-		const recent = makeEarthquake({ source_id: 'recent' });
+		const recent = makeEarthquake({ id: 1 });
 		const weekOnly = makeEarthquake({
-			source_id: 'week-only',
+			id: 2,
 			occurred_at_ms: Date.now() - 48 * 60 * 60 * 1000
 		});
 		fetchMock
@@ -208,43 +250,43 @@ describe('EarthquakeStore', () => {
 
 		store.setFilter({ hours: 168 });
 		await settle();
-		expect([...store.earthquakes.keys()]).toEqual(['usgs:recent', 'usgs:week-only']);
+		expect([...store.earthquakes.keys()]).toEqual([1, 2]);
 		const updateRevision = weekOnly.updated_at_ms + 1;
 		stream.emit('update', makeEarthquake({ ...weekOnly, updated_at_ms: updateRevision }));
-		expect(store.earthquakes.get('usgs:week-only')?.updated_at_ms).toBe(updateRevision);
+		expect(store.earthquakes.get(2)?.updated_at_ms).toBe(updateRevision);
 		store.setFilter({ hours: 24 });
 		await settle();
-		expect([...store.earthquakes.keys()]).toEqual(['usgs:recent']);
+		expect([...store.earthquakes.keys()]).toEqual([1]);
 		store.setFilter({ hours: 168 });
 		await settle();
-		expect([...store.earthquakes.keys()]).toEqual(['usgs:recent', 'usgs:week-only']);
-		expect(store.earthquakes.get('usgs:week-only')?.updated_at_ms).toBe(updateRevision);
+		expect([...store.earthquakes.keys()]).toEqual([1, 2]);
+		expect(store.earthquakes.get(2)?.updated_at_ms).toBe(updateRevision);
 		expect(fetchMock.mock.calls[3][1]).toEqual({ headers: { 'If-None-Match': '"7d"' } });
 		store.disconnect();
 	});
 
 	it('trims events by occurrence time and sorts by magnitude', () => {
 		const store = new EarthquakeStore();
-		store.earthquakes.set('usgs:small', makeEarthquake({ source_id: 'small', magnitude: 3 }));
-		store.earthquakes.set('usgs:large', makeEarthquake({ source_id: 'large', magnitude: 5 }));
+		store.earthquakes.set(1, makeEarthquake({ id: 1, magnitude: 3 }));
+		store.earthquakes.set(2, makeEarthquake({ id: 2, magnitude: 5 }));
 		store.earthquakes.set(
-			'usgs:old',
-			makeEarthquake({ source_id: 'old', occurred_at_ms: Date.now() - 25 * 60 * 60 * 1000 })
+			3,
+			makeEarthquake({ id: 3, occurred_at_ms: Date.now() - 25 * 60 * 60 * 1000 })
 		);
 		store.trim();
 
-		expect(store.sorted.map((earthquake) => earthquake.source_id)).toEqual(['large', 'small']);
+		expect(store.sorted.map((earthquake) => earthquake.id)).toEqual([2, 1]);
 	});
 
 	it('includes null magnitudes only when the all-magnitudes API filter is selected', async () => {
-		const unknownMagnitude = makeEarthquake({ source_id: 'unknown', magnitude: null });
+		const unknownMagnitude = makeEarthquake({ id: 5, magnitude: null });
 		fetchMock.mockResolvedValue(new Response(JSON.stringify([unknownMagnitude])));
 		const store = new EarthquakeStore();
 		await store.connect('/recent', '/stream', { minMagnitude: 'all' });
 		FakeEventSource.instances[0].open();
 		await settle();
 
-		expect(store.earthquakes.has('usgs:unknown')).toBe(true);
+		expect(store.earthquakes.has(5)).toBe(true);
 		expect(fetchMock).toHaveBeenCalledWith('/recent?hours=24&minmag=all&type=earthquake', {
 			headers: undefined
 		});
@@ -252,7 +294,7 @@ describe('EarthquakeStore', () => {
 	});
 
 	it('hides a quarry blast under the default filter and shows it with eventType "all"', async () => {
-		const blast = makeEarthquake({ source_id: 'blast', event_type: 'quarry blast' });
+		const blast = makeEarthquake({ id: 6, event_type: 'quarry blast' });
 		fetchMock
 			.mockResolvedValueOnce(new Response(JSON.stringify([blast])))
 			.mockResolvedValueOnce(new Response(JSON.stringify([blast])));
@@ -261,11 +303,35 @@ describe('EarthquakeStore', () => {
 		FakeEventSource.instances[0].open();
 		await settle();
 
-		expect(store.earthquakes.has('usgs:blast')).toBe(false);
+		expect(store.earthquakes.has(6)).toBe(false);
 
 		store.setFilter({ eventType: 'all' });
 		await settle();
-		expect(store.earthquakes.has('usgs:blast')).toBe(true);
+		expect(store.earthquakes.has(6)).toBe(true);
 		store.disconnect();
+	});
+
+	it('fetches and exposes data sources for attribution', async () => {
+		fetchMock.mockResolvedValue(
+			new Response(
+				JSON.stringify({
+					sources: [
+						{
+							id: 'usgs',
+							name: 'U.S. Geological Survey',
+							homepage: 'https://earthquake.usgs.gov/',
+							license: 'public-domain',
+							attribution_text: 'Credit: U.S. Geological Survey',
+							redistributable: true,
+							priority: 100
+						}
+					]
+				})
+			)
+		);
+		const store = new EarthquakeStore();
+		await store.fetchSources('/api/v1/sources');
+
+		expect(store.sources.get('usgs')?.name).toBe('U.S. Geological Survey');
 	});
 });

@@ -1,10 +1,27 @@
-/** Normalized event returned by `/api/v1/earthquakes/recent`. */
-export interface Earthquake {
+/** Member match provenance within a canonical event. */
+export type MemberMatchedBy = 'origin' | 'id' | 'misfit';
+
+export interface EarthquakeMember {
 	source: string;
 	source_id: string;
-	contributing_ids: string[];
-	net: string | null;
-	code: string | null;
+	magnitude: number | null;
+	magnitude_type: string | null;
+	occurred_at_ms: number;
+	updated_at_ms: number;
+	latitude: number;
+	longitude: number;
+	depth_km: number | null;
+	place: string | null;
+	status: string | null;
+	url: string | null;
+	matched_by: MemberMatchedBy;
+	misfit: number | null;
+}
+
+/** Canonical event returned by `/api/v1/earthquakes/recent` and the SSE stream. */
+export interface Earthquake {
+	id: number;
+	kind: string;
 	magnitude: number | null;
 	magnitude_type: string | null;
 	occurred_at: string;
@@ -25,15 +42,31 @@ export interface Earthquake {
 	dmin: number | null;
 	rms: number | null;
 	gap: number | null;
+	net: string | null;
+	code: string | null;
 	url: string | null;
 	detail: string | null;
 	longitude: number;
 	latitude: number;
 	depth_km: number | null;
+	preferred_source: string;
+	sources: string[];
+	members: EarthquakeMember[];
 	first_seen_at: string;
 	last_seen_at: string;
 	/** Present on SSE events; initial/backfill records must never flash. */
 	is_backfill?: boolean;
+}
+
+/** Attribution/license entry returned by `/api/v1/sources`. */
+export interface DataSource {
+	id: string;
+	name: string;
+	homepage: string;
+	license: string;
+	attribution_text: string;
+	redistributable: boolean;
+	priority: number;
 }
 
 export type EarthquakeEventType = 'earthquake' | 'all';
@@ -49,8 +82,4 @@ export type EarthquakeBlinkMode = 'arrival' | 'persistent';
 export interface EarthquakeBlinkState {
 	mode: EarthquakeBlinkMode;
 	until: number | null;
-}
-
-export function earthquakeKey(earthquake: Pick<Earthquake, 'source' | 'source_id'>): string {
-	return `${earthquake.source}:${earthquake.source_id}`;
 }

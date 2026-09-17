@@ -1,11 +1,12 @@
 <script lang="ts">
+	import { SvelteSet } from 'svelte/reactivity';
 	import { earthquakeStore } from '$lib/earthquakes/store.svelte';
-	import type { Earthquake } from '$lib/earthquakes/types';
+	import type { DataSource, EarthquakeMember } from '$lib/earthquakes/types';
 	import { formatLocalDateTime } from '$lib/alerts/timeFormat';
 
 	interface Props {
-		selectedId: string | null;
-		onselect: (id: string) => void;
+		selectedId: number | null;
+		onselect: (id: number) => void;
 		onclose: () => void;
 		class?: string;
 	}
@@ -19,12 +20,35 @@
 	});
 
 	const selected = $derived(
-		selectedId ? (earthquakeStore.earthquakes.get(selectedId) ?? null) : null
+		selectedId !== null ? (earthquakeStore.earthquakes.get(selectedId) ?? null) : null
 	);
 
-	function magnitudeLabel(earthquake: Earthquake): string {
-		return earthquake.magnitude === null ? 'M—' : `M${earthquake.magnitude.toFixed(1)}`;
+	function magnitudeLabel(magnitude: number | null): string {
+		return magnitude === null ? 'M—' : `M${magnitude.toFixed(1)}`;
 	}
+
+	function sourceName(sourceId: string): string {
+		return earthquakeStore.sources.get(sourceId)?.name ?? sourceId;
+	}
+
+	function memberLabel(member: EarthquakeMember): string {
+		const magnitude = `${magnitudeLabel(member.magnitude)}${member.magnitude_type ? ` ${member.magnitude_type}` : ''}`;
+		const misfit = member.misfit === null ? '' : ` (misfit ${member.misfit.toFixed(2)})`;
+		return `${sourceName(member.source)} · ${magnitude} · ${member.matched_by}${misfit}`;
+	}
+
+	// EMSC's CC BY 4.0 license requires attribution whenever its events are on
+	// screen, not only when one is selected, so this covers the whole loaded set.
+	const visibleSources = $derived.by((): DataSource[] => {
+		const ids = new SvelteSet<string>();
+		for (const earthquake of earthquakeStore.sorted) {
+			for (const sourceId of earthquake.sources) ids.add(sourceId);
+		}
+		return [...ids]
+			.map((id) => earthquakeStore.sources.get(id))
+			.filter((source): source is DataSource => source !== undefined)
+			.sort((a, b) => b.priority - a.priority);
+	});
 
 	function timeSince(iso: string): string {
 		const minutes = Math.max(0, Math.round((now - new Date(iso).getTime()) / 60000));
@@ -113,7 +137,7 @@
 		<div class="border-ink-2/30 flex shrink-0 flex-col gap-2 border-b px-3 py-3 text-sm">
 			<div class="flex items-start justify-between gap-2">
 				<h3 class="font-semibold">
-					<span class="text-amber-700">{magnitudeLabel(selected)}</span>
+					<span class="text-amber-700">{magnitudeLabel(selected.magnitude)}</span>
 					{selected.place ?? selected.title ?? 'Unknown location'}
 				</h3>
 				<button
@@ -138,43 +162,54 @@
 					USGS tsunami screening flag; this is not a tsunami warning.
 				</p>
 			{/if}
+			<ul class="flex flex-col gap-0.5">
+				{#each selected.members as member (member.source + member.source_id)}
+					<li class="text-ink-2 text-xs">{memberLabel(member)}</li>
+				{/each}
+			</ul>
 			<div class="flex items-center gap-2 pt-1">
 				{#if selected.url}
 					<a
 						href={selected.url}
 						target="_blank"
 						rel="external noopener noreferrer"
-						class="border-ink-2/30 hover:bg-shoal border px-2 py-1 text-xs">USGS event</a
+						class="border-ink-2/30 hover:bg-shoal border px-2 py-1 text-xs"
+						>{selected.preferred_source.toUpperCase()} event</a
 					>
 				{/if}
-				<a
-					href="https://www.usgs.gov/"
-					target="_blank"
-					rel="noopener noreferrer"
-					class="border-ink-2/30 hover:bg-shoal border px-2 py-1 text-xs">USGS source</a
-				>
+			</div>
+			<div data-testid="earthquake-event-sources" class="flex flex-col gap-0.5">
+				{#each selected.sources as sourceId (sourceId)}
+					{@const source = earthquakeStore.sources.get(sourceId)}
+					{#if source}
+						<a
+							href={source.homepage}
+							target="_blank"
+							rel="external noopener noreferrer"
+							class="text-ink-2 text-xs hover:underline">{source.attribution_text}</a
+						>
+					{/if}
+				{/each}
 			</div>
 		</div>
 	{/if}
 
 	<ul class="max-h-40 min-h-28 overflow-y-auto">
-		{#each earthquakeStore.sorted as earthquake (`${earthquake.source}:${earthquake.source_id}`)}
+		{#each earthquakeStore.sorted as earthquake (earthquake.id)}
 			<li>
 				<button
 					type="button"
 					data-testid="earthquake-feed-item"
-					aria-current={selectedId === `${earthquake.source}:${earthquake.source_id}`
-						? 'true'
-						: undefined}
-					onclick={() => onselect(`${earthquake.source}:${earthquake.source_id}`)}
+					aria-current={selectedId === earthquake.id ? 'true' : undefined}
+					onclick={() => onselect(earthquake.id)}
 					class="border-ink-2/10 hover:bg-shoal focus-visible:bg-shoal flex w-full flex-col gap-0.5 border-b px-3 py-2 text-left text-sm {selectedId ===
-					`${earthquake.source}:${earthquake.source_id}`
+					earthquake.id
 						? 'bg-shoal'
 						: ''}"
 				>
 					<span class="flex items-center justify-between gap-2">
 						<span class="font-medium"
-							><span class="text-amber-700">{magnitudeLabel(earthquake)}</span>
+							><span class="text-amber-700">{magnitudeLabel(earthquake.magnitude)}</span>
 							{earthquake.place ?? earthquake.title ?? 'Unknown location'}</span
 						>
 						<span class="tabular text-ink-2 shrink-0 text-xs"
@@ -192,7 +227,19 @@
 			<li class="text-ink-2 px-3 py-4 text-sm">No events match these filters.</li>
 		{/each}
 	</ul>
-	<footer class="text-ink-2 border-ink-2/30 shrink-0 border-t px-3 py-2 text-xs">
-		Credit: U.S. Geological Survey
-	</footer>
+	{#if visibleSources.length > 0}
+		<footer
+			data-testid="earthquake-attribution"
+			class="border-ink-2/30 flex shrink-0 flex-col gap-0.5 border-t px-3 py-2"
+		>
+			{#each visibleSources as source (source.id)}
+				<a
+					href={source.homepage}
+					target="_blank"
+					rel="external noopener noreferrer"
+					class="text-ink-2 text-xs hover:underline">{source.attribution_text}</a
+				>
+			{/each}
+		</footer>
+	{/if}
 </section>

@@ -11,12 +11,12 @@
 	} from '$lib/alerts/blinkBucket';
 	import type { BlinkPhase } from '$lib/alerts/blinkEngine.svelte';
 	import { earthquakeStore } from '$lib/earthquakes/store.svelte';
-	import { earthquakeKey, type Earthquake } from '$lib/earthquakes/types';
+	import type { Earthquake } from '$lib/earthquakes/types';
 	import { DAY, NIGHT } from './tokens';
 
 	interface Props {
 		phase: BlinkPhase;
-		onselect: (id: string) => void;
+		onselect: (id: number) => void;
 		onready: () => void;
 	}
 
@@ -90,7 +90,7 @@
 	// timing); once persistent, magnitude picks the rhythm. M<2.5 never
 	// blinks; M>=6 gets the two-flash "group" rhythm.
 	function bucketFor(earthquake: Earthquake): BlinkBucket {
-		const state = earthquakeStore.blink.get(earthquakeKey(earthquake));
+		const state = earthquakeStore.blink.get(earthquake.id);
 		if (!state) return 'none';
 		const frozen = alertStore.stopAll || alertStore.reducedMotion;
 		if (state.mode === 'arrival') return frozen ? 'still' : 'q';
@@ -103,7 +103,7 @@
 	}
 
 	interface MarkerEntry {
-		id: string;
+		id: number;
 		blinkBucket: BlinkBucket;
 	}
 
@@ -112,7 +112,7 @@
 	// rebuild the whole source (see Fix 1 in the review this addresses).
 	const entries = $derived.by((): MarkerEntry[] =>
 		earthquakeStore.sorted.map((earthquake) => ({
-			id: earthquakeKey(earthquake),
+			id: earthquake.id,
 			blinkBucket: bucketFor(earthquake)
 		}))
 	);
@@ -124,7 +124,7 @@
 		features: earthquakeStore.sorted.map((earthquake) => ({
 			type: 'Feature' as const,
 			properties: {
-				id: earthquakeKey(earthquake),
+				id: earthquake.id,
 				magnitude: earthquake.magnitude
 			},
 			geometry: {
@@ -139,8 +139,8 @@
 	});
 
 	function handleClick(event: maplibregl.MapLayerMouseEvent): void {
-		const id = event.features?.[0]?.properties?.id as string | undefined;
-		if (id) onselect(id);
+		const id = event.features?.[0]?.properties?.id as number | undefined;
+		if (id !== undefined) onselect(id);
 	}
 
 	function handleClusterClick(event: maplibregl.MapLayerMouseEvent): void {

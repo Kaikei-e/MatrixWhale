@@ -24,13 +24,14 @@
 	let map = $state<maplibregl.Map | undefined>();
 	let centroids = $state<Record<string, [number, number]>>({});
 	let selectedId = $state<string | null>(null);
-	let selectedEarthquakeId = $state<string | null>(null);
+	let selectedEarthquakeId = $state<number | null>(null);
 	let earthquakeSourceMounted = $state(false);
 	let earthquakeLayerReady = $state(false);
 	let sheetExpanded = $state(false);
 	let userInteracted = $state(false);
 	let autoFitted = $state(false);
 	let focusApplied = $state(false);
+	let focusEarthquakeApplied = $state(false);
 
 	const focusId = page.url.searchParams.get('focus');
 	// Shared by alerts and earthquakes so rhythms of the same name (q/fl2/fl4)
@@ -65,6 +66,11 @@
 			eventType: 'earthquake'
 		});
 		return () => earthquakeStore.disconnect();
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		void earthquakeStore.fetchSources('/api/v1/sources');
 	});
 
 	$effect(() => {
@@ -108,6 +114,14 @@
 		if (!alertStore.activeAlerts.has(focusId)) return;
 		focusApplied = true;
 		selectAlert(focusId);
+	});
+
+	$effect(() => {
+		if (!focusId || focusEarthquakeApplied || !map) return;
+		const id = Number(focusId);
+		if (!Number.isFinite(id) || !earthquakeStore.earthquakes.has(id)) return;
+		focusEarthquakeApplied = true;
+		selectEarthquake(id);
 	});
 
 	// The desktop side panel (md:w-[22rem]) overlays the map instead of
@@ -159,7 +173,7 @@
 		selectedId = null;
 	}
 
-	function selectEarthquake(id: string): void {
+	function selectEarthquake(id: number): void {
 		const earthquake = earthquakeStore.earthquakes.get(id);
 		if (!earthquake) return;
 		selectedEarthquakeId = id;
