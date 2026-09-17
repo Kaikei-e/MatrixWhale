@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { SEVERITIES, type HistoryBucket, type Severity } from '$lib/alerts/types';
+	import { formatLocalHour } from '$lib/alerts/timeFormat';
 
 	const SEVERITY_BAR_COLOR: Record<Severity, string> = {
 		Extreme: 'bg-light',
@@ -12,8 +13,6 @@
 
 	let buckets = $state<HistoryBucket[] | null>(null);
 	let error = $state(false);
-
-	const hourFormat = new Intl.DateTimeFormat(undefined, { hour: 'numeric' });
 
 	async function refresh(): Promise<void> {
 		try {
@@ -47,7 +46,7 @@
 			<div
 				class="flex flex-1 flex-col-reverse"
 				style="height: {(totals[i] / maxTotal) * 100}%"
-				title="{hourFormat.format(new Date(bucket.hour_start))}: {totals[i]}"
+				title="{formatLocalHour(bucket.hour_start)}: {totals[i]}"
 			>
 				{#each SEVERITIES as severity (severity)}
 					{#if bucket.counts[severity] > 0}
@@ -62,8 +61,7 @@
 	</div>
 	<div class="tabular text-ink-2 mt-1 flex gap-1 text-xs">
 		{#each buckets as bucket, i (bucket.hour_start)}
-			<span class="flex-1 text-center"
-				>{i % 4 === 0 ? hourFormat.format(new Date(bucket.hour_start)) : ''}</span
+			<span class="flex-1 text-center">{i % 4 === 0 ? formatLocalHour(bucket.hour_start) : ''}</span
 			>
 		{/each}
 	</div>

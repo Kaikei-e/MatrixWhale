@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Alert, Severity } from '$lib/alerts/types';
 	import { alertStore } from '$lib/alerts/store.svelte';
+	import { formatLocalDateTime } from '$lib/alerts/timeFormat';
 
 	interface Props {
 		alert: Alert;
@@ -36,10 +37,6 @@
 		if (hours < 24) return `${hours}h ago`;
 		return `${Math.round(hours / 24)}d ago`;
 	}
-
-	function formatSent(iso: string): string {
-		return new Date(iso).toLocaleString();
-	}
 </script>
 
 <button
@@ -60,7 +57,7 @@
 	<span class="flex items-center justify-between gap-2 text-xs">
 		<span class={SEVERITY_COLOR[alert.severity]}>{alert.severity}</span>
 		{#if alert.sent}
-			<time datetime={alert.sent} title={formatSent(alert.sent)} class="tabular text-ink-2"
+			<time datetime={alert.sent} title={formatLocalDateTime(alert.sent)} class="tabular text-ink-2"
 				>{timeSince(alert.sent)}</time
 			>
 		{:else}

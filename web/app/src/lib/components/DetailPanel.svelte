@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Alert } from '$lib/alerts/types';
+	import { formatLocalDateTime } from '$lib/alerts/timeFormat';
 
 	interface Props {
 		alert: Alert;
@@ -10,7 +11,7 @@
 	let { alert, onclose, onacknowledge }: Props = $props();
 
 	function formatExpires(iso: string): string {
-		const local = new Date(iso).toLocaleString();
+		const local = formatLocalDateTime(iso);
 		const minutes = Math.round((new Date(iso).getTime() - Date.now()) / 60000);
 		if (minutes <= 0) return `Expired · ${local}`;
 		if (minutes < 60) return `Expires in ${minutes}m · ${local}`;

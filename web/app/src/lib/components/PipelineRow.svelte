@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { PipelineStatus } from '$lib/alerts/types';
+	import { formatLocalDateTime } from '$lib/alerts/timeFormat';
 
 	let status = $state<PipelineStatus | null>(null);
 	let error = $state(false);
@@ -22,10 +23,8 @@
 		return () => clearInterval(interval);
 	});
 
-	const timeFormat = new Intl.DateTimeFormat(undefined, { timeStyle: 'medium' });
-
 	function localTime(iso: string | null): string {
-		return iso ? timeFormat.format(new Date(iso)) : '—';
+		return iso ? formatLocalDateTime(iso) : '—';
 	}
 
 	const activeTotal = $derived(

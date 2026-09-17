@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import type { Alert } from '$lib/alerts/types';
+	import { formatLocalDateTime } from '$lib/alerts/timeFormat';
 
 	let query = $state('');
 	let results = $state<Alert[]>([]);
@@ -63,8 +64,8 @@
 							></td
 						>
 						<td class="py-1">{alert.severity}</td>
-						<td class="py-1">{alert.sent ?? '—'}</td>
-						<td class="py-1">{alert.expires ?? '—'}</td>
+						<td class="py-1">{alert.sent ? formatLocalDateTime(alert.sent) : '—'}</td>
+						<td class="py-1">{alert.expires ? formatLocalDateTime(alert.expires) : '—'}</td>
 						<td class="py-1">{alert.area_desc}</td>
 					</tr>
 				{/each}
