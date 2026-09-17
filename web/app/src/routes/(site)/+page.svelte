@@ -17,6 +17,7 @@
 
 	let map = $state<maplibregl.Map | undefined>();
 	let liveError = $state(false);
+	let activeAlertCount = $state<number | undefined>();
 
 	async function lightActiveAlerts(currentMap: maplibregl.Map): Promise<void> {
 		try {
@@ -27,6 +28,7 @@
 			if (!alertsResponse.ok) throw new Error(`alerts request failed: ${alertsResponse.status}`);
 
 			const alerts = (await alertsResponse.json()) as Alert[];
+			activeAlertCount = alerts.length;
 			const centroids = centroidsResponse.ok
 				? ((await centroidsResponse.json()) as Record<string, [number, number]>)
 				: {};
@@ -113,6 +115,10 @@
 			</p>
 			{#if liveError}
 				<p class="text-ink-2 mt-3 text-sm">Live data unavailable.</p>
+			{:else if activeAlertCount !== undefined}
+				<p class="tabular text-ink-2 text-xs">
+					{activeAlertCount} active {activeAlertCount === 1 ? 'alert' : 'alerts'}
+				</p>
 			{/if}
 			<div class="mt-4 flex gap-3 text-sm">
 				<a href={resolve('/globe')} class="border-ink hover:bg-shoal border px-3 py-1.5"
