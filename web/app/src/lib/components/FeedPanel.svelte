@@ -2,6 +2,7 @@
 	import { alertStore } from '$lib/alerts/store.svelte';
 	import { SEVERITIES } from '$lib/alerts/types';
 	import FeedItem from './FeedItem.svelte';
+	import SseStatusDot from './SseStatusDot.svelte';
 
 	interface Props {
 		selectedId: string | null;
@@ -25,11 +26,8 @@
 				{/if}
 			{/each}
 		</div>
+		<SseStatusDot variant="feed" class="mt-1 text-xs" />
 	</div>
-
-	{#if alertStore.connected === 'closed'}
-		<p class="border-ink-2/30 border-b px-3 py-1 text-xs">Live feed disconnected — retrying</p>
-	{/if}
 
 	{#if alertStore.snapshotError}
 		<div class="border-ink-2/30 flex items-center justify-between gap-2 border-b px-3 py-2 text-xs">
