@@ -1,0 +1,27 @@
+:root {
+	--paper: #f7f9f6;
+	--land: #eadbb0;
+	--shoal: #cfe2ea;
+	--ink: #1c2a35;
+	--ink-2: #4a5c68;
+	--light: #b8338f;
+}
+
+[data-theme='night'] {
+	--paper: #0f1b24;
+	--land: #2a2f2b;
+	--shoal: #16303d;
+	--ink: #d5dee3;
+	--ink-2: #93a6b1;
+	--light: #d46bb8;
+}
+
+@theme inline {
+	--color-paper: var(--paper);
+	--color-land: var(--land);
+	--color-shoal: var(--shoal);
+	--color-ink: var(--ink);
+	--color-ink-2: var(--ink-2);
+	--color-light: var(--light);
+	--font-sans: 'Public Sans Variable', sans-serif;
+}

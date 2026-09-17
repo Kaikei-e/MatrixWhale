@@ -1,6 +1,14 @@
 @import 'tailwindcss';
-@plugin '@tailwindcss/typography';
+@import './lib/chart/tokens.css';
+@import '@fontsource-variable/public-sans/wght.css';
+@import '@fontsource-variable/public-sans/wght-italic.css';
 
-@import '@skeletonlabs/skeleton';
-@import '@skeletonlabs/skeleton-svelte';
-@import '@skeletonlabs/skeleton/themes/wintry';
+@layer base {
+	body {
+		@apply bg-paper text-ink font-sans;
+	}
+
+	.tabular {
+		font-variant-numeric: tabular-nums;
+	}
+}
