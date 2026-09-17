@@ -48,6 +48,25 @@ pub type SourceStats {
     last_written: Int,
     last_dropped: Int,
     last_bytes: Int,
+    last_dedup_intake: Int,
+    last_dedup_unchanged: Int,
+    last_dedup_stale: Int,
+    last_matched: Int,
+  )
+}
+
+/// What one source's intake pipeline run produced, recorded verbatim into
+/// that source's `SourceStats`.
+pub type SourceWrite {
+  SourceWrite(
+    http_status: Int,
+    received: Int,
+    written: Int,
+    dropped: Int,
+    bytes: Int,
+    dedup_intake: Int,
+    dedup_unchanged: Int,
+    dedup_stale: Int,
   )
 }
 
@@ -62,15 +81,7 @@ pub type HubMsg {
   RecordPoll(meta: PollMeta)
   RecordDecoded(decoded: Int, dropped: Int)
   RecordWrite(new: Int, updated: Int, ended: Int)
-  RecordSource(
-    source: String,
-    http_status: Int,
-    received: Int,
-    deduped: Int,
-    written: Int,
-    dropped: Int,
-    bytes: Int,
-  )
+  RecordSource(source: String, write: SourceWrite)
   GetStats(reply_to: Subject(PipelineStats))
   Tick
 }
@@ -144,25 +155,9 @@ pub fn record_write(
 pub fn record_source(
   hub: Subject(HubMsg),
   source: String,
-  http_status: Int,
-  received: Int,
-  deduped: Int,
-  written: Int,
-  dropped: Int,
-  bytes: Int,
+  write: SourceWrite,
 ) -> Nil {
-  process.send(
-    hub,
-    RecordSource(
-      source,
-      http_status,
-      received,
-      deduped,
-      written,
-      dropped,
-      bytes,
-    ),
-  )
+  process.send(hub, RecordSource(source, write))
 }
 
 pub fn get_stats(hub: Subject(HubMsg)) -> PipelineStats {
@@ -184,6 +179,15 @@ pub fn source_stats_to_json(stats: Dict(String, SourceStats)) -> json.Json {
         #("written", json.int(stat.last_written)),
         #("dropped", json.int(stat.last_dropped)),
         #("bytes", json.int(stat.last_bytes)),
+        #(
+          "dedup",
+          json.object([
+            #("intake", json.int(stat.last_dedup_intake)),
+            #("unchanged", json.int(stat.last_dedup_unchanged)),
+            #("stale", json.int(stat.last_dedup_stale)),
+          ]),
+        ),
+        #("matched", json.int(stat.last_matched)),
       ]),
     )
   })
@@ -223,6 +227,10 @@ fn empty_source_stats() -> SourceStats {
     last_written: 0,
     last_dropped: 0,
     last_bytes: 0,
+    last_dedup_intake: 0,
+    last_dedup_unchanged: 0,
+    last_dedup_stale: 0,
+    last_matched: 0,
   )
 }
 
@@ -327,24 +335,22 @@ fn handle_message(state: State, message: HubMsg) -> actor.Next(State, HubMsg) {
       )
     }
 
-    RecordSource(
-      source,
-      http_status,
-      received,
-      deduped,
-      written,
-      dropped,
-      bytes,
-    ) -> {
+    RecordSource(source, write) -> {
       let source_stat =
         SourceStats(
           last_fetch_at: option.Some(now_rfc3339()),
-          last_http_status: option.Some(http_status),
-          last_received: received,
-          last_deduped: deduped,
-          last_written: written,
-          last_dropped: dropped,
-          last_bytes: bytes,
+          last_http_status: option.Some(write.http_status),
+          last_received: write.received,
+          last_deduped: write.dedup_intake
+            + write.dedup_unchanged
+            + write.dedup_stale,
+          last_written: write.written,
+          last_dropped: write.dropped,
+          last_bytes: write.bytes,
+          last_dedup_intake: write.dedup_intake,
+          last_dedup_unchanged: write.dedup_unchanged,
+          last_dedup_stale: write.dedup_stale,
+          last_matched: 0,
         )
       actor.continue(
         State(

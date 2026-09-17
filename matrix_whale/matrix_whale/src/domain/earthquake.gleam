@@ -1,3 +1,4 @@
+import domain/source
 import gleam/dynamic/decode
 import gleam/float
 import gleam/int
@@ -118,6 +119,7 @@ pub fn row_decoder() -> decode.Decoder(Earthquake) {
 }
 
 pub fn to_json(x: Earthquake) -> json.Json {
+  let assert Ok(registered) = source.lookup(x.source)
   json.object([
     #("source", json.string(x.source)),
     #("source_id", json.string(x.source_id)),
@@ -148,9 +150,9 @@ pub fn to_json(x: Earthquake) -> json.Json {
     #("longitude", json.float(x.longitude)),
     #("latitude", json.float(x.latitude)),
     #("depth_km", json.nullable(x.depth_km, json.float)),
-    #("license", json.string("public-domain")),
-    #("attribution", json.string("U.S. Geological Survey")),
-    #("redistributable", json.bool(True)),
+    #("license", json.string(registered.license)),
+    #("attribution", json.string(registered.attribution_text)),
+    #("redistributable", json.bool(registered.redistributable)),
     #("first_seen_at", time_json(x.first_seen_at)),
     #("last_seen_at", time_json(x.last_seen_at)),
   ])

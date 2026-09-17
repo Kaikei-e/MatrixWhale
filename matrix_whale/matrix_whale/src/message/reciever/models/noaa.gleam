@@ -7,6 +7,7 @@ import gleam/list
 import gleam/option.{type Option}
 import gleam/result
 import gleam/string
+import gleam/time/timestamp.{type Timestamp}
 import wisp
 
 pub type Alerts {
@@ -674,5 +675,24 @@ pub fn status_to_string(status: Status) -> String {
     Actual -> "Actual"
     Test -> "Test"
     UnknownStatus -> "Unknown"
+  }
+}
+
+pub fn timestamp_to_ms(t: Timestamp) -> Int {
+  let #(seconds, nanoseconds) = timestamp.to_unix_seconds_and_nanoseconds(t)
+  seconds * 1000 + nanoseconds / 1_000_000
+}
+
+/// A NOAA alert has no numeric revision of its own; `sent` (unix ms, 0 when
+/// absent) stands in for one, since a later `sent` always supersedes an
+/// earlier one for the same alert id.
+pub fn sent_revision_ms(properties: Properties) -> Int {
+  case properties.sent {
+    option.Some(text) ->
+      case timestamp.parse_rfc3339(text) {
+        Ok(t) -> timestamp_to_ms(t)
+        Error(_) -> 0
+      }
+    option.None -> 0
   }
 }

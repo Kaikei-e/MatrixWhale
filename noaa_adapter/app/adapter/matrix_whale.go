@@ -39,8 +39,14 @@ func MatrixWhaleAdapter(result PollResult) error {
 
 	slog.Info("Sending data to Matrix Whale", "feature_count", len(features))
 
-	if _, err := core.NewClientFromEnv().Send(context.Background(), "noaa_data/send", meta, features); err != nil {
+	client := core.NewClientFromEnv()
+	ack, err := client.Send(context.Background(), "noaa_data/send", meta, features)
+	if err != nil {
 		slog.Error("Error sending data to Matrix Whale", "error", err)
+		return err
+	}
+	if err := core.ValidateAck(ack, len(features)); err != nil {
+		slog.Error("Matrix Whale ack validation failed", "error", err)
 		return err
 	}
 

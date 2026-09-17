@@ -28,7 +28,7 @@ fn usgs_post_handler(req: Request, ctx: Context) -> Response {
         ),
         400,
       )
-    Ok(#(meta, features, received, dropped)) -> {
+    Ok(#(meta, features, received, decode_dropped)) -> {
       let backfill = case meta {
         option.Some(meta) -> meta.backfill
         option.None -> False
@@ -42,32 +42,37 @@ fn usgs_post_handler(req: Request, ctx: Context) -> Response {
         option.None -> 0
       }
       case usgs_controller.process(features, backfill, ctx) {
-        Ok(#(new, updated, expired)) -> {
-          let dropped = dropped + expired
-          let deduped = received - dropped - new - updated
+        Ok(result) -> {
+          let dropped = decode_dropped + result.expired
+          let deduped = result.repeats + result.unchanged + result.stale
+          let written = result.new + result.updated
           alert_hub.record_source(
             ctx.hub,
             "usgs",
-            http_status,
-            received,
-            deduped,
-            new + updated,
-            dropped,
-            bytes,
+            alert_hub.SourceWrite(
+              http_status: http_status,
+              received: received,
+              written: written,
+              dropped: dropped,
+              bytes: bytes,
+              dedup_intake: result.repeats,
+              dedup_unchanged: result.unchanged,
+              dedup_stale: result.stale,
+            ),
           )
           wisp.json_response(
             json.to_string(
               json.object([
                 #("received", json.int(received)),
                 #("deduped", json.int(deduped)),
-                #("written", json.int(new + updated)),
+                #("written", json.int(written)),
                 #("dropped", json.int(dropped)),
                 #(
                   "message",
                   json.string(
-                    string.inspect(new)
+                    string.inspect(result.new)
                     <> " new, "
-                    <> string.inspect(updated)
+                    <> string.inspect(result.updated)
                     <> " updated",
                   ),
                 ),

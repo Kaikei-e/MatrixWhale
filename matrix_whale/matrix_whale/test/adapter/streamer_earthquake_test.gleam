@@ -12,6 +12,7 @@ import gleam/option
 import gleam/string
 import gleam/time/timestamp
 import gleeunit/should
+import intake/seen_set
 import message/reciever/usgs_reciever
 import pog
 import repository/earthquake_reader
@@ -161,5 +162,6 @@ fn test_context() -> context.Context {
     db: pog.named_connection(process.new_name("unused_snapshot_db")),
     hub: alert.data,
     earthquake_hub: earthquake.data,
+    seen: seen_set.new("streamer_earthquake_test_seen", 3_600_000),
   )
 }

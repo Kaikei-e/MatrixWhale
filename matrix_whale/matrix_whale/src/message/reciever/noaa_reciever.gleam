@@ -11,13 +11,13 @@ import wisp.{type Request, type Response}
 pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
   use body <- wisp.require_json(req)
 
-  let #(poll_meta, features, received, dropped) = noaa.decode_body(body)
+  let #(poll_meta, features, received, decode_dropped) = noaa.decode_body(body)
 
   case poll_meta {
     option.Some(meta) -> alert_hub.record_poll(ctx.hub, meta)
     option.None -> Nil
   }
-  alert_hub.record_decoded(ctx.hub, list.length(features), dropped)
+  alert_hub.record_decoded(ctx.hub, list.length(features), decode_dropped)
 
   // A complete, successful poll is the only time it is safe to end alerts
   // that are missing from this batch - a partial or failed poll must not be
@@ -33,44 +33,66 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
     <> " features, decoded "
     <> string.inspect(list.length(features))
     <> ", dropped "
-    <> string.inspect(dropped),
+    <> string.inspect(decode_dropped),
   )
 
-  let result_message = case noaa_controller(features, run_ended_sweep, ctx) {
-    Ok(#(message, new_count, updated_count)) -> {
+  case noaa_controller(features, run_ended_sweep, ctx) {
+    Ok(result) -> {
+      let dropped = decode_dropped + result.test_dropped
+      let deduped = result.repeats + result.unchanged + result.stale
+      let written = result.new + result.updated
       let bytes = case poll_meta {
         option.Some(meta) -> meta.bytes
         option.None -> 0
       }
+      let http_status = case poll_meta {
+        option.Some(meta) -> meta.http_status
+        option.None -> 0
+      }
+
       alert_hub.record_source(
         ctx.hub,
         "noaa",
-        case poll_meta {
-          option.Some(meta) -> meta.http_status
-          option.None -> 0
-        },
-        received,
-        received - dropped - new_count - updated_count,
-        new_count + updated_count,
-        dropped,
-        bytes,
+        alert_hub.SourceWrite(
+          http_status: http_status,
+          received: received,
+          written: written,
+          dropped: dropped,
+          bytes: bytes,
+          dedup_intake: result.repeats,
+          dedup_unchanged: result.unchanged,
+          dedup_stale: result.stale,
+        ),
       )
-      message
+
+      wisp.json_response(
+        json.object([
+          #("received", json.int(received)),
+          #("deduped", json.int(deduped)),
+          #("written", json.int(written)),
+          #("dropped", json.int(dropped)),
+          #(
+            "message",
+            json.string(
+              string.inspect(result.new)
+              <> " new, "
+              <> string.inspect(result.updated)
+              <> " updated, "
+              <> string.inspect(result.ended)
+              <> " ended",
+            ),
+          ),
+        ])
+          |> json.to_string,
+        200,
+      )
     }
-    Error(err) -> {
-      wisp.log_error("Error processing features: " <> err)
-      "Error: " <> err
+    Error(error) -> {
+      wisp.log_error("Error processing features: " <> error)
+      wisp.json_response(
+        json.to_string(json.object([#("error", json.string(error))])),
+        503,
+      )
     }
   }
-
-  wisp.json_response(
-    json.object([
-      #("received", json.int(received)),
-      #("decoded", json.int(list.length(features))),
-      #("dropped", json.int(dropped)),
-      #("message", json.string(result_message)),
-    ])
-      |> json.to_string,
-    200,
-  )
 }

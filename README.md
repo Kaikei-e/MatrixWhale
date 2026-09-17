@@ -100,7 +100,9 @@ Because the production poll switches from all_week to all_day, a revision more t
 
 `GET /api/v1/earthquakes/recent` defaults to the latest 24 hours at M2.5+; `hours=1..168`, `minmag=<number>|all`, and `type=earthquake|all` refine the snapshot. It sends a content-hash ETag and `Cache-Control: no-cache`; clients should revalidate it. `GET /api/v1/earthquakes/stream` emits flat earthquake JSON in `new` and `update` events with `is_backfill`, plus `heartbeat` and `resync`. The event id contains a process epoch. A reconnect receives `resync` and must refetch the snapshot rather than assuming a replay buffer survived a core restart.
 
-`GET /api/v1/pipeline/status` keeps the existing NOAA top-level fields and adds `sources.noaa` and `sources.usgs`, each with `last_fetch_at`, `last_http_status`, `received`, `deduped`, `written`, `dropped`, and `bytes` for its most recent successful core write.
+`GET /api/v1/pipeline/status` keeps the existing NOAA top-level fields and adds `sources.noaa` and `sources.usgs`, each with `last_fetch_at`, `last_http_status`, `received`, `deduped`, `written`, `dropped`, `bytes`, a `dedup` breakdown (`intake`, `unchanged`, `stale`), and `matched` for its most recent successful core write.
+
+`GET /api/v1/sources` returns the core's source registry (`id`, `name`, `homepage`, `license`, `attribution_text`, `redistributable`, `priority`) that backs each earthquake's `license`/`attribution`/`redistributable` fields.
 
 Start it with `docker compose --env-file .env up --build usgs_adapter` after MatrixWhale and PostgreSQL are available. The adapter shuts down when it receives SIGTERM/SIGINT and does not advance a feed validator if the core POST fails.
 

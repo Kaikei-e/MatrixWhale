@@ -26,8 +26,10 @@ docker run --rm -d --name "$CONTAINER_NAME" \
 
 HOST_PORT="$(docker port "$CONTAINER_NAME" 5432/tcp | head -n 1 | cut -d: -f2)"
 
+# The image's entrypoint runs a socket-only bootstrap server before the real
+# one, so only a TCP readiness check proves the final server is up.
 for _ in $(seq 1 60); do
-  if docker exec "$CONTAINER_NAME" pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+  if docker exec "$CONTAINER_NAME" pg_isready -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
     break
   fi
   sleep 1

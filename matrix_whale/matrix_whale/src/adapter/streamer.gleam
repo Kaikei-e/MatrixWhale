@@ -3,6 +3,7 @@ import adapter/context.{type Context}
 import adapter/earthquake_hub
 import domain/alert
 import domain/earthquake
+import domain/source
 import gleam/bit_array
 import gleam/bytes_tree
 import gleam/crypto
@@ -68,6 +69,7 @@ fn router(
           response.new(405) |> response.set_body(mist.Bytes(bytes_tree.new()))
       }
     ["api", "v1", "pipeline", "status"] -> pipeline_status_response(ctx)
+    ["api", "v1", "sources"] -> sources_response()
     _ -> not_found_response()
   }
 }
@@ -332,6 +334,15 @@ fn pipeline_status_response(ctx: Context) -> Response(mist.ResponseData) {
       )
     Error(err) -> error_response(err)
   }
+}
+
+fn sources_response() -> Response(mist.ResponseData) {
+  json_response(
+    200,
+    json.object([
+      #("sources", json.array(source.all, source.to_json)),
+    ]),
+  )
 }
 
 fn stream_response(

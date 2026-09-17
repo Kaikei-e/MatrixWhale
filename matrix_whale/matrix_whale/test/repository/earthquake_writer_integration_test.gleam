@@ -1,62 +1,60 @@
-// Opt-in PostgreSQL integration tests. Set MATRIX_WHALE_TEST_DATABASE_URL to a
-// disposable, dedicated database; this suite never connects to application DB.
-// The schema itself (sea.alert/earthquake/earthquake_revision/source) is
-// expected to already be applied by Atlas migrations before tests run.
-import adapter/alert_hub
-import adapter/context
-import adapter/earthquake_hub
+// Opt-in PostgreSQL integration tests. See test/support/test_db.gleam for
+// the shared harness; MATRIX_WHALE_TEST_DATABASE_URL must be set to a
+// disposable, dedicated database.
 import adapter/streamer
-import dot_env/env
-import exception
-import gleam/dynamic/decode
-import gleam/erlang/process
 import gleam/http
 import gleam/http/request
 import gleam/http/response
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
-import gleam/time/timestamp
 import gleeunit/should
+import intake/record
 import message/reciever/models/usgs
 import message/reciever/usgs_reciever
-import pog
 import repository/earthquake_reader
 import repository/earthquake_writer
+import support/test_db
 import wisp/simulate
 
 pub fn writer_revision_and_rollback_integration_test() {
-  with_test_db(fn(conn) {
-    let row = sample("revision", now_ms(), 100)
-    let assert Ok(first) = earthquake_writer.upsert_and_diff([row], conn)
-    list.length(first.new) |> should.equal(1)
-    count(conn, "sea.earthquake") |> should.equal(1)
-    count(conn, "sea.earthquake_revision") |> should.equal(1)
-    scalar_text(
+  test_db.with_test_db(fn(conn) {
+    let now = test_db.now_ms()
+    let row = incoming(sample("revision", now, 100))
+    let assert Ok(first) = earthquake_writer.write_batch([row], now, conn)
+    first.new |> should.equal(1)
+    test_db.count(conn, "sea.earthquake") |> should.equal(1)
+    test_db.count(conn, "sea.earthquake_revision") |> should.equal(1)
+    test_db.scalar_text(
       conn,
       "SELECT earthquake->>'type' FROM sea.earthquake_revision WHERE source_id='revision'",
     )
     |> should.equal("Feature")
 
-    let assert Ok(same) = earthquake_writer.upsert_and_diff([row], conn)
-    list.length(same.new) |> should.equal(0)
-    list.length(same.updated) |> should.equal(0)
+    let assert Ok(same) = earthquake_writer.write_batch([row], now, conn)
+    same.new |> should.equal(0)
+    same.updated |> should.equal(0)
+    same.unchanged |> should.equal(1)
+
     let assert Ok(older) =
-      earthquake_writer.upsert_and_diff(
-        [sample("revision", now_ms(), 99)],
+      earthquake_writer.write_batch(
+        [incoming(sample("revision", now, 99))],
+        now,
         conn,
       )
-    list.length(older.updated) |> should.equal(0)
-    count(conn, "sea.earthquake_revision") |> should.equal(1)
+    older.updated |> should.equal(0)
+    older.stale |> should.equal(1)
+    test_db.count(conn, "sea.earthquake_revision") |> should.equal(1)
 
     let assert Ok(newer) =
-      earthquake_writer.upsert_and_diff(
-        [sample("revision", now_ms(), 101)],
+      earthquake_writer.write_batch(
+        [incoming(sample("revision", now, 101))],
+        now,
         conn,
       )
-    list.length(newer.updated) |> should.equal(1)
-    count(conn, "sea.earthquake_revision") |> should.equal(2)
-    scalar_int(
+    newer.updated |> should.equal(1)
+    test_db.count(conn, "sea.earthquake_revision") |> should.equal(2)
+    test_db.scalar_int(
       conn,
       "SELECT updated_at_ms FROM sea.earthquake WHERE source_id='revision'",
     )
@@ -65,26 +63,35 @@ pub fn writer_revision_and_rollback_integration_test() {
     // The trigger makes revision insertion fail after current rows were written;
     // writer's transaction must roll both projections back.
     let assert Error(_) =
-      earthquake_writer.upsert_and_diff([sample("rollback", now_ms(), 1)], conn)
-    count(conn, "sea.earthquake") |> should.equal(1)
-    count(conn, "sea.earthquake_revision") |> should.equal(2)
+      earthquake_writer.write_batch(
+        [incoming(sample("rollback", now, 1))],
+        now,
+        conn,
+      )
+    test_db.count(conn, "sea.earthquake") |> should.equal(1)
+    test_db.count(conn, "sea.earthquake_revision") |> should.equal(2)
   })
 }
 
 pub fn reader_filters_and_cleanup_integration_test() {
-  with_test_db(fn(conn) {
-    let current = now_ms()
+  test_db.with_test_db(fn(conn) {
+    let current = test_db.now_ms()
     let assert Ok(_) =
-      earthquake_writer.upsert_and_diff(
+      earthquake_writer.write_batch(
         [
-          sample("quake", current, 1),
-          usgs.IncomingEarthquake(..sample("unknown", current, 2), mag: None),
-          usgs.IncomingEarthquake(
-            ..sample("deleted", current, 3),
-            status: Some("deleted"),
+          incoming(sample("quake", current, 1)),
+          incoming(
+            usgs.IncomingEarthquake(..sample("unknown", current, 2), mag: None),
           ),
-          sample("old", current - 8 * 24 * 60 * 60 * 1000, 4),
+          incoming(
+            usgs.IncomingEarthquake(
+              ..sample("deleted", current, 3),
+              status: Some("deleted"),
+            ),
+          ),
+          incoming(sample("old", current - 8 * 24 * 60 * 60 * 1000, 4)),
         ],
+        current,
         conn,
       )
     let assert Ok(default_rows) =
@@ -105,13 +112,13 @@ pub fn reader_filters_and_cleanup_integration_test() {
     list.length(all_rows) |> should.equal(2)
 
     let assert Ok(_) = earthquake_reader.cleanup(conn)
-    count(conn, "sea.earthquake") |> should.equal(3)
-    scalar_int(
+    test_db.count(conn, "sea.earthquake") |> should.equal(3)
+    test_db.scalar_int(
       conn,
       "SELECT count(*) FROM sea.earthquake_revision WHERE source_id='old'",
     )
     |> should.equal(0)
-    scalar_int(
+    test_db.scalar_int(
       conn,
       "SELECT count(*) FROM sea.earthquake_revision WHERE source_id='quake'",
     )
@@ -120,9 +127,9 @@ pub fn reader_filters_and_cleanup_integration_test() {
 }
 
 pub fn http_ingest_snapshot_etag_and_rollback_integration_test() {
-  with_test_db(fn(conn) {
-    let ctx = integration_context(conn)
-    let current = now_ms()
+  test_db.with_test_db(fn(conn) {
+    let ctx = test_db.integration_context(conn)
+    let current = test_db.now_ms()
 
     let ingested =
       usgs_reciever.usgs_data_handler(
@@ -167,65 +174,66 @@ pub fn http_ingest_snapshot_etag_and_rollback_integration_test() {
       ctx,
     ).status
     |> should.equal(503)
-    count(conn, "sea.earthquake") |> should.equal(1)
+    test_db.count(conn, "sea.earthquake") |> should.equal(1)
   })
 }
 
-fn with_test_db(run: fn(pog.Connection) -> Nil) -> Nil {
-  case env.get_string("MATRIX_WHALE_TEST_DATABASE_URL") {
-    Error(_) -> Nil
-    Ok(url) -> {
-      let name = process.new_name("usgs_earthquake_integration")
-      let assert Ok(config) = pog.url_config(name, url)
-      let assert Ok(_) = pog.start(config)
-      let conn = pog.named_connection(name)
-      case
-        string.starts_with(wait_for_database(conn, 100), "matrixwhale_test")
-      {
-        True -> {
-          setup_test_schema(conn)
-          run(conn)
-          teardown_test_schema(conn)
-        }
-        // Never run schema DDL after an accidentally supplied live DB URL.
-        False -> False |> should.equal(True)
-      }
-    }
-  }
+pub fn seen_set_dedupes_identical_replay_without_db_write_integration_test() {
+  test_db.with_test_db(fn(conn) {
+    let ctx = test_db.integration_context(conn)
+    let current = test_db.now_ms()
+
+    usgs_reciever.usgs_data_handler(
+      usgs_request("seen-dedup", current, current + 1),
+      ctx,
+    ).status
+    |> should.equal(200)
+    test_db.count(conn, "sea.earthquake_revision") |> should.equal(1)
+
+    let second =
+      usgs_reciever.usgs_data_handler(
+        usgs_request("seen-dedup", current, current + 1),
+        ctx,
+      )
+    second.status |> should.equal(200)
+    let body = simulate.read_body(second)
+    string.contains(body, "\"received\":1") |> should.equal(True)
+    string.contains(body, "\"deduped\":1") |> should.equal(True)
+    string.contains(body, "\"written\":0") |> should.equal(True)
+    test_db.count(conn, "sea.earthquake_revision") |> should.equal(1)
+  })
 }
 
-// The application schema itself (sea.alert/earthquake/earthquake_revision/
-// source) is applied by Atlas migrations before tests run; this only clears
-// rows and (re)installs the test-only trigger that simulates a write failure.
-fn setup_test_schema(conn: pog.Connection) -> Nil {
-  exec(
-    conn,
-    "TRUNCATE sea.earthquake_revision, sea.earthquake, sea.alert, sea.source",
-  )
-  exec(
-    conn,
-    "CREATE OR REPLACE FUNCTION sea.fail_rollback_revision() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.source_id='rollback' THEN RAISE EXCEPTION 'forced revision failure'; END IF; RETURN NEW; END $$",
-  )
-  exec(
-    conn,
-    "DROP TRIGGER IF EXISTS fail_rollback_revision ON sea.earthquake_revision",
-  )
-  exec(
-    conn,
-    "CREATE TRIGGER fail_rollback_revision BEFORE INSERT ON sea.earthquake_revision FOR EACH ROW EXECUTE FUNCTION sea.fail_rollback_revision()",
-  )
+pub fn failed_write_does_not_mark_seen_set_integration_test() {
+  test_db.with_test_db(fn(conn) {
+    let ctx = test_db.integration_context(conn)
+    let current = test_db.now_ms()
+
+    usgs_reciever.usgs_data_handler(
+      usgs_request("rollback", current, current + 1),
+      ctx,
+    ).status
+    |> should.equal(503)
+
+    // If the failed attempt had marked the seen-set, this identical retry
+    // would be reported as a dropped repeat (200) instead of failing again.
+    usgs_reciever.usgs_data_handler(
+      usgs_request("rollback", current, current + 1),
+      ctx,
+    ).status
+    |> should.equal(503)
+    test_db.count(conn, "sea.earthquake") |> should.equal(0)
+  })
 }
 
-fn teardown_test_schema(conn: pog.Connection) -> Nil {
-  exec(
-    conn,
-    "TRUNCATE sea.earthquake_revision, sea.earthquake, sea.alert, sea.source",
+fn incoming(
+  feature: usgs.IncomingEarthquake,
+) -> record.Incoming(usgs.IncomingEarthquake) {
+  record.Incoming(
+    key: record.Key("usgs", feature.source_id),
+    revision: feature.updated,
+    payload: feature,
   )
-  exec(
-    conn,
-    "DROP TRIGGER IF EXISTS fail_rollback_revision ON sea.earthquake_revision",
-  )
-  exec(conn, "DROP FUNCTION IF EXISTS sea.fail_rollback_revision()")
 }
 
 fn sample(id: String, time: Int, updated: Int) -> usgs.IncomingEarthquake {
@@ -264,17 +272,6 @@ fn sample(id: String, time: Int, updated: Int) -> usgs.IncomingEarthquake {
   )
 }
 
-fn integration_context(conn: pog.Connection) -> context.Context {
-  let assert Ok(alert) = alert_hub.start()
-  let assert Ok(earthquake) = earthquake_hub.start()
-  context.Context(
-    secret: "usgs-integration-test",
-    db: conn,
-    hub: alert.data,
-    earthquake_hub: earthquake.data,
-  )
-}
-
 fn usgs_request(id: String, time: Int, updated: Int) {
   simulate.request(http.Post, "/api/v1/usgs_data/send")
   |> simulate.string_body(
@@ -291,73 +288,4 @@ fn usgs_request(id: String, time: Int, updated: Int) {
     <> ",\"place\":\"integration test\",\"title\":\"M 4 integration test\",\"status\":\"reviewed\",\"type\":\"earthquake\"}}]}",
   )
   |> request.set_header("content-type", "application/json")
-}
-
-fn now_ms() -> Int {
-  let #(seconds, nanoseconds) =
-    timestamp.system_time() |> timestamp.to_unix_seconds_and_nanoseconds
-  seconds * 1000 + nanoseconds / 1_000_000
-}
-
-fn exec(conn: pog.Connection, sql: String) -> Nil {
-  let assert Ok(_) =
-    pog.query(sql) |> pog.returning(decode.success(Nil)) |> pog.execute(conn)
-  Nil
-}
-
-fn count(conn: pog.Connection, table: String) -> Int {
-  scalar_int(conn, "SELECT count(*) FROM " <> table)
-}
-
-fn scalar_int(conn: pog.Connection, sql: String) -> Int {
-  let decoder = {
-    use value <- decode.field(0, decode.int)
-    decode.success(value)
-  }
-  let assert Ok(result) =
-    pog.query(sql) |> pog.returning(decoder) |> pog.execute(conn)
-  let assert [value] = result.rows
-  value
-}
-
-fn scalar_text(conn: pog.Connection, sql: String) -> String {
-  let decoder = {
-    use value <- decode.field(0, decode.string)
-    decode.success(value)
-  }
-  let assert Ok(result) =
-    pog.query(sql) |> pog.returning(decoder) |> pog.execute(conn)
-  let assert [value] = result.rows
-  value
-}
-
-/// Pools connect asynchronously, and pgo raises rather than returns an error
-/// when a checkout can't be served before the query timeout, so each probe
-/// is rescued and retried with a short per-attempt timeout instead of
-/// letting a cold pool eat the whole default timeout on a single try.
-fn wait_for_database(conn: pog.Connection, attempts: Int) -> String {
-  let decoder = {
-    use value <- decode.field(0, decode.string)
-    decode.success(value)
-  }
-  let probe = fn() {
-    pog.query("SELECT current_database()")
-    |> pog.timeout(200)
-    |> pog.returning(decoder)
-    |> pog.execute(conn)
-  }
-  case exception.rescue(probe), attempts {
-    Ok(Ok(result)), _ -> {
-      let assert [name] = result.rows
-      name
-    }
-    _, attempts if attempts > 0 -> {
-      process.sleep(50)
-      wait_for_database(conn, attempts - 1)
-    }
-    _, _ -> {
-      False |> should.equal(True)
-      ""
-    }
-  }
 }

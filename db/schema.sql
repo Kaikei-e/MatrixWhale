@@ -25,8 +25,18 @@ CREATE INDEX idx_alert_severity_active ON sea.alert (severity) WHERE ended_at IS
 CREATE INDEX idx_alert_area_desc_trgm ON sea.alert USING GIN (area_desc gin_trgm_ops);
 CREATE INDEX idx_alert_event_trgm ON sea.alert USING GIN (event gin_trgm_ops);
 
+CREATE TABLE sea.source (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  homepage TEXT,
+  license TEXT NOT NULL,
+  attribution_text TEXT NOT NULL,
+  redistributable BOOLEAN NOT NULL,
+  priority INTEGER NOT NULL
+);
+
 CREATE TABLE sea.earthquake (
-  source TEXT NOT NULL, source_id TEXT NOT NULL, contributing_ids TEXT[] NOT NULL DEFAULT '{}', sources TEXT[] NOT NULL DEFAULT '{}',
+  source TEXT NOT NULL REFERENCES sea.source(id), source_id TEXT NOT NULL, contributing_ids TEXT[] NOT NULL DEFAULT '{}', sources TEXT[] NOT NULL DEFAULT '{}',
   net TEXT, code TEXT, magnitude DOUBLE PRECISION, magnitude_type TEXT, occurred_at TIMESTAMPTZ NOT NULL, occurred_at_ms BIGINT NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL, updated_at_ms BIGINT NOT NULL, place TEXT, title TEXT, status TEXT, event_type TEXT, tsunami INTEGER, significance INTEGER, alert TEXT,
   mmi DOUBLE PRECISION, cdi DOUBLE PRECISION, felt INTEGER, nst INTEGER, dmin DOUBLE PRECISION, rms DOUBLE PRECISION, gap DOUBLE PRECISION,
@@ -39,14 +49,4 @@ CREATE TABLE sea.earthquake_revision (
   source TEXT NOT NULL, source_id TEXT NOT NULL, updated_at_ms BIGINT NOT NULL, recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(), earthquake JSONB NOT NULL,
   PRIMARY KEY(source, source_id, updated_at_ms),
   CONSTRAINT earthquake_revision_parent_fk FOREIGN KEY(source, source_id) REFERENCES sea.earthquake(source, source_id) ON DELETE CASCADE
-);
-
-CREATE TABLE sea.source (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  homepage TEXT,
-  license TEXT NOT NULL,
-  attribution_text TEXT NOT NULL,
-  redistributable BOOLEAN NOT NULL,
-  priority INTEGER NOT NULL
 );
