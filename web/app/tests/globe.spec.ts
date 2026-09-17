@@ -88,6 +88,77 @@ const PIPELINE_STATUS = {
 	active_by_severity: { Extreme: 0, Severe: 0, Moderate: 0, Minor: 0, Unknown: 0 }
 };
 
+const EARTHQUAKES = [
+	{
+		source: 'usgs',
+		source_id: 'us-test-5',
+		contributing_ids: ['us-test-5'],
+		net: 'us',
+		code: 'test-5',
+		magnitude: 5.3,
+		magnitude_type: 'mww',
+		occurred_at: new Date().toISOString(),
+		occurred_at_ms: Date.now(),
+		updated_at: new Date().toISOString(),
+		updated_at_ms: Date.now(),
+		place: '120 km E of Test Island',
+		title: 'M 5.3 - 120 km E of Test Island',
+		status: 'reviewed',
+		event_type: 'earthquake',
+		tsunami: 1,
+		significance: 432,
+		alert: null,
+		mmi: null,
+		cdi: null,
+		felt: null,
+		nst: null,
+		dmin: null,
+		rms: null,
+		gap: null,
+		url: 'https://earthquake.usgs.gov/earthquakes/eventpage/us-test-5',
+		detail: null,
+		longitude: 142.2,
+		latitude: 36.1,
+		depth_km: 18.4,
+		first_seen_at: new Date().toISOString(),
+		last_seen_at: new Date().toISOString()
+	},
+	{
+		source: 'usgs',
+		source_id: 'us-test-3',
+		contributing_ids: ['us-test-3'],
+		net: 'us',
+		code: 'test-3',
+		magnitude: 3.2,
+		magnitude_type: 'ml',
+		occurred_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+		occurred_at_ms: Date.now() - 60 * 60 * 1000,
+		updated_at: new Date().toISOString(),
+		updated_at_ms: Date.now(),
+		place: 'Test Ridge',
+		title: 'M 3.2 - Test Ridge',
+		status: 'automatic',
+		event_type: 'earthquake',
+		tsunami: 0,
+		significance: 158,
+		alert: null,
+		mmi: null,
+		cdi: null,
+		felt: null,
+		nst: null,
+		dmin: null,
+		rms: null,
+		gap: null,
+		url: 'https://earthquake.usgs.gov/earthquakes/eventpage/us-test-3',
+		detail: null,
+		longitude: 139.7,
+		latitude: 35.6,
+		depth_km: 8.2,
+		first_seen_at: new Date().toISOString(),
+		last_seen_at: new Date().toISOString()
+	}
+];
+
 async function mockBackend(page: Page): Promise<void> {
 	await page.route('**/api/v1/alerts/active', (route) => route.fulfill({ json: ALERTS }));
 	await page.route('**/api/v1/alerts/stream', (route) =>
@@ -100,6 +171,12 @@ async function mockBackend(page: Page): Promise<void> {
 		route.fulfill({ json: PIPELINE_STATUS })
 	);
 	await page.route('**/api/v1/alerts/history**', (route) => route.fulfill({ json: [] }));
+	await page.route('**/api/v1/earthquakes/recent**', (route) =>
+		route.fulfill({ json: EARTHQUAKES })
+	);
+	await page.route('**/api/v1/earthquakes/stream', (route) =>
+		route.fulfill({ contentType: 'text/event-stream', body: 'event: heartbeat\ndata: {}\n\n' })
+	);
 }
 
 test('renders the legend, feed order, alert detail, and the stop-blink toggle', async ({
@@ -148,4 +225,46 @@ test('respects prefers-reduced-motion: no live blink animation and only arrivals
 	// None of the fixture alerts came in as a live SSE arrival, so the
 	// reduced-motion "New" substitute for the flash must not appear anywhere.
 	await expect(page.getByText('New', { exact: true })).toHaveCount(0);
+});
+
+test('renders USGS points with filters and a correctly labelled event detail', async ({ page }) => {
+	const pageErrors: Error[] = [];
+	page.on('pageerror', (error) => pageErrors.push(error));
+	await mockBackend(page);
+	await page.goto('/globe');
+
+	const sidePanel = page.getByTestId('side-panel');
+	const earthquakes = sidePanel.getByTestId('earthquake-feed-item');
+	await expect(earthquakes).toHaveCount(2);
+	await expect(earthquakes.nth(0)).toContainText('M5.3');
+	await expect(page.locator('.maplibregl-canvas')).toBeVisible();
+	await expect(page.getByTestId('earthquake-map-layer')).toHaveAttribute('data-ready', 'true');
+	expect(pageErrors).toEqual([]);
+
+	await earthquakes.nth(0).click();
+	await expect(
+		sidePanel.getByText('USGS tsunami screening flag; this is not a tsunami warning.')
+	).toBeVisible();
+	await expect(sidePanel.getByRole('link', { name: 'USGS event' })).toHaveAttribute(
+		'href',
+		'https://earthquake.usgs.gov/earthquakes/eventpage/us-test-5'
+	);
+	await expect(sidePanel.getByText('Credit: U.S. Geological Survey')).toBeVisible();
+	await expect(earthquakes.nth(1)).toBeVisible();
+
+	const sevenDaySnapshot = page.waitForRequest((request) =>
+		request.url().includes('/api/v1/earthquakes/recent?hours=168&minmag=2.5&type=earthquake')
+	);
+	await sidePanel.getByRole('button', { name: '7d' }).click();
+	await sevenDaySnapshot;
+	const allTypesSnapshot = page.waitForRequest((request) =>
+		request.url().includes('/api/v1/earthquakes/recent?hours=168&minmag=2.5&type=all')
+	);
+	await sidePanel.getByRole('button', { name: 'All types' }).click();
+	await allTypesSnapshot;
+	const allMagnitudeSnapshot = page.waitForRequest((request) =>
+		request.url().includes('/api/v1/earthquakes/recent?hours=168&minmag=all&type=all')
+	);
+	await sidePanel.getByRole('button', { name: 'All magnitudes' }).click();
+	await allMagnitudeSnapshot;
 });

@@ -35,10 +35,14 @@
 	}
 
 	const STILL_WIDTH = widthFor(['still']);
+	// 'group' is earthquake-only; alerts never carry that bucket, so this
+	// layer stays inert for zones/polygons, but the record must cover every
+	// key in RHYTHMS for the shared BlinkEngine/RHYTHM_KEYS iteration to work.
 	const WIDTH: Record<Rhythm, maplibregl.ExpressionSpecification> = {
 		q: widthFor(RHYTHMS.q.buckets),
 		fl2: widthFor(RHYTHMS.fl2.buckets),
-		fl4: widthFor(RHYTHMS.fl4.buckets)
+		fl4: widthFor(RHYTHMS.fl4.buckets),
+		group: widthFor(RHYTHMS.group.buckets)
 	};
 	const NO_TRANSITION = { duration: 0 };
 

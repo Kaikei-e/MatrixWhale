@@ -5,7 +5,7 @@ export type BlinkPhase = Record<Rhythm, boolean>;
 // One rAF loop turns the clock into a lit/dim flag per rhythm. Only flips are
 // assigned, so downstream paint updates happen a few times a second, not per frame.
 export class BlinkEngine {
-	phase = $state<BlinkPhase>({ q: false, fl2: false, fl4: false });
+	phase = $state<BlinkPhase>({ q: false, fl2: false, fl4: false, group: false });
 	#frame: number | null = null;
 
 	get running(): boolean {

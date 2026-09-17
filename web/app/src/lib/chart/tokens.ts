@@ -5,6 +5,7 @@ export interface ChartTokens {
 	ink: string;
 	'ink-2': string;
 	light: string;
+	amber: string;
 }
 
 export const DAY: ChartTokens = {
@@ -13,7 +14,8 @@ export const DAY: ChartTokens = {
 	shoal: '#cfe2ea',
 	ink: '#1c2a35',
 	'ink-2': '#4a5c68',
-	light: '#b8338f'
+	light: '#b8338f',
+	amber: '#b45309'
 };
 
 export const NIGHT: ChartTokens = {
@@ -22,7 +24,8 @@ export const NIGHT: ChartTokens = {
 	shoal: '#16303d',
 	ink: '#d5dee3',
 	'ink-2': '#93a6b1',
-	light: '#d46bb8'
+	light: '#d46bb8',
+	amber: '#fbbf24'
 };
 
 export function tokensFor(theme: 'day' | 'night'): ChartTokens {

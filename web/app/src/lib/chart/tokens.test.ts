@@ -25,7 +25,8 @@ describe('chart tokens', () => {
 			shoal: DAY.shoal,
 			ink: DAY.ink,
 			'ink-2': DAY['ink-2'],
-			light: DAY.light
+			light: DAY.light,
+			amber: DAY.amber
 		});
 	});
 
@@ -37,7 +38,8 @@ describe('chart tokens', () => {
 			shoal: NIGHT.shoal,
 			ink: NIGHT.ink,
 			'ink-2': NIGHT['ink-2'],
-			light: NIGHT.light
+			light: NIGHT.light,
+			amber: NIGHT.amber
 		});
 	});
 });

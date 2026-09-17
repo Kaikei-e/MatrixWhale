@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { page } from '$app/state';
 	import type * as maplibregl from 'maplibre-gl';
 	import ChartFrame from '$lib/chart/ChartFrame.svelte';
@@ -6,26 +7,34 @@
 	import AlertPolygonsLayer from '$lib/chart/AlertPolygonsLayer.svelte';
 	import PulseLayer from '$lib/chart/PulseLayer.svelte';
 	import CentroidMarkers from '$lib/chart/CentroidMarkers.svelte';
+	import EarthquakeMarkers from '$lib/chart/EarthquakeMarkers.svelte';
 	import Legend from '$lib/chart/Legend.svelte';
 	import PresetButtons from '$lib/components/PresetButtons.svelte';
 	import FeedPanel from '$lib/components/FeedPanel.svelte';
 	import DetailPanel from '$lib/components/DetailPanel.svelte';
 	import BottomSheet from '$lib/components/BottomSheet.svelte';
+	import EarthquakePanel from '$lib/components/EarthquakePanel.svelte';
 	import { LAND_50M, ZONE_CENTROIDS } from '$lib/chart/dataFiles';
 	import { REGION_PRESETS, bboxOfAlerts, initialViewBbox, type Bbox } from '$lib/chart/presets';
 	import { alertStore } from '$lib/alerts/store.svelte';
 	import { themeState } from '$lib/theme.svelte';
 	import { BlinkEngine } from '$lib/alerts/blinkEngine.svelte';
+	import { earthquakeStore } from '$lib/earthquakes/store.svelte';
 
 	let map = $state<maplibregl.Map | undefined>();
 	let centroids = $state<Record<string, [number, number]>>({});
 	let selectedId = $state<string | null>(null);
+	let selectedEarthquakeId = $state<string | null>(null);
+	let earthquakeSourceMounted = $state(false);
+	let earthquakeLayerReady = $state(false);
 	let sheetExpanded = $state(false);
 	let userInteracted = $state(false);
 	let autoFitted = $state(false);
 	let focusApplied = $state(false);
 
 	const focusId = page.url.searchParams.get('focus');
+	// Shared by alerts and earthquakes so rhythms of the same name (q/fl2/fl4)
+	// flash in phase; earthquakes additionally use the group rhythm.
 	const engine = new BlinkEngine();
 
 	const selectedAlert = $derived(
@@ -33,12 +42,33 @@
 	);
 
 	$effect(() => {
-		if (alertStore.hasAnyBlinking) {
+		if (alertStore.hasAnyBlinking || (earthquakeStore.hasAnyBlinking && !alertStore.stopAll)) {
 			engine.start();
 		} else {
 			engine.stop();
 		}
 		return () => engine.stop();
+	});
+
+	$effect(() => {
+		if (!map || !earthquakeSourceMounted) return;
+		earthquakeLayerReady = Boolean(
+			map.getSource('earthquakes') && map.getLayer('earthquakes-point')
+		);
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		void earthquakeStore.connect('/api/v1/earthquakes/recent', '/api/v1/earthquakes/stream', {
+			hours: 24,
+			minMagnitude: 2.5,
+			eventType: 'earthquake'
+		});
+		return () => earthquakeStore.disconnect();
+	});
+
+	$effect(() => {
+		earthquakeStore.reducedMotion = alertStore.reducedMotion;
 	});
 
 	$effect(() => {
@@ -129,6 +159,23 @@
 		selectedId = null;
 	}
 
+	function selectEarthquake(id: string): void {
+		const earthquake = earthquakeStore.earthquakes.get(id);
+		if (!earthquake) return;
+		selectedEarthquakeId = id;
+		userInteracted = true;
+		sheetExpanded = true;
+		map?.easeTo({
+			center: [earthquake.longitude, earthquake.latitude],
+			zoom: Math.max(map.getZoom(), 7),
+			duration: alertStore.reducedMotion ? 0 : 600
+		});
+	}
+
+	function closeEarthquakeDetail(): void {
+		selectedEarthquakeId = null;
+	}
+
 	function handlePreset(bbox: Bbox): void {
 		userInteracted = true;
 		fitToBbox(bbox, alertStore.reducedMotion ? 0 : 600);
@@ -147,8 +194,21 @@
 		<ZonesLayer />
 		<AlertPolygonsLayer />
 		<PulseLayer phase={engine.phase} />
+		<!-- Earthquakes draw first so alert centroid rings, the primary product,
+		     stay on top of earthquake circles. -->
+		<EarthquakeMarkers
+			phase={engine.phase}
+			onselect={selectEarthquake}
+			onready={() => (earthquakeSourceMounted = true)}
+		/>
 		<CentroidMarkers {centroids} phase={engine.phase} onselect={selectAlert} />
 	</ChartFrame>
+	<div
+		data-testid="earthquake-map-layer"
+		data-ready={earthquakeLayerReady ? 'true' : 'false'}
+		class="sr-only"
+		aria-hidden="true"
+	></div>
 
 	<div class="absolute top-3 left-3 flex flex-wrap items-center gap-2">
 		<PresetButtons onselect={handlePreset} />
@@ -168,6 +228,11 @@
 		data-testid="side-panel"
 		class="border-ink-2/30 bg-paper absolute top-0 right-0 bottom-0 hidden w-[22rem] flex-col border-l md:flex"
 	>
+		<EarthquakePanel
+			selectedId={selectedEarthquakeId}
+			onselect={selectEarthquake}
+			onclose={closeEarthquakeDetail}
+		/>
 		{#if selectedAlert}
 			<DetailPanel
 				alert={selectedAlert}
@@ -180,6 +245,11 @@
 
 	<div class="md:hidden">
 		<BottomSheet bind:expanded={sheetExpanded}>
+			<EarthquakePanel
+				selectedId={selectedEarthquakeId}
+				onselect={selectEarthquake}
+				onclose={closeEarthquakeDetail}
+			/>
 			{#if selectedAlert}
 				<DetailPanel
 					alert={selectedAlert}

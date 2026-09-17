@@ -95,10 +95,14 @@
 	}
 
 	const STILL_PULSE_WIDTH = pulseWidthFor(['still']);
+	// 'group' is earthquake-only; alerts never carry that bucket, so this
+	// layer stays inert here, but the record must cover every key in RHYTHMS
+	// for the shared BlinkEngine/RHYTHM_KEYS iteration to work.
 	const PULSE_WIDTH: Record<Rhythm, maplibregl.ExpressionSpecification> = {
 		q: pulseWidthFor(RHYTHMS.q.buckets),
 		fl2: pulseWidthFor(RHYTHMS.fl2.buckets),
-		fl4: pulseWidthFor(RHYTHMS.fl4.buckets)
+		fl4: pulseWidthFor(RHYTHMS.fl4.buckets),
+		group: pulseWidthFor(RHYTHMS.group.buckets)
 	};
 	const NO_TRANSITION = { duration: 0 };
 

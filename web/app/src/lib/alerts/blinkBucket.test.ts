@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { bucketFor, flashesPerSecond, RHYTHMS, rhythmLit } from './blinkBucket';
+import {
+	bucketFor,
+	flashesPerSecond,
+	RHYTHM_KEYS,
+	rhythmFlashRate,
+	rhythmLit
+} from './blinkBucket';
 import type { BlinkState, Severity } from './types';
 
 describe('bucketFor', () => {
@@ -137,6 +143,17 @@ describe('rhythmLit', () => {
 		expect(rhythmLit('fl4', 1000)).toBe(false);
 		expect(rhythmLit('fl4', 4000)).toBe(true);
 	});
+
+	it('lights the earthquake group rhythm twice per 2.5 s period', () => {
+		expect(rhythmLit('group', 0)).toBe(true);
+		expect(rhythmLit('group', 224)).toBe(true);
+		expect(rhythmLit('group', 225)).toBe(false);
+		expect(rhythmLit('group', 449)).toBe(false);
+		expect(rhythmLit('group', 450)).toBe(true);
+		expect(rhythmLit('group', 674)).toBe(true);
+		expect(rhythmLit('group', 675)).toBe(false);
+		expect(rhythmLit('group', 2500)).toBe(true);
+	});
 });
 
 describe('flashesPerSecond', () => {
@@ -144,9 +161,17 @@ describe('flashesPerSecond', () => {
 		expect(flashesPerSecond()).toBeLessThanOrEqual(3);
 	});
 
+	it('sums q 1.0 + fl2 0.5 + fl4 0.25 + group 0.8 to 2.55 flashes per second', () => {
+		expect(flashesPerSecond()).toBeCloseTo(2.55);
+	});
+
 	it('never lets a single rhythm alone exceed the WCAG 2.3.1 threshold', () => {
-		for (const { period } of Object.values(RHYTHMS)) {
-			expect(1000 / period).toBeLessThanOrEqual(3);
+		for (const rhythm of RHYTHM_KEYS) {
+			expect(rhythmFlashRate(rhythm)).toBeLessThanOrEqual(3);
 		}
+	});
+
+	it('counts the group rhythm as two flashes per 2.5 s period', () => {
+		expect(rhythmFlashRate('group')).toBeCloseTo(0.8);
 	});
 });
