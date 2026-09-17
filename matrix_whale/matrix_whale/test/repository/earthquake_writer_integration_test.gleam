@@ -1,5 +1,7 @@
-// Opt-in PostgreSQL integration tests. Set USGS_TEST_DATABASE_URL to a
+// Opt-in PostgreSQL integration tests. Set MATRIX_WHALE_TEST_DATABASE_URL to a
 // disposable, dedicated database; this suite never connects to application DB.
+// The schema itself (sea.alert/earthquake/earthquake_revision/source) is
+// expected to already be applied by Atlas migrations before tests run.
 import adapter/alert_hub
 import adapter/context
 import adapter/earthquake_hub
@@ -170,7 +172,7 @@ pub fn http_ingest_snapshot_etag_and_rollback_integration_test() {
 }
 
 fn with_test_db(run: fn(pog.Connection) -> Nil) -> Nil {
-  case env.get_string("USGS_TEST_DATABASE_URL") {
+  case env.get_string("MATRIX_WHALE_TEST_DATABASE_URL") {
     Error(_) -> Nil
     Ok(url) -> {
       let name = process.new_name("usgs_earthquake_integration")
@@ -178,12 +180,12 @@ fn with_test_db(run: fn(pog.Connection) -> Nil) -> Nil {
       let assert Ok(_) = pog.start(config)
       let conn = pog.named_connection(name)
       case
-        string.starts_with(wait_for_database(conn, 100), "matrixwhale_usgs_")
+        string.starts_with(wait_for_database(conn, 100), "matrixwhale_test")
       {
         True -> {
-          reset_schema(conn)
+          setup_test_schema(conn)
           run(conn)
-          reset_schema(conn)
+          teardown_test_schema(conn)
         }
         // Never run schema DDL after an accidentally supplied live DB URL.
         False -> False |> should.equal(True)
@@ -192,25 +194,38 @@ fn with_test_db(run: fn(pog.Connection) -> Nil) -> Nil {
   }
 }
 
-fn reset_schema(conn: pog.Connection) -> Nil {
-  exec(conn, "DROP SCHEMA IF EXISTS sea CASCADE")
-  exec(conn, "CREATE SCHEMA sea")
+// The application schema itself (sea.alert/earthquake/earthquake_revision/
+// source) is applied by Atlas migrations before tests run; this only clears
+// rows and (re)installs the test-only trigger that simulates a write failure.
+fn setup_test_schema(conn: pog.Connection) -> Nil {
   exec(
     conn,
-    "CREATE TABLE sea.earthquake (source TEXT NOT NULL, source_id TEXT NOT NULL, contributing_ids TEXT[] NOT NULL DEFAULT '{}', sources TEXT[] NOT NULL DEFAULT '{}', net TEXT, code TEXT, magnitude DOUBLE PRECISION, magnitude_type TEXT, occurred_at TIMESTAMPTZ NOT NULL, occurred_at_ms BIGINT NOT NULL, updated_at TIMESTAMPTZ NOT NULL, updated_at_ms BIGINT NOT NULL, place TEXT, title TEXT, status TEXT, event_type TEXT, tsunami INTEGER, significance INTEGER, alert TEXT, mmi DOUBLE PRECISION, cdi DOUBLE PRECISION, felt INTEGER, nst INTEGER, dmin DOUBLE PRECISION, rms DOUBLE PRECISION, gap DOUBLE PRECISION, url TEXT, detail TEXT, longitude DOUBLE PRECISION NOT NULL, latitude DOUBLE PRECISION NOT NULL, depth_km DOUBLE PRECISION, first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY(source,source_id))",
+    "TRUNCATE sea.earthquake_revision, sea.earthquake, sea.alert, sea.source",
   )
   exec(
     conn,
-    "CREATE TABLE sea.earthquake_revision (source TEXT NOT NULL, source_id TEXT NOT NULL, updated_at_ms BIGINT NOT NULL, recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(), earthquake JSONB NOT NULL, PRIMARY KEY(source,source_id,updated_at_ms), FOREIGN KEY(source,source_id) REFERENCES sea.earthquake(source,source_id) ON DELETE CASCADE)",
+    "CREATE OR REPLACE FUNCTION sea.fail_rollback_revision() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.source_id='rollback' THEN RAISE EXCEPTION 'forced revision failure'; END IF; RETURN NEW; END $$",
   )
   exec(
     conn,
-    "CREATE FUNCTION sea.fail_rollback_revision() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.source_id='rollback' THEN RAISE EXCEPTION 'forced revision failure'; END IF; RETURN NEW; END $$",
+    "DROP TRIGGER IF EXISTS fail_rollback_revision ON sea.earthquake_revision",
   )
   exec(
     conn,
     "CREATE TRIGGER fail_rollback_revision BEFORE INSERT ON sea.earthquake_revision FOR EACH ROW EXECUTE FUNCTION sea.fail_rollback_revision()",
   )
+}
+
+fn teardown_test_schema(conn: pog.Connection) -> Nil {
+  exec(
+    conn,
+    "TRUNCATE sea.earthquake_revision, sea.earthquake, sea.alert, sea.source",
+  )
+  exec(
+    conn,
+    "DROP TRIGGER IF EXISTS fail_rollback_revision ON sea.earthquake_revision",
+  )
+  exec(conn, "DROP FUNCTION IF EXISTS sea.fail_rollback_revision()")
 }
 
 fn sample(id: String, time: Int, updated: Int) -> usgs.IncomingEarthquake {

@@ -129,7 +129,7 @@ go test ./...
 ## Development Workflow
 
 1. **Protobuf Changes**: When modifying gRPC definitions, run `make buf_generate` and `make copy_proto_ts` to regenerate code
-2. **Database Changes**: Modify scripts in `db/init/` and recreate the database container
+2. **Database Changes**: Edit `db/schema.sql`, run `make db-diff name=<change>` to generate a migration under `db/migrations/`, review it, then `docker compose up` applies it via the `migrate` service
 3. **Gleam Development**: Use standard Gleam workflow with `gleam build`, `gleam test`, `gleam format`
 4. **Frontend Development**: Standard Node.js workflow with package.json scripts
 5. **Go Services**: Standard Go development with modules

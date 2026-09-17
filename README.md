@@ -69,6 +69,19 @@ flowchart LR
 - The Plecto proxy is the single public entry point on port 80: it forwards `/api` to the streamer and everything else to the SvelteKit `web` app, which the browser talks to directly for both.
 - Earthquakes keep a rolling 7-day window (`sea.earthquake`), with every observed revision kept in `sea.earthquake_revision` until its parent row is retired.
 
+## Database migrations
+
+`db/schema.sql` is the desired state of the `sea` schema; [Atlas](https://atlasgo.io) generates and applies versioned migrations from it under `db/migrations/`. The `migrate` compose service applies pending migrations before `matrix_whale` starts. `pg_trgm` is a database-level extension that Atlas's community edition cannot manage, so it is created as plain SQL in the first migration file instead of in `db/schema.sql`.
+
+To change the schema:
+
+1. Edit `db/schema.sql`.
+2. `make db-diff name=add_thing` to generate `db/migrations/<timestamp>_add_thing.sql`.
+3. Review the generated SQL.
+4. `docker compose up` applies it via the `migrate` service.
+
+`make db-status` shows applied/pending migrations against `MATRIX_WHALE_DATABASE_URL` (e.g. `postgres://user:pass@localhost:5440/sea?sslmode=disable` for the compose `db` service). `make test-core` runs the Gleam integration test suite against a throwaway Postgres container with the migrations applied.
+
 ## USGS earthquake pipeline
 
 `usgs_adapter` starts with the USGS `all_week.geojson` feed and sends that snapshot to MatrixWhale with `poll_meta.backfill=true`. It switches to `all_day.geojson` only after the core accepts the startup snapshot. Subsequent requests honor `Expires`/`Cache-Control`, use `If-Modified-Since`, and forward 304 polls with an empty feature list. The conditional validator advances only after the core POST succeeds, so a delivery failure is retried safely.

@@ -5,6 +5,10 @@ POSTGRES_PASSWORD=
 POSTGRES_DB=sea
 POSTGRES_SCHEMA=sea
 
+# Optional, for `make db-diff`/`make db-apply`/`make db-status` against the
+# compose db service published on host port 5440
+# MATRIX_WHALE_DATABASE_URL=postgres://user:pass@localhost:5440/sea?sslmode=disable
+
 # NWS requires a contact email in the User-Agent header for api.weather.gov requests
 NOAA_CONTACT_EMAIL=
 
