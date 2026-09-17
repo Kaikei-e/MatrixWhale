@@ -17,6 +17,7 @@ type PollMeta struct {
 	FetchedAt    string `json:"fetched_at"`
 	HTTPStatus   int    `json:"http_status"`
 	FeatureCount int    `json:"feature_count"`
+	Bytes        int    `json:"bytes"`
 }
 
 type featureEnvelope struct {
@@ -48,6 +49,7 @@ func MatrixWhaleAdapter(result PollResult) error {
 			FetchedAt:    result.FetchedAt.UTC().Format(time.RFC3339),
 			HTTPStatus:   result.HTTPStatus,
 			FeatureCount: len(features),
+			Bytes:        result.Bytes,
 		},
 		Features: features,
 	}

@@ -18,6 +18,7 @@ type PollResult struct {
 	FetchedAt  time.Time
 	HTTPStatus int
 	Header     http.Header
+	Bytes      int
 }
 
 var warnMissingContactOnce sync.Once
@@ -66,6 +67,7 @@ func NoaaAlertsAdapter(prevETag, prevLastModified string) (PollResult, error) {
 		FetchedAt:  time.Now().UTC(),
 		HTTPStatus: res.StatusCode,
 		Header:     res.Header,
+		Bytes:      len(resBytes),
 	}
 
 	switch {

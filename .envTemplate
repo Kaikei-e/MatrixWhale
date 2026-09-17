@@ -7,3 +7,8 @@ POSTGRES_SCHEMA=sea
 
 # NWS requires a contact email in the User-Agent header for api.weather.gov requests
 NOAA_CONTACT_EMAIL=
+
+# Optional User-Agent contact for the USGS earthquake feed
+USGS_CONTACT_EMAIL=
+# Empty stores all magnitudes; set a number only to filter before core ingestion
+USGS_MIN_MAG=

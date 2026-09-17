@@ -15,6 +15,28 @@ permissions:
   contents: read
 
 jobs:
+  go-adapters:
+    name: Go adapter checks
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        adapter: [noaa_adapter/app, usgs_adapter/app]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.8"
+          cache: false
+      - name: Test
+        working-directory: ${{ matrix.adapter }}
+        run: go test -race ./...
+      - name: Vet
+        working-directory: ${{ matrix.adapter }}
+        run: go vet ./...
+      - name: Build
+        working-directory: ${{ matrix.adapter }}
+        run: go build ./...
+
   test:
     name: Test (OTP ${{ matrix.otp }})
     runs-on: ubuntu-latest

@@ -102,6 +102,23 @@ services:
       matrix_network:
         ipv4_address: 10.254.100.40
 
+  usgs_adapter:
+    build:
+      context: ./usgs_adapter
+    environment:
+      USGS_CONTACT_EMAIL: ${USGS_CONTACT_EMAIL:-}
+      USGS_MIN_MAG: ${USGS_MIN_MAG:-}
+      MATRIX_WHALE_URL: http://matrix_whale:6000/api/v1
+    tty: true
+    restart: always
+    volumes:
+      - ./usgs_adapter/app:/app
+    depends_on:
+      - matrix_whale
+    networks:
+      matrix_network:
+        ipv4_address: 10.254.100.42
+
   db:
     build:
       context: ./db
