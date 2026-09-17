@@ -16,3 +16,6 @@ NOAA_CONTACT_EMAIL=
 USGS_CONTACT_EMAIL=
 # Empty stores all magnitudes; set a number only to filter before core ingestion
 USGS_MIN_MAG=
+
+# Optional User-Agent contact for the EMSC real-time earthquake feed
+EMSC_CONTACT_EMAIL=

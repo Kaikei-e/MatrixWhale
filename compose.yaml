@@ -122,6 +122,23 @@ services:
       matrix_network:
         ipv4_address: 10.254.100.42
 
+  emsc_adapter:
+    build:
+      context: .
+      dockerfile: emsc_adapter/Dockerfile
+    environment:
+      EMSC_CONTACT_EMAIL: ${EMSC_CONTACT_EMAIL:-}
+      MATRIX_WHALE_URL: http://matrix_whale:6000/api/v1
+    tty: true
+    restart: always
+    volumes:
+      - ./emsc_adapter/app:/app
+    depends_on:
+      - matrix_whale
+    networks:
+      matrix_network:
+        ipv4_address: 10.254.100.43
+
   db:
     build:
       context: ./db

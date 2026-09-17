@@ -112,3 +112,24 @@ go test -race ./...
 go vet ./...
 go build ./...
 ```
+
+## EMSC earthquake pipeline
+
+`emsc_adapter` subscribes to EMSC's real-time WebSocket feed (`wss://www.seismicportal.eu/standing_order/websocket`) and pings it every 15s, since the server never pings first. On startup it backfills the last `EMSC_BACKFILL_DAYS` (default 7) days from the FDSN event webservice (`https://www.seismicportal.eu/fdsnws/event/1/query`), paginating by offset until a page returns fewer than the request limit, and POSTs each page with `poll_meta.backfill=true`; a failed fetch or core POST is retried with backoff without advancing the offset. Live messages are buffered and flushed to the core every 100 messages or 500ms, whichever comes first, with `poll_meta.backfill=false`; a failed core POST is retried with backoff for the same batch, never dropped or reordered.
+
+On any WebSocket error or close, the adapter reconnects with backoff (5s floor, 10min ceiling, up to 5s jitter) and then runs one FDSN gap-fill query with `updatedafter` set to the latest `lastupdate` seen minus 5 minutes, bounded by the same `EMSC_BACKFILL_DAYS` window, before resuming the live subscription.
+
+Both backfill and live messages are POSTed to `POST /api/v1/emsc_data/send` as `{"action": "create"|"update"|"delete", "data": <GeoJSON Feature>}` entries; backfill features (which arrive bare from FDSN) are wrapped as `"create"` so the core has a single decoder for both sources.
+
+EMSC data is CC BY 4.0; MatrixWhale credits it as "EMSC/CSEM, https://www.emsc-csem.org" in its data presentation. `EMSC_CONTACT_EMAIL` is optional and is included in the User-Agent when set. `EMSC_WEBSOCKET_URL`, `EMSC_FDSN_URL`, and `EMSC_BACKFILL_DAYS` override the defaults above and exist mainly for tests. The adapter uses `MATRIX_WHALE_URL` internally and defaults to `http://matrix_whale:6000/api/v1` in compose.
+
+Start it with `docker compose --env-file .env up --build emsc_adapter` after MatrixWhale is available. The adapter shuts down on SIGTERM/SIGINT.
+
+Run adapter checks locally with:
+
+```sh
+cd emsc_adapter/app
+go test -race ./...
+go vet ./...
+go build ./...
+```
