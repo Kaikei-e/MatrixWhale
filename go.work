@@ -1,0 +1,7 @@
+go 1.26.8
+
+use (
+	./adapters/common
+	./noaa_adapter/app
+	./usgs_adapter/app
+)

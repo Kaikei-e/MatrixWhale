@@ -8,10 +8,15 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"matrixwhale/adapters/common/core"
 )
 
 func TestMatrixWhaleAdapterSendsContractAndValidatesResponse(t *testing.T) {
-	var received outboundEnvelope
+	var received struct {
+		PollMeta core.PollMeta     `json:"poll_meta"`
+		Features []json.RawMessage `json:"features"`
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/usgs_data/send" {
 			t.Errorf("path = %q", r.URL.Path)
@@ -66,27 +71,5 @@ func TestMatrixWhaleAdapterRejectsNonObjectResponse(t *testing.T) {
 	err := MatrixWhaleAdapter(context.Background(), PollResult{FetchedAt: time.Now(), HTTPStatus: http.StatusNotModified})
 	if err == nil {
 		t.Fatal("non-object response was accepted")
-	}
-}
-
-func TestValidateMatrixWhaleResponseRejectsMalformedAcknowledgements(t *testing.T) {
-	tests := []struct {
-		name string
-		body string
-	}{
-		{name: "empty object", body: `{}`},
-		{name: "error object", body: `{"error":"failed"}`},
-		{name: "missing message", body: `{"received":1,"deduped":0,"written":1,"dropped":0}`},
-		{name: "wrong type", body: `{"received":"1","deduped":0,"written":1,"dropped":0,"message":"ok"}`},
-		{name: "negative count", body: `{"received":1,"deduped":-1,"written":1,"dropped":1,"message":"ok"}`},
-		{name: "wrong received", body: `{"received":0,"deduped":0,"written":1,"dropped":0,"message":"ok"}`},
-		{name: "sum mismatch", body: `{"received":2,"deduped":0,"written":1,"dropped":0,"message":"ok"}`},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := validateMatrixWhaleResponse([]byte(tt.body), 1); err == nil {
-				t.Fatal("malformed acknowledgement was accepted")
-			}
-		})
 	}
 }

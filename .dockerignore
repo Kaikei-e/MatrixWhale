@@ -1,0 +1,7 @@
+web/
+**/node_modules
+db/data
+test-results
+testing/
+proxy/plecto
+.git

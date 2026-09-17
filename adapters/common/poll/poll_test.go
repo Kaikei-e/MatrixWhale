@@ -1,4 +1,4 @@
-package adapter
+package poll
 
 import (
 	"math/rand"
@@ -8,7 +8,7 @@ import (
 )
 
 func TestComputeNextPollDelay(t *testing.T) {
-	const minDelay = 30 * time.Second
+	const floor = 30 * time.Second
 
 	tests := []struct {
 		name   string
@@ -17,9 +17,9 @@ func TestComputeNextPollDelay(t *testing.T) {
 		delta  time.Duration
 	}{
 		{
-			name:   "no headers returns min delay",
+			name:   "no headers returns floor",
 			header: http.Header{},
-			want:   minDelay,
+			want:   floor,
 		},
 		{
 			name:   "expires 45s ahead is honored",
@@ -28,9 +28,9 @@ func TestComputeNextPollDelay(t *testing.T) {
 			delta:  2 * time.Second,
 		},
 		{
-			name:   "expires in the past falls back to min delay",
+			name:   "expires in the past falls back to floor",
 			header: http.Header{"Expires": []string{time.Now().UTC().Add(-45 * time.Second).Format(http.TimeFormat)}},
-			want:   minDelay,
+			want:   floor,
 		},
 		{
 			name:   "cache-control max-age is honored",
@@ -38,9 +38,9 @@ func TestComputeNextPollDelay(t *testing.T) {
 			want:   60 * time.Second,
 		},
 		{
-			name:   "cache-control max-age smaller than floor falls back to min delay",
+			name:   "cache-control max-age smaller than floor falls back to floor",
 			header: http.Header{"Cache-Control": []string{"public, max-age=5"}},
-			want:   minDelay,
+			want:   floor,
 		},
 		{
 			name: "malformed expires falls back to valid max-age",
@@ -51,18 +51,27 @@ func TestComputeNextPollDelay(t *testing.T) {
 			want: 90 * time.Second,
 		},
 		{
-			name: "malformed expires and cache-control fall back to min delay",
+			name: "malformed expires and cache-control fall back to floor",
 			header: http.Header{
 				"Expires":       []string{"not-a-date"},
 				"Cache-Control": []string{"max-age=not-a-number"},
 			},
-			want: minDelay,
+			want: floor,
+		},
+		{
+			name: "expires and cache-control are combined conservatively",
+			header: http.Header{
+				"Expires":       []string{time.Now().UTC().Add(120 * time.Second).Format(http.TimeFormat)},
+				"Cache-Control": []string{"public, max-age=300"},
+			},
+			want:  300 * time.Second,
+			delta: 2 * time.Second,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ComputeNextPollDelay(tt.header, minDelay)
+			got := ComputeNextPollDelay(tt.header, floor)
 
 			delta := tt.delta
 			if delta == 0 {
@@ -184,13 +193,13 @@ func TestComputeBackoff(t *testing.T) {
 			want:      floor,
 		},
 		{
-			name:      "retry-after above ceiling is clamped down",
+			name:      "retry-after above ceiling is honored, not clamped down",
 			header:    http.Header{"Retry-After": []string{"3600"}},
 			prevDelay: 0,
-			want:      ceiling,
+			want:      time.Hour,
 		},
 		{
-			name:      "expired retry-after http-date falls back to exponential backoff",
+			name:      "expired retry-after http-date falls back to floor",
 			header:    http.Header{"Retry-After": []string{time.Now().UTC().Add(-90 * time.Second).Format(http.TimeFormat)}},
 			prevDelay: 0,
 			want:      floor,

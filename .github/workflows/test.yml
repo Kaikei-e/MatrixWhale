@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        adapter: [noaa_adapter/app, usgs_adapter/app]
+        adapter: [adapters/common, noaa_adapter/app, usgs_adapter/app]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v6

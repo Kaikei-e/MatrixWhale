@@ -88,7 +88,8 @@ services:
 
   noaa_adapter:
     build:
-      context: ./noaa_adapter
+      context: .
+      dockerfile: noaa_adapter/Dockerfile
     environment:
       - ENV_VAR=test_value
       - NOAA_CONTACT_EMAIL=${NOAA_CONTACT_EMAIL}
@@ -104,7 +105,8 @@ services:
 
   usgs_adapter:
     build:
-      context: ./usgs_adapter
+      context: .
+      dockerfile: usgs_adapter/Dockerfile
     environment:
       USGS_CONTACT_EMAIL: ${USGS_CONTACT_EMAIL:-}
       USGS_MIN_MAG: ${USGS_MIN_MAG:-}

@@ -4,9 +4,12 @@ import (
 	"log/slog"
 	"math/rand"
 	"net/http"
-	"noaa_adapter/adapter"
 	"sync"
 	"time"
+
+	"matrixwhale/adapters/common/poll"
+
+	"noaa_adapter/adapter"
 )
 
 const (
@@ -30,8 +33,8 @@ func ManageRESTRequest() {
 		for {
 			result, err := adapter.NoaaAlertsAdapter(etag, lastModified)
 			if err != nil {
-				backoff = adapter.ComputeBackoff(result.Header, backoff, minPollDelay, maxBackoff)
-				delay := adapter.Jitter(backoff, maxJitter, rng)
+				backoff = poll.ComputeBackoff(result.Header, backoff, minPollDelay, maxBackoff)
+				delay := poll.Jitter(backoff, maxJitter, rng)
 				slog.Error("Error getting data from NOAA", "error", err, "status", result.HTTPStatus, "next_poll", delay)
 				time.Sleep(delay)
 				continue
@@ -52,7 +55,7 @@ func ManageRESTRequest() {
 				slog.Error("Error sending data to Matrix Whale", "error", err)
 			}
 
-			delay := adapter.Jitter(adapter.ComputeNextPollDelay(result.Header, minPollDelay), maxJitter, rng)
+			delay := poll.Jitter(poll.ComputeNextPollDelay(result.Header, minPollDelay), maxJitter, rng)
 			slog.Info("Next NOAA poll scheduled", "status", result.HTTPStatus, "not_modified", notModified, "next_poll", delay)
 			time.Sleep(delay)
 		}

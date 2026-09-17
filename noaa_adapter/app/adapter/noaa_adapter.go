@@ -6,9 +6,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"sync"
 	"time"
+
+	"matrixwhale/adapters/common/useragent"
 )
 
 const NoaaURL = "https://api.weather.gov"
@@ -82,12 +83,5 @@ func NoaaAlertsAdapter(prevETag, prevLastModified string) (PollResult, error) {
 }
 
 func userAgent() string {
-	contact := os.Getenv("NOAA_CONTACT_EMAIL")
-	if contact == "" {
-		warnMissingContactOnce.Do(func() {
-			slog.Warn("NOAA_CONTACT_EMAIL is not set; falling back to placeholder contact in User-Agent")
-		})
-		contact = "contact-email-not-configured"
-	}
-	return fmt.Sprintf("MatrixWhale/1.0 (%s)", contact)
+	return useragent.Build("MatrixWhale/1.0", "NOAA_CONTACT_EMAIL", "contact-email-not-configured", &warnMissingContactOnce)
 }

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"matrixwhale/adapters/common/poll"
+
 	"usgs_adapter/adapter"
 )
 
@@ -47,8 +49,8 @@ func run(ctx context.Context, fetch fetchFunc, send sendFunc, pause waitFunc, rn
 			err = send(ctx, result)
 		}
 		if err != nil {
-			backoff = adapter.ComputeBackoff(result.Header, backoff, minPollDelay, maxBackoff)
-			delay := adapter.Jitter(backoff, maxJitter, rng)
+			backoff = poll.ComputeBackoff(result.Header, backoff, minPollDelay, maxBackoff)
+			delay := poll.Jitter(backoff, maxJitter, rng)
 			slog.Error("USGS pipeline attempt failed", "error", err, "status", result.HTTPStatus, "next_poll", delay, "backfill", backfill)
 			if !pause(ctx, delay) {
 				return
@@ -67,7 +69,7 @@ func run(ctx context.Context, fetch fetchFunc, send sendFunc, pause waitFunc, rn
 			lastModified = result.Header.Get("Last-Modified")
 		}
 
-		delay := adapter.Jitter(adapter.ComputeNextPollDelay(result.Header, minPollDelay), maxJitter, rng)
+		delay := poll.Jitter(poll.ComputeNextPollDelay(result.Header, minPollDelay), maxJitter, rng)
 		slog.Info("Next USGS poll scheduled", "status", result.HTTPStatus, "not_modified", result.HTTPStatus == http.StatusNotModified, "next_poll", delay)
 		if !pause(ctx, delay) {
 			return

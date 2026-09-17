@@ -7,8 +7,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"time"
+
+	"matrixwhale/adapters/common/useragent"
 )
 
 const (
@@ -103,9 +104,5 @@ func validateFeatureCollection(body []byte) error {
 }
 
 func userAgent() string {
-	contact := os.Getenv("USGS_CONTACT_EMAIL")
-	if contact == "" {
-		return "MatrixWhale/1.0"
-	}
-	return fmt.Sprintf("MatrixWhale/1.0 (%s)", contact)
+	return useragent.Build("MatrixWhale/1.0", "USGS_CONTACT_EMAIL", "", nil)
 }
