@@ -2,3 +2,6 @@
 settings.json
 errror.log
 proxy/plecto/
+
+docs/internal
+.serena/
