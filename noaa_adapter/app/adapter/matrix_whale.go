@@ -29,19 +29,27 @@ type outboundEnvelope struct {
 }
 
 func MatrixWhaleAdapter(result PollResult) error {
-	var parsed featureEnvelope
-	if err := json.Unmarshal(result.Body, &parsed); err != nil {
-		slog.Error("Error parsing NOAA response features", "error", err)
-		return err
+	// A 304 has no body to decode; forward an empty feature list so the
+	// pipeline still records the poll (advancing "last fetch" and running
+	// the expiry sweep) without touching the missing-alert sweep, which is
+	// gated on http_status == 200.
+	features := []json.RawMessage{}
+	if result.HTTPStatus != http.StatusNotModified {
+		var parsed featureEnvelope
+		if err := json.Unmarshal(result.Body, &parsed); err != nil {
+			slog.Error("Error parsing NOAA response features", "error", err)
+			return err
+		}
+		features = parsed.Features
 	}
 
 	envelope := outboundEnvelope{
 		PollMeta: PollMeta{
 			FetchedAt:    result.FetchedAt.UTC().Format(time.RFC3339),
 			HTTPStatus:   result.HTTPStatus,
-			FeatureCount: len(parsed.Features),
+			FeatureCount: len(features),
 		},
-		Features: parsed.Features,
+		Features: features,
 	}
 
 	payload, err := json.Marshal(envelope)
