@@ -1,0 +1,7 @@
+[
+  { "feed": "all_hour", "bytes": 3092, "features": 4 },
+  { "feed": "2.5_day", "bytes": 22332, "features": 31 },
+  { "feed": "all_day", "bytes": 134191, "features": 187 },
+  { "feed": "all_week", "bytes": 1620734, "features": 2277 },
+  { "feed": "all_month", "bytes": 7824932, "features": 11007 }
+]
