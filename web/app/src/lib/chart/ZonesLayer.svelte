@@ -4,7 +4,7 @@
 	import { GeoJSONSource, FillLayer, LineLayer, FeatureState } from 'svelte-maplibre-gl';
 	import { alertStore } from '$lib/alerts/store.svelte';
 	import { bucketFor, bucketRank, type BlinkBucket } from '$lib/alerts/blinkBucket';
-	import { NWS_EVENT_COLORS } from '$lib/alerts/nwsEventStyle';
+	import { NWS_EVENT_COLORS, DEFAULT_NWS_COLOR } from '$lib/alerts/nwsEventStyle';
 	import type { Severity } from '$lib/alerts/types';
 	import { DAY, NIGHT } from './tokens';
 	import {
@@ -23,8 +23,6 @@
 	const FORECAST_UGC = /^[A-Z]{2}Z\d{3}$/;
 	const COUNTY_UGC = /^[A-Z]{2}C\d{3}$/;
 	const MARINE_UGC = /^[A-Z]{3}\d{3}$/;
-
-	const DEFAULT_NWS_COLOR = '#B8338F';
 
 	const LIGHT: maplibregl.ExpressionSpecification = [
 		'match',
@@ -123,16 +121,21 @@
 	const countyZones = $derived(zoneEntries.filter((zone) => COUNTY_UGC.test(zone.ugc)));
 	const marineZones = $derived(zoneEntries.filter((zone) => MARINE_UGC.test(zone.ugc)));
 
+	// Draw order: less specific first, so overlapping smaller zones stay visible.
 	const sources = $derived([
 		{ id: 'zones-forecast', data: FORECAST_ZONES, zones: forecastZones },
 		{ id: 'zones-county', data: COUNTY_ZONES, zones: countyZones },
-		{ id: 'zones-marine-coastal', data: MARINE_COASTAL_ZONES, zones: marineZones },
-		{ id: 'zones-marine-offshore', data: MARINE_OFFSHORE_ZONES, zones: marineZones }
+		{ id: 'zones-marine-offshore', data: MARINE_OFFSHORE_ZONES, zones: marineZones },
+		{ id: 'zones-marine-coastal', data: MARINE_COASTAL_ZONES, zones: marineZones }
 	]);
 
 	// FeatureState calls setFeatureState as soon as it mounts, which MapLibre
 	// rejects until the source has been added to a loaded style.
 	let sourceInstances = $state<Record<string, maplibregl.GeoJSONSource | undefined>>({});
+
+	// No fill-sort-key/line-sort-key here: the per-zone winner is already
+	// resolved in zoneSeverity, and severity lives in feature-state, which
+	// layout properties (sort keys included) cannot read.
 </script>
 
 {#each sources as src (src.id)}

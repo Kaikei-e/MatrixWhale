@@ -1,4 +1,72 @@
 /**
+ * Un-wraps one ring's longitudes into a continuous sequence by tracking a
+ * running +-360 offset across raw antimeridian jumps (|dlon| > 180). A ring
+ * whose net offset winds up near +-360 (its last vertex, a repeat of the
+ * first, no longer lines up with it after unwrapping) is circling a pole;
+ * it is closed through the pole instead of left as a 360deg-wide gap.
+ */
+function unwrapRing(ring) {
+	const n = ring.length;
+	const unwrapped = new Array(n);
+	unwrapped[0] = ring[0].slice();
+	let offset = 0;
+	for (let i = 1; i < n; i++) {
+		const diff = ring[i][0] - ring[i - 1][0];
+		if (diff > 180) offset -= 360;
+		else if (diff < -180) offset += 360;
+		unwrapped[i] = [ring[i][0] + offset, ring[i][1]];
+	}
+
+	const firstLon = unwrapped[0][0];
+	const lastLon = unwrapped[n - 1][0];
+	if (Math.abs(lastLon - firstLon) < 180) return unwrapped;
+
+	const dropped = unwrapped.slice(0, n - 1);
+	const meanLat = dropped.reduce((sum, pt) => sum + pt[1], 0) / dropped.length;
+	const poleLat = meanLat < 0 ? -90 : 90;
+	const [firstLonPt, firstLat] = dropped[0];
+	const closingLastLon = dropped[dropped.length - 1][0];
+
+	// The pole-cap edge itself still spans ~360deg of longitude; a single
+	// segment for it would trip the same "world-spanning edge" check this fix
+	// exists to satisfy (and mapshaper's -clean is free to leave a long
+	// straight segment alone). Sample it in <=30deg steps instead — still a
+	// single straight edge in lon/lat terms, but no consecutive pair exceeds
+	// the antimeridian-jump threshold, and at exactly the pole it renders as
+	// nothing (a point) regardless.
+	const capStepDeg = 30;
+	const capDelta = firstLonPt - closingLastLon;
+	const capSteps = Math.ceil(Math.abs(capDelta) / capStepDeg);
+	const cap = [];
+	for (let k = 0; k <= capSteps; k++) {
+		cap.push([closingLastLon + (capDelta * k) / capSteps, poleLat]);
+	}
+	return [...dropped, ...cap, [firstLonPt, firstLat]];
+}
+
+/**
+ * Rebuilds a Polygon/MultiPolygon so every ring's longitudes are continuous
+ * across the antimeridian instead of jumping from +180 to -180 within one
+ * ring. geojson-vt (MapLibre's tiler) treats a raw 360deg jump as an edge
+ * spanning the whole world; unwrapping avoids that, at the cost of
+ * coordinates that can fall outside [-180, 180] (fine with
+ * renderWorldCopies, which this app already relies on for zone rendering).
+ * Returns a new geometry; does not mutate the input.
+ */
+export function unwrapAntimeridian(geometry) {
+	if (geometry.type === 'Polygon') {
+		return { type: 'Polygon', coordinates: geometry.coordinates.map(unwrapRing) };
+	}
+	if (geometry.type === 'MultiPolygon') {
+		return {
+			type: 'MultiPolygon',
+			coordinates: geometry.coordinates.map((rings) => rings.map(unwrapRing))
+		};
+	}
+	return geometry;
+}
+
+/**
  * Longitude bbox span in degrees for a Polygon/MultiPolygon geometry.
  * Naive min/max — deliberately does not account for wraparound, since that
  * is exactly what `fixAntimeridian` below corrects for.

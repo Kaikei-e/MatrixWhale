@@ -112,7 +112,7 @@ export const NWS_PRIORITY: Record<string, number> = {
 	'Blue Alert': 111
 };
 
-const UNKNOWN_PRIORITY = 999;
+export const UNKNOWN_PRIORITY = 999;
 
 export function sortByNwsPriority<T extends { event: string; sent: string | null }>(
 	alerts: T[]

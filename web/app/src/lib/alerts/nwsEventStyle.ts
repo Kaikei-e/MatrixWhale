@@ -1,6 +1,8 @@
 // Colors and priority order from https://www.weather.gov/help-map
 // ("Is there a list of all the warnings and watches and the color codes?"),
 // captured 2026-09-17.
+export const DEFAULT_NWS_COLOR = '#B8338F';
+
 export const NWS_EVENT_COLORS: Record<string, string> = {
 	'Tsunami Warning': '#FD6347',
 	'Tornado Warning': '#FF0000',

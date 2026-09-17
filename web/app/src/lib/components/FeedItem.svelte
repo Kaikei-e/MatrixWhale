@@ -36,6 +36,10 @@
 		if (hours < 24) return `${hours}h ago`;
 		return `${Math.round(hours / 24)}d ago`;
 	}
+
+	function formatSent(iso: string): string {
+		return new Date(iso).toLocaleString();
+	}
 </script>
 
 <button
@@ -55,7 +59,13 @@
 	</span>
 	<span class="flex items-center justify-between gap-2 text-xs">
 		<span class={SEVERITY_COLOR[alert.severity]}>{alert.severity}</span>
-		<span class="tabular text-ink-2">{timeSince(alert.sent)}</span>
+		{#if alert.sent}
+			<time datetime={alert.sent} title={formatSent(alert.sent)} class="tabular text-ink-2"
+				>{timeSince(alert.sent)}</time
+			>
+		{:else}
+			<span class="tabular text-ink-2">{timeSince(alert.sent)}</span>
+		{/if}
 	</span>
 	<span class="text-ink-2 line-clamp-1">{alert.area_desc}</span>
 </button>

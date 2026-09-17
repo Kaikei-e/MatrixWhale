@@ -29,6 +29,32 @@ export function validatePolygonLayer(name, featureCollection, centroids, errors)
 	}
 }
 
+function ringSets(geometry) {
+	if (geometry.type === 'Polygon') return [geometry.coordinates];
+	if (geometry.type === 'MultiPolygon') return geometry.coordinates;
+	return [];
+}
+
+/**
+ * Pushes an error for any ring with a raw consecutive |dlon| > 180 — the
+ * world-spanning-edge artefact that geojson-vt turns into a band across the
+ * whole map, which `unwrapAntimeridian` is meant to have already fixed.
+ */
+export function validateNoWorldSpanningEdges(name, featureCollection, errors) {
+	for (const f of featureCollection.features) {
+		for (const rings of ringSets(f.geometry)) {
+			for (const ring of rings) {
+				for (let i = 1; i < ring.length; i++) {
+					const dLon = Math.abs(ring[i][0] - ring[i - 1][0]);
+					if (dLon > 180) {
+						errors.push(`${name}: world-spanning edge (|dlon|=${dLon.toFixed(1)}deg)`);
+					}
+				}
+			}
+		}
+	}
+}
+
 /** @returns {Array<{name: string, raw: number, gzip: number}>} */
 export function sizeReport(files) {
 	return files.map(({ name, filePath }) => {

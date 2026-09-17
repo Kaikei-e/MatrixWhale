@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { alertStore } from '$lib/alerts/store.svelte';
+	import { NWS_EVENT_COLORS, DEFAULT_NWS_COLOR } from '$lib/alerts/nwsEventStyle';
+	import { NWS_PRIORITY, UNKNOWN_PRIORITY } from '$lib/alerts/priority';
 
 	interface Props {
 		class?: string;
@@ -14,13 +16,36 @@
 		{ key: 'f', label: 'F', desc: 'Moderate' }
 	] as const;
 
+	const MAX_NWS_ROWS = 12;
+
 	const motion = $derived(alertStore.stopAll || alertStore.reducedMotion ? 'static' : undefined);
+
+	const nwsEventSummary = $derived.by(() => {
+		const counts: Record<string, number> = {};
+		for (const alert of alertStore.activeAlerts.values()) {
+			counts[alert.event] = (counts[alert.event] ?? 0) + 1;
+		}
+		return Object.entries(counts)
+			.map(([event, count]) => ({
+				event,
+				count,
+				color: NWS_EVENT_COLORS[event] ?? DEFAULT_NWS_COLOR
+			}))
+			.sort((a, b) => {
+				const priorityA = NWS_PRIORITY[a.event] ?? UNKNOWN_PRIORITY;
+				const priorityB = NWS_PRIORITY[b.event] ?? UNKNOWN_PRIORITY;
+				return priorityA !== priorityB ? priorityA - priorityB : b.count - a.count;
+			});
+	});
+
+	const visibleNwsEvents = $derived(nwsEventSummary.slice(0, MAX_NWS_ROWS));
+	const hiddenNwsEventCount = $derived(Math.max(0, nwsEventSummary.length - MAX_NWS_ROWS));
 </script>
 
 <div
 	data-testid="legend"
 	data-motion={motion}
-	class="border-ink-2/30 bg-paper/90 text-ink flex flex-col gap-1.5 border px-3 py-2 text-xs {className ??
+	class="border-ink-2/30 bg-paper/90 text-ink flex max-h-[60vh] flex-col gap-1.5 overflow-y-auto border px-3 py-2 text-xs {className ??
 		''}"
 >
 	{#each BLINK_ROWS as row (row.key)}
@@ -40,6 +65,23 @@
 		<span class="w-14 shrink-0">Unknown</span>
 		<span class="text-ink-2">dotted line</span>
 	</div>
+	{#if alertStore.useNwsColors && nwsEventSummary.length > 0}
+		<div class="border-ink-2/30 mt-1 flex flex-col gap-1.5 border-t pt-1.5">
+			<span class="font-semibold">NWS colors</span>
+			{#each visibleNwsEvents as row (row.event)}
+				<div class="flex items-center gap-2">
+					<span class="legend-swatch" style="background-color: {row.color}" aria-hidden="true"
+					></span>
+					<span class="flex-1 truncate">{row.event}</span>
+					<span class="tabular text-ink-2 w-6 shrink-0 text-right">{row.count}</span>
+				</div>
+			{/each}
+			{#if hiddenNwsEventCount > 0}
+				<span class="text-ink-2 pl-4">+{hiddenNwsEventCount} more</span>
+			{/if}
+			<span class="text-ink-2">Click a light for its event.</span>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -53,6 +95,13 @@
 
 	.legend-dot-f {
 		opacity: 0.7;
+	}
+
+	.legend-swatch {
+		width: 0.5rem;
+		height: 0.5rem;
+		border-radius: 9999px;
+		flex-shrink: 0;
 	}
 
 	.legend-line {

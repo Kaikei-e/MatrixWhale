@@ -22,7 +22,13 @@ type PollResult struct {
 
 var warnMissingContactOnce sync.Once
 
-func NoaaAlertsAdapter() (PollResult, error) {
+// NoaaAlertsAdapter fetches /alerts/active. prevETag/prevLastModified, when
+// non-empty, are sent as conditional-request headers (If-None-Match /
+// If-Modified-Since) so an unchanged feed costs a 304 with no body instead
+// of a full re-fetch. The returned PollResult always carries the response
+// Header and HTTPStatus, even on a non-2xx/304 result, so the caller can
+// read rate-limit hints (e.g. Retry-After) regardless of error.
+func NoaaAlertsAdapter(prevETag, prevLastModified string) (PollResult, error) {
 	targetURL, err := url.JoinPath(NoaaURL, "alerts", "active")
 	if err != nil {
 		return PollResult{}, err
@@ -35,6 +41,12 @@ func NoaaAlertsAdapter() (PollResult, error) {
 
 	req.Header.Set("User-Agent", userAgent())
 	req.Header.Set("Accept", "application/geo+json")
+	if prevETag != "" {
+		req.Header.Set("If-None-Match", prevETag)
+	}
+	if prevLastModified != "" {
+		req.Header.Set("If-Modified-Since", prevLastModified)
+	}
 
 	cl := http.Client{Timeout: 60 * time.Second}
 	res, err := cl.Do(req)
@@ -47,19 +59,24 @@ func NoaaAlertsAdapter() (PollResult, error) {
 
 	resBytes, err := io.ReadAll(res.Body)
 	if err != nil {
-		return PollResult{}, err
+		return PollResult{HTTPStatus: res.StatusCode, Header: res.Header}, err
 	}
 
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return PollResult{}, fmt.Errorf("noaa alerts request failed with status %d", res.StatusCode)
-	}
-
-	return PollResult{
-		Body:       resBytes,
+	result := PollResult{
 		FetchedAt:  time.Now().UTC(),
 		HTTPStatus: res.StatusCode,
 		Header:     res.Header,
-	}, nil
+	}
+
+	switch {
+	case res.StatusCode == http.StatusNotModified:
+		return result, nil
+	case res.StatusCode >= 200 && res.StatusCode < 300:
+		result.Body = resBytes
+		return result, nil
+	default:
+		return result, fmt.Errorf("noaa alerts request failed with status %d", res.StatusCode)
+	}
 }
 
 func userAgent() string {
