@@ -46,10 +46,16 @@ pub fn process(
     earthquake_writer.write_batch(survivors, now_ms, ctx.db)
   })
   |> result.map(fn(outcome) {
+    let new_events =
+      list.flat_map(outcome.results, fn(diff) { diff.events.new })
+    let updated_events =
+      list.flat_map(outcome.results, fn(diff) { diff.events.updated })
+    let matched =
+      list.fold(outcome.results, 0, fn(acc, diff) { acc + diff.events.matched })
     earthquake_hub.publish(
       ctx.earthquake_hub,
-      outcome.result.events.new,
-      outcome.result.events.updated,
+      new_events,
+      updated_events,
       backfill,
     )
     EarthquakeResult(
@@ -59,7 +65,7 @@ pub fn process(
       stale: outcome.stale,
       repeats: outcome.repeats,
       expired: expired,
-      matched: outcome.result.events.matched,
+      matched:,
     )
   })
   |> result.map_error(fn(error) {

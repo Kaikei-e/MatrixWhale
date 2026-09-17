@@ -78,7 +78,8 @@ fn write_batch_tx(
   let new_rows = list.map(inserted, fn(pair) { pair.0 })
   let updated_earthquakes = list.map(updated_rows, fn(pair) { pair.0 })
   use events <- result.try(event_writer.link_batch(
-    list.append(new_rows, updated_earthquakes),
+    new_rows,
+    updated_earthquakes,
     conn,
   ))
 

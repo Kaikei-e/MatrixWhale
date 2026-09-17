@@ -16,17 +16,53 @@ pub type EventDiff {
 const empty_diff = EventDiff(new: [], updated: [], matched: 0)
 
 /// Links each just-written earthquake row to a canonical event, in the same
-/// transaction as the earthquake writes: an existing link is re-projected,
-/// otherwise the row is matched against nearby events and either attached
-/// or turned into a new event.
+/// transaction as the earthquake writes. `new_rows` skip the member-link
+/// lookup entirely: a row inserted earlier in this same transaction cannot
+/// already have an `sea.event_member` row (that FK could not exist before
+/// the row did), so it goes straight to matching. `updated_rows` check for
+/// an existing link first (present for every row linked since this feature
+/// shipped) and fall back to matching only when one is missing.
 pub fn link_batch(
-  rows: List(Earthquake),
+  new_rows: List(Earthquake),
+  updated_rows: List(Earthquake),
   conn: pog.Connection,
 ) -> Result(EventDiff, String) {
-  list.try_fold(rows, empty_diff, fn(diff, row) { link_one(diff, row, conn) })
+  use diff <- result.try(
+    list.try_fold(new_rows, empty_diff, fn(diff, row) {
+      link_new(diff, row, conn)
+    }),
+  )
+  list.try_fold(updated_rows, diff, fn(diff, row) {
+    link_existing(diff, row, conn)
+  })
 }
 
-fn link_one(
+fn link_new(
+  diff: EventDiff,
+  row: Earthquake,
+  conn: pog.Connection,
+) -> Result(EventDiff, String) {
+  use candidates <- result.try(load_candidates(row, conn))
+  case matcher.match(to_candidate(row), candidates) {
+    matcher.CreateNew -> {
+      use view <- result.try(create_event(row, conn))
+      Ok(EventDiff(..diff, new: list.append(diff.new, [view])))
+    }
+    matcher.Attach(event_id, matched_by, misfit) -> {
+      use _ <- result.try(insert_member(event_id, row, matched_by, misfit, conn))
+      use view <- result.try(reproject(event_id, conn))
+      Ok(
+        EventDiff(
+          ..diff,
+          updated: list.append(diff.updated, [view]),
+          matched: diff.matched + 1,
+        ),
+      )
+    }
+  }
+}
+
+fn link_existing(
   diff: EventDiff,
   row: Earthquake,
   conn: pog.Connection,
@@ -37,32 +73,7 @@ fn link_one(
       use view <- result.try(reproject(event_id, conn))
       Ok(EventDiff(..diff, updated: list.append(diff.updated, [view])))
     }
-    None -> {
-      use candidates <- result.try(load_candidates(row, conn))
-      case matcher.match(to_candidate(row), candidates) {
-        matcher.CreateNew -> {
-          use view <- result.try(create_event(row, conn))
-          Ok(EventDiff(..diff, new: list.append(diff.new, [view])))
-        }
-        matcher.Attach(event_id, matched_by, misfit) -> {
-          use _ <- result.try(insert_member(
-            event_id,
-            row,
-            matched_by,
-            misfit,
-            conn,
-          ))
-          use view <- result.try(reproject(event_id, conn))
-          Ok(
-            EventDiff(
-              ..diff,
-              updated: list.append(diff.updated, [view]),
-              matched: diff.matched + 1,
-            ),
-          )
-        }
-      }
-    }
+    None -> link_new(diff, row, conn)
   }
 }
 
@@ -101,9 +112,8 @@ fn create_event(
   let member =
     projection.MemberInput(earthquake: row, matched_by: "origin", misfit: None)
   let projected = projection.project([member])
-  use event_id <- result.try(insert_event(row, projected, conn))
-  use _ <- result.try(insert_member(event_id, row, "origin", None, conn))
-  use event_row <- result.try(select_event(event_id, conn))
+  use event_row <- result.try(insert_event(row, projected, conn))
+  use _ <- result.try(insert_member(event_row.id, row, "origin", None, conn))
   Ok(EventView(
     event: event_row,
     preferred: projected.preferred,
@@ -115,8 +125,7 @@ fn create_event(
 fn reproject(event_id: Int, conn: pog.Connection) -> Result(EventView, String) {
   use members <- result.try(load_members(event_id, conn))
   let projected = projection.project(members)
-  use _ <- result.try(update_event(event_id, projected, conn))
-  use event_row <- result.try(select_event(event_id, conn))
+  use event_row <- result.try(update_event(event_id, projected, conn))
   Ok(EventView(
     event: event_row,
     preferred: projected.preferred,
@@ -302,30 +311,14 @@ fn select_earthquake(
   })
 }
 
-fn select_event(
-  event_id: Int,
-  conn: pog.Connection,
-) -> Result(event.Event, String) {
-  pog.query("SELECT " <> event.columns <> " FROM sea.event WHERE id = $1")
-  |> pog.parameter(pog.int(event_id))
-  |> pog.returning(event.row_decoder())
-  |> pog.execute(conn)
-  |> result.map_error(err)
-  |> result.try(fn(x) {
-    case x.rows {
-      [row] -> Ok(row)
-      _ -> Error("event row missing for id " <> string.inspect(event_id))
-    }
-  })
-}
-
-const insert_event_sql = "INSERT INTO sea.event (kind,preferred_source,preferred_source_id,magnitude,magnitude_type,occurred_at,occurred_at_ms,updated_at,updated_at_ms,place,title,status,event_type,longitude,latitude,depth_km) VALUES ($1,$2,$3,$4,$5,to_timestamp($6::double precision/1000),$6,to_timestamp($7::double precision/1000),$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id"
+const insert_event_sql = "INSERT INTO sea.event (kind,preferred_source,preferred_source_id,magnitude,magnitude_type,occurred_at,occurred_at_ms,updated_at,updated_at_ms,place,title,status,event_type,longitude,latitude,depth_km) VALUES ($1,$2,$3,$4,$5,to_timestamp($6::double precision/1000),$6,to_timestamp($7::double precision/1000),$7,$8,$9,$10,$11,$12,$13,$14) RETURNING "
+  <> event.columns
 
 fn insert_event(
   row: Earthquake,
   projected: projection.Projection,
   conn: pog.Connection,
-) -> Result(Int, String) {
+) -> Result(event.Event, String) {
   pog.query(insert_event_sql)
   |> pog.parameter(pog.text("earthquake"))
   |> pog.parameter(pog.text(row.source))
@@ -341,27 +334,25 @@ fn insert_event(
   |> pog.parameter(pog.float(projected.longitude))
   |> pog.parameter(pog.float(projected.latitude))
   |> pog.parameter(pog.nullable(pog.float, projected.depth_km))
-  |> pog.returning({
-    use id <- decode.field(0, decode.int)
-    decode.success(id)
-  })
+  |> pog.returning(event.row_decoder())
   |> pog.execute(conn)
   |> result.map_error(err)
   |> result.try(fn(x) {
     case x.rows {
-      [id] -> Ok(id)
-      _ -> Error("event insert returned no id")
+      [row] -> Ok(row)
+      _ -> Error("event insert returned no row")
     }
   })
 }
 
-const update_event_sql = "UPDATE sea.event SET preferred_source=$2,preferred_source_id=$3,magnitude=$4,magnitude_type=$5,occurred_at=to_timestamp($6::double precision/1000),occurred_at_ms=$6,updated_at=to_timestamp($7::double precision/1000),updated_at_ms=$7,place=$8,title=$9,status=$10,event_type=$11,longitude=$12,latitude=$13,depth_km=$14,last_seen_at=now() WHERE id=$1"
+const update_event_sql = "UPDATE sea.event SET preferred_source=$2,preferred_source_id=$3,magnitude=$4,magnitude_type=$5,occurred_at=to_timestamp($6::double precision/1000),occurred_at_ms=$6,updated_at=to_timestamp($7::double precision/1000),updated_at_ms=$7,place=$8,title=$9,status=$10,event_type=$11,longitude=$12,latitude=$13,depth_km=$14,last_seen_at=now() WHERE id=$1 RETURNING "
+  <> event.columns
 
 fn update_event(
   event_id: Int,
   projected: projection.Projection,
   conn: pog.Connection,
-) -> Result(Nil, String) {
+) -> Result(event.Event, String) {
   pog.query(update_event_sql)
   |> pog.parameter(pog.int(event_id))
   |> pog.parameter(pog.text(projected.preferred.source))
@@ -377,10 +368,18 @@ fn update_event(
   |> pog.parameter(pog.float(projected.longitude))
   |> pog.parameter(pog.float(projected.latitude))
   |> pog.parameter(pog.nullable(pog.float, projected.depth_km))
-  |> pog.returning(decode.success(Nil))
+  |> pog.returning(event.row_decoder())
   |> pog.execute(conn)
-  |> result.map(fn(_) { Nil })
   |> result.map_error(err)
+  |> result.try(fn(x) {
+    case x.rows {
+      [row] -> Ok(row)
+      _ ->
+        Error(
+          "event update returned no row for id " <> string.inspect(event_id),
+        )
+    }
+  })
 }
 
 fn insert_member(

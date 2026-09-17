@@ -56,7 +56,12 @@ pub fn noaa_controller(
     })
   {
     Ok(outcome) -> {
-      let diff = outcome.result
+      let diff =
+        alert_writer.AlertDiff(
+          new: list.flat_map(outcome.results, fn(d) { d.new }),
+          updated: list.flat_map(outcome.results, fn(d) { d.updated }),
+          ended: list.flat_map(outcome.results, fn(d) { d.ended }),
+        )
       let ended_count = list.length(diff.ended)
 
       wisp.log_info(

@@ -1,3 +1,5 @@
+import gleam/int
+import gleam/list
 import gleeunit/should
 import intake/pipeline.{Written}
 import intake/record.{Incoming, Key}
@@ -41,4 +43,58 @@ pub fn failed_write_does_not_mark_seen_test() {
 
   seen_set.unseen(set, [record.seen_key(Key("usgs", "a"), 1)], 0)
   |> should.equal([record.seen_key(Key("usgs", "a"), 1)])
+}
+
+pub fn large_batches_are_split_into_chunks_and_counts_aggregate_test() {
+  let set = seen_set.new("pipeline_test_chunking_counts", 10_000)
+  let total = pipeline.chunk_size * 2 + 10
+  let records = numbered_records(total)
+
+  let assert Ok(outcome) =
+    pipeline.run(records, set, 0, fn(survivors) {
+      Ok(Written(
+        result: list.length(survivors),
+        new: list.length(survivors),
+        updated: 0,
+        unchanged: 0,
+        stale: 0,
+      ))
+    })
+
+  outcome.results
+  |> should.equal([pipeline.chunk_size, pipeline.chunk_size, 10])
+  outcome.new |> should.equal(total)
+}
+
+pub fn a_failing_chunk_stops_the_run_but_leaves_earlier_chunks_marked_seen_test() {
+  let set = seen_set.new("pipeline_test_chunking_partial_failure", 10_000)
+  let total = pipeline.chunk_size * 2
+  let records = numbered_records(total)
+
+  let assert Error(_) =
+    pipeline.run(records, set, 0, fn(survivors) {
+      case list.any(survivors, fn(r) { r.key.source_id == "300" }) {
+        True -> Error("boom")
+        False ->
+          Ok(Written(
+            result: Nil,
+            new: list.length(survivors),
+            updated: 0,
+            unchanged: 0,
+            stale: 0,
+          ))
+      }
+    })
+
+  // The first chunk (ids 0..chunk_size-1) committed and was marked seen.
+  seen_set.unseen(set, [record.seen_key(Key("usgs", "0"), 1)], 0)
+  |> should.equal([])
+  // The second, failing chunk (which includes "300") was never marked.
+  seen_set.unseen(set, [record.seen_key(Key("usgs", "300"), 1)], 0)
+  |> should.equal([record.seen_key(Key("usgs", "300"), 1)])
+}
+
+fn numbered_records(count: Int) -> List(record.Incoming(String)) {
+  list.repeat(Nil, count)
+  |> list.index_map(fn(_, i) { incoming(int.to_string(i), 1) })
 }

@@ -64,7 +64,7 @@ CREATE TABLE sea.event (
   first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_event_occurred_at ON sea.event (occurred_at DESC);
-CREATE INDEX idx_event_match_window ON sea.event (occurred_at, latitude, longitude);
+CREATE INDEX idx_event_match_window ON sea.event (occurred_at_ms, latitude);
 
 CREATE TABLE sea.event_member (
   event_id BIGINT NOT NULL REFERENCES sea.event(id) ON DELETE CASCADE,
