@@ -1,35 +1,34 @@
-# proxy/Dockerfile — builds Plecto (Rust, WASM-extensible L7 proxy) from the local clone at
-# proxy/plecto/ (see proxy/plecto.toml). Plecto's crates are unpublished, so this is a source
-# build from the clone, not `cargo install` from crates.io.
+# proxy/Dockerfile — runs Plecto (Rust, WASM-extensible L7 proxy; see proxy/plecto.toml) from a
+# pinned GitHub Releases binary instead of building from source, so contributors don't need the
+# proxy/plecto/ clone and image builds don't recompile Plecto. To bump: update PLECTO_VERSION and
+# PLECTO_SHA256 below (checksum is the matching *.tar.gz.sha256 asset on the release page,
+# https://github.com/Kaikei-e/PlectoProxy/releases).
 
-FROM rust:1.96.0-bookworm AS builder
+FROM debian:bookworm-slim AS fetcher
 
-# Defensive: crates/host/build.rs unconditionally builds + componentizes the example filter
-# guests for wasm32-unknown-unknown as part of every plecto-host build (plecto-server ->
-# plecto-control -> plecto-host are all non-dev path deps), even though this milestone only
-# needs the `plecto` binary. rust-toolchain.toml's `targets` list should auto-provision this;
-# this is a no-op fallback if that doesn't trigger.
-RUN rustup target add wasm32-unknown-unknown
+ARG PLECTO_VERSION=v0.11.5
+ARG PLECTO_SHA256=8c1e6707b962f123a757ecdc5477e62f38c66f11b342c4eb1bc65b74f1f4f382
 
-WORKDIR /build
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy the WHOLE cloned repo, not just the plecto/ workspace subdir: crates/server/Cargo.toml
-# declares [[example]] targets whose paths reach outside plecto/ (../../examples/...,
-# ../../../bench/harnesses/...). Cargo resolves every declared target path at manifest-parse
-# time regardless of -p/--bin filtering, so a partial copy breaks the build before compilation
-# starts. Preserve the repo's sibling layout (plecto/, examples/, bench/, ...).
-COPY plecto/ ./repo
+WORKDIR /dl
 
-WORKDIR /build/repo/plecto
-
-RUN cargo build --release -p plecto-server
+# "-x86_64-unknown-linux-gnu" (not the "-capabilities" variant) is the minimal runtime profile:
+# proxy/plecto.toml configures no [[filter]]/[[tls]], so no WASM capability runtime is needed.
+RUN curl -fsSLO "https://github.com/Kaikei-e/PlectoProxy/releases/download/${PLECTO_VERSION}/plecto-${PLECTO_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+    && echo "${PLECTO_SHA256}  plecto-${PLECTO_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | sha256sum -c - \
+    && tar xzf "plecto-${PLECTO_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+    && mv "plecto-${PLECTO_VERSION}-x86_64-unknown-linux-gnu/plecto" /dl/plecto \
+    && chmod +x /dl/plecto
 
 # Runtime: plain debian-slim is enough — Plecto's TLS stack is rustls + ring (pure Rust, no
 # OpenSSL), and this milestone doesn't even configure [[tls]], so there's no runtime crypto/cert
 # dependency at all.
 FROM debian:bookworm-slim AS runtime
 
-COPY --from=builder /build/repo/plecto/target/release/plecto /usr/local/bin/plecto
+COPY --from=fetcher /dl/plecto /usr/local/bin/plecto
 COPY plecto.toml /etc/plecto/plecto.toml
 
 EXPOSE 80 9090
