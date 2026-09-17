@@ -3,11 +3,9 @@
 	import { GeoJSONSource, FillLayer, LineLayer, FeatureState } from 'svelte-maplibre-gl';
 	import { alertStore } from '$lib/alerts/store.svelte';
 	import { bucketFor, type BlinkBucket } from '$lib/alerts/blinkBucket';
-	import { NWS_EVENT_COLORS } from '$lib/alerts/nwsEventStyle';
+	import { NWS_EVENT_COLORS, DEFAULT_NWS_COLOR } from '$lib/alerts/nwsEventStyle';
 	import type { Alert, Severity } from '$lib/alerts/types';
 	import { DAY, NIGHT } from './tokens';
-
-	const DEFAULT_NWS_COLOR = '#B8338F';
 
 	// FeatureState calls setFeatureState as soon as it mounts, which MapLibre
 	// rejects until the source has been added to a loaded style.
@@ -45,6 +43,22 @@
 		'Moderate',
 		1.5,
 		1
+	];
+
+	// Sort keys are layout properties (get-only, no feature-state), so overlapping
+	// alert polygons stack with the most severe one drawn on top.
+	const SEVERITY_RANK: maplibregl.ExpressionSpecification = [
+		'match',
+		['get', 'severity'],
+		'Extreme',
+		4,
+		'Severe',
+		3,
+		'Moderate',
+		2,
+		'Minor',
+		1,
+		0
 	];
 
 	interface PolygonEntry {
@@ -86,14 +100,18 @@
 	});
 </script>
 
+<!-- Alert polygons are the most specific shapes (event-drawn warning geometry), so this
+     mounts after all zone sources (see globe/+page.svelte) and draws on top of them. -->
 <GeoJSONSource id="alert-polygons" data={featureCollection} promoteId="id" bind:source>
 	<FillLayer
 		id="alert-polygons-fill"
 		paint={{ 'fill-color': ALERT_COLOR, 'fill-opacity': FILL_OPACITY }}
+		layout={{ 'fill-sort-key': SEVERITY_RANK }}
 	/>
 	<LineLayer
 		id="alert-polygons-line"
 		paint={{ 'line-color': ALERT_COLOR, 'line-width': LINE_WIDTH }}
+		layout={{ 'line-sort-key': SEVERITY_RANK }}
 	/>
 	{#if source}
 		{#each entries as entry (entry.id)}
