@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bucketFor, rhythmLit } from './blinkBucket';
+import { bucketFor, flashesPerSecond, RHYTHMS, rhythmLit } from './blinkBucket';
 import type { BlinkState, Severity } from './types';
 
 describe('bucketFor', () => {
@@ -136,5 +136,17 @@ describe('rhythmLit', () => {
 		expect(rhythmLit('fl4', 999)).toBe(true);
 		expect(rhythmLit('fl4', 1000)).toBe(false);
 		expect(rhythmLit('fl4', 4000)).toBe(true);
+	});
+});
+
+describe('flashesPerSecond', () => {
+	it('stays within the WCAG 2.3.1 general flash threshold of 3 per second', () => {
+		expect(flashesPerSecond()).toBeLessThanOrEqual(3);
+	});
+
+	it('never lets a single rhythm alone exceed the WCAG 2.3.1 threshold', () => {
+		for (const { period } of Object.values(RHYTHMS)) {
+			expect(1000 / period).toBeLessThanOrEqual(3);
+		}
 	});
 });

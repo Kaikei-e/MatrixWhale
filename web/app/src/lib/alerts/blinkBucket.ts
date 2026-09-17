@@ -37,6 +37,9 @@ export function bucketRank(bucket: BlinkBucket): number {
 
 // Light rhythms drawn by the pulse layers. 'still' is the frozen look
 // (stop toggle / reduced motion): lit at a constant brightness, never animated.
+// All features in a rhythm share one phase, so the WCAG 2.3.1 flash-rate limit
+// (https://www.w3.org/WAI/WCAG21/Understanding/three-flashes-or-below-threshold.html)
+// applies to the summed flash rate across rhythms, not any one rhythm alone.
 export const RHYTHMS = {
 	q: { buckets: ['q', 'update'], period: 1000, duty: 300 },
 	fl2: { buckets: ['fl2'], period: 2000, duty: 500 },
@@ -55,4 +58,8 @@ export const PULSE_OPACITY = { lit: 1, dim: 0.12, still: 0.6 } as const;
 export function rhythmLit(rhythm: Rhythm, now: number): boolean {
 	const { period, duty } = RHYTHMS[rhythm];
 	return now % period < duty;
+}
+
+export function flashesPerSecond(): number {
+	return Object.values(RHYTHMS).reduce((sum, { period }) => sum + 1000 / period, 0);
 }
