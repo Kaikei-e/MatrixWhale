@@ -19,7 +19,14 @@ import {
 	readShapefileParts
 } from './lib/zone-pipeline.mjs';
 import { buildCentroidDict } from './lib/centroids.mjs';
-import { validatePolygonLayer, sizeReport, checkBudget, printSizeTable } from './lib/validate.mjs';
+import { unwrapAntimeridian } from './lib/antimeridian.mjs';
+import {
+	validatePolygonLayer,
+	validateNoWorldSpanningEdges,
+	sizeReport,
+	checkBudget,
+	printSizeTable
+} from './lib/validate.mjs';
 
 const APP_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CACHE_DIR = path.join(APP_ROOT, '.geodata-cache');
@@ -50,15 +57,35 @@ async function buildLandLayer(inputFile, outputFilename, { lakesKey, extraSimpli
 	const lakeParts = readShapefileParts(findShapefile(extractDir));
 
 	const srcPath = path.join(APP_ROOT, 'node_modules', 'world-atlas', inputFile);
-	const input = { [inputFile]: fs.readFileSync(srcPath), ...lakeParts.input };
+	// Simplify (if any) runs here, on the raw wrapped coastline, not after
+	// unwrapAntimeridian below: visvalingam treats the pole-closing cap's
+	// vertices as collinear (zero-area) and would simplify them straight back
+	// into the single world-spanning edge this whole fix removes them for.
 	const simplify = extraSimplify ? `-simplify visvalingam ${extraSimplify}% keep-shapes ` : '';
+	const rawOutput = await runMapshaper(
+		`-i ${inputFile} ${simplify}-o raw.geojson format=geojson geojson-type=FeatureCollection`,
+		{ [inputFile]: fs.readFileSync(srcPath) }
+	);
+	const rawFc = JSON.parse(rawOutput['raw.geojson'].toString());
+	// world-atlas merges all countries into one land MultiPolygon and lets land
+	// crossing the antimeridian (Chukotka, Fiji, Antarctica) jump from lon 180
+	// to -180 within a ring; mapshaper's own -clean then re-stitches those raw
+	// jumps into bogus world-spanning rings. Unwrap first so -clean only ever
+	// sees continuous rings.
+	const unwrappedFc = {
+		type: 'FeatureCollection',
+		features: rawFc.features.map((f) => ({ ...f, geometry: unwrapAntimeridian(f.geometry) }))
+	};
+
 	const cmd =
-		`-i ${inputFile} name=land ` +
-		simplify +
+		'-i unwrapped.geojson name=land ' +
 		`-i ${lakeParts.shpName} name=lakes ` +
 		'-target land -erase lakes -clean ' +
 		'-o out.geojson format=geojson geojson-type=FeatureCollection no-null-props precision=0.0001';
-	const output = await runMapshaper(cmd, input);
+	const output = await runMapshaper(cmd, {
+		'unwrapped.geojson': JSON.stringify(unwrappedFc),
+		...lakeParts.input
+	});
 	const fc = JSON.parse(output['out.geojson'].toString());
 	return {
 		filePath: writeJson(outputFilename, fc),
@@ -220,6 +247,14 @@ async function main() {
 	outputFiles.push({ name: 'land-coast-ne50m-v5.1.1.json', filePath: land50.filePath });
 	outputFiles.push({ name: 'land-coast-ne110m-v5.1.1.json', filePath: land110.filePath });
 	manifestSources.push(land50.manifestSource, land110.manifestSource);
+
+	for (const { name, filePath } of [
+		{ name: 'land-coast-ne50m-v5.1.1.json', filePath: land50.filePath },
+		{ name: 'land-coast-ne110m-v5.1.1.json', filePath: land110.filePath }
+	]) {
+		const fc = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+		validateNoWorldSpanningEdges(name, fc, errors);
+	}
 
 	const manifest = {
 		generated_at: new Date().toISOString(),
