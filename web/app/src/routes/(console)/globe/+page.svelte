@@ -141,14 +141,13 @@
 		landUrl={LAND_50M}
 		initialBounds={REGION_PRESETS.CONUS}
 		theme={themeState.current}
-		t={engine.t}
 		nws={alertStore.useNwsColors}
 		class="h-full w-full"
 	>
 		<ZonesLayer />
 		<AlertPolygonsLayer />
-		<PulseLayer />
-		<CentroidMarkers {centroids} onselect={selectAlert} />
+		<PulseLayer phase={engine.phase} />
+		<CentroidMarkers {centroids} phase={engine.phase} onselect={selectAlert} />
 	</ChartFrame>
 
 	<div class="absolute top-3 left-3 flex flex-wrap items-center gap-2">

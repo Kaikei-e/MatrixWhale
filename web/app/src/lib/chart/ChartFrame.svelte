@@ -17,7 +17,6 @@
 		landUrl: string;
 		initialBounds: [number, number, number, number];
 		theme: 'day' | 'night';
-		t?: number;
 		nws?: boolean;
 		class?: string;
 		children?: Snippet;
@@ -29,7 +28,6 @@
 		landUrl,
 		initialBounds,
 		theme,
-		t = 0,
 		nws = false,
 		class: className,
 		children
@@ -131,7 +129,7 @@
 				}
 			]
 		}}
-		globalState={{ theme, t, nws }}
+		globalState={{ theme, nws }}
 		bounds={initialBounds}
 		class="h-full w-full"
 	>

@@ -2,7 +2,15 @@
 	import type * as maplibregl from 'maplibre-gl';
 	import { GeoJSONSource, CircleLayer, FeatureState } from 'svelte-maplibre-gl';
 	import { alertStore } from '$lib/alerts/store.svelte';
-	import { bucketFor, type BlinkBucket } from '$lib/alerts/blinkBucket';
+	import {
+		bucketFor,
+		RHYTHMS,
+		RHYTHM_KEYS,
+		PULSE_OPACITY,
+		type BlinkBucket,
+		type Rhythm
+	} from '$lib/alerts/blinkBucket';
+	import type { BlinkPhase } from '$lib/alerts/blinkEngine.svelte';
 	import { NWS_EVENT_COLORS } from '$lib/alerts/nwsEventStyle';
 	import { alertCentroid } from './alertPoints';
 	import type { Severity } from '$lib/alerts/types';
@@ -10,10 +18,11 @@
 
 	interface Props {
 		centroids: Record<string, [number, number]>;
+		phase: BlinkPhase;
 		onselect: (id: string) => void;
 	}
 
-	let { centroids, onselect }: Props = $props();
+	let { centroids, phase, onselect }: Props = $props();
 
 	// FeatureState calls setFeatureState as soon as it mounts, which MapLibre
 	// rejects until the source has been added to a loaded style.
@@ -43,39 +52,26 @@
 		2,
 		1.5
 	];
+	// Membership in a rhythm is feature-state that selects the pulse ring's
+	// stroke width; brightness is that layer's constant stroke opacity (see
+	// PulseLayer for why nothing per-frame may reach a feature-state expression).
 	const BUCKET: maplibregl.ExpressionSpecification = [
 		'coalesce',
 		['feature-state', 'blinkBucket'],
 		'none'
 	];
-	const PERIOD: maplibregl.ExpressionSpecification = [
-		'match',
-		BUCKET,
-		'fl2',
-		2000,
-		'fl4',
-		4000,
-		1000
-	];
-	const DUTY_MS: maplibregl.ExpressionSpecification = [
-		'match',
-		BUCKET,
-		'fl2',
-		500,
-		'fl4',
-		1000,
-		300
-	];
-	const PULSE_OPACITY: maplibregl.ExpressionSpecification = [
-		'case',
-		['==', BUCKET, 'still'],
-		0.6,
-		['==', BUCKET, 'none'],
-		0,
-		['<', ['%', ['global-state', 't'], PERIOD], DUTY_MS],
-		1,
-		0.12
-	];
+
+	function pulseWidthFor(buckets: readonly string[]): maplibregl.ExpressionSpecification {
+		return ['match', BUCKET, [...buckets], 2, 0];
+	}
+
+	const STILL_PULSE_WIDTH = pulseWidthFor(['still']);
+	const PULSE_WIDTH: Record<Rhythm, maplibregl.ExpressionSpecification> = {
+		q: pulseWidthFor(RHYTHMS.q.buckets),
+		fl2: pulseWidthFor(RHYTHMS.fl2.buckets),
+		fl4: pulseWidthFor(RHYTHMS.fl4.buckets)
+	};
+	const NO_TRANSITION = { duration: 0 };
 
 	interface MarkerEntry {
 		alertId: string;
@@ -147,16 +143,28 @@
 		onmouseleave={handleMouseLeave}
 	/>
 	<CircleLayer
-		id="alert-centroids-pulse"
+		id="alert-centroids-pulse-still"
 		paint={{
 			'circle-radius': 6,
 			'circle-color': 'transparent',
 			'circle-stroke-color': MARKER_COLOR,
-			'circle-stroke-width': STROKE_WIDTH,
-			'circle-stroke-opacity': PULSE_OPACITY,
-			'circle-stroke-opacity-transition': { duration: 0 }
+			'circle-stroke-width': STILL_PULSE_WIDTH,
+			'circle-stroke-opacity': PULSE_OPACITY.still
 		}}
 	/>
+	{#each RHYTHM_KEYS as rhythm (rhythm)}
+		<CircleLayer
+			id="alert-centroids-pulse-{rhythm}"
+			paint={{
+				'circle-radius': 6,
+				'circle-color': 'transparent',
+				'circle-stroke-color': MARKER_COLOR,
+				'circle-stroke-width': PULSE_WIDTH[rhythm],
+				'circle-stroke-opacity': phase[rhythm] ? PULSE_OPACITY.lit : PULSE_OPACITY.dim,
+				'circle-stroke-opacity-transition': NO_TRANSITION
+			}}
+		/>
+	{/each}
 	{#if source}
 		{#each entries as entry (entry.alertId)}
 			<FeatureState

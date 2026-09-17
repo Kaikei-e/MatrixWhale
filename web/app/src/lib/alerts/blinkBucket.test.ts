@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bucketFor } from './blinkBucket';
+import { bucketFor, rhythmLit } from './blinkBucket';
 import type { BlinkState, Severity } from './types';
 
 describe('bucketFor', () => {
@@ -117,5 +117,24 @@ describe('bucketFor', () => {
 
 	it('returns none when there is no blink state for the alert', () => {
 		expect(bucketFor(undefined, 'Extreme', false, false)).toBe('none');
+	});
+});
+
+describe('rhythmLit', () => {
+	it('lights Q for the first 300 ms of every second', () => {
+		expect(rhythmLit('q', 0)).toBe(true);
+		expect(rhythmLit('q', 299)).toBe(true);
+		expect(rhythmLit('q', 300)).toBe(false);
+		expect(rhythmLit('q', 999)).toBe(false);
+		expect(rhythmLit('q', 1000)).toBe(true);
+	});
+
+	it('lights Fl 2s for 500 ms of every 2 s and Fl 4s for 1 s of every 4 s', () => {
+		expect(rhythmLit('fl2', 499)).toBe(true);
+		expect(rhythmLit('fl2', 500)).toBe(false);
+		expect(rhythmLit('fl2', 2000)).toBe(true);
+		expect(rhythmLit('fl4', 999)).toBe(true);
+		expect(rhythmLit('fl4', 1000)).toBe(false);
+		expect(rhythmLit('fl4', 4000)).toBe(true);
 	});
 });
