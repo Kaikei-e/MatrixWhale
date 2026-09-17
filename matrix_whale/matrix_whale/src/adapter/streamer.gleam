@@ -2,7 +2,7 @@ import adapter/alert_hub.{type HubMsg, type SSEMessage, Emit, Heartbeat}
 import adapter/context.{type Context}
 import adapter/earthquake_hub
 import domain/alert
-import domain/earthquake
+import domain/event
 import domain/source
 import gleam/bit_array
 import gleam/bytes_tree
@@ -184,7 +184,9 @@ fn earthquakes_get_response(
                     Ok(rows) ->
                       etag_json_response(
                         req,
-                        json.array(rows, earthquake.to_json),
+                        json.object([
+                          #("earthquakes", json.array(rows, event.to_json)),
+                        ]),
                       )
                   }
               }

@@ -10,7 +10,7 @@ import gleam/option.{None, Some}
 import gleam/string
 import gleeunit/should
 import intake/record
-import message/reciever/models/usgs
+import message/reciever/models/earthquake_feature
 import message/reciever/usgs_reciever
 import repository/earthquake_reader
 import repository/earthquake_writer
@@ -81,10 +81,13 @@ pub fn reader_filters_and_cleanup_integration_test() {
         [
           incoming(sample("quake", current, 1)),
           incoming(
-            usgs.IncomingEarthquake(..sample("unknown", current, 2), mag: None),
+            earthquake_feature.IncomingEarthquake(
+              ..sample("unknown", current, 2),
+              mag: None,
+            ),
           ),
           incoming(
-            usgs.IncomingEarthquake(
+            earthquake_feature.IncomingEarthquake(
               ..sample("deleted", current, 3),
               status: Some("deleted"),
             ),
@@ -227,8 +230,8 @@ pub fn failed_write_does_not_mark_seen_set_integration_test() {
 }
 
 fn incoming(
-  feature: usgs.IncomingEarthquake,
-) -> record.Incoming(usgs.IncomingEarthquake) {
+  feature: earthquake_feature.IncomingEarthquake,
+) -> record.Incoming(earthquake_feature.IncomingEarthquake) {
   record.Incoming(
     key: record.Key("usgs", feature.source_id),
     revision: feature.updated,
@@ -236,8 +239,12 @@ fn incoming(
   )
 }
 
-fn sample(id: String, time: Int, updated: Int) -> usgs.IncomingEarthquake {
-  usgs.IncomingEarthquake(
+fn sample(
+  id: String,
+  time: Int,
+  updated: Int,
+) -> earthquake_feature.IncomingEarthquake {
+  earthquake_feature.IncomingEarthquake(
     source_id: id,
     ids: [id],
     sources: ["us"],

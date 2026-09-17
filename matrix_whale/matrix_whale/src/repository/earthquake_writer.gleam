@@ -7,12 +7,19 @@ import gleam/result
 import gleam/string
 import intake/pipeline.{type Written, Written}
 import intake/record.{type Incoming, type Key, type Verdict, Key}
-import message/reciever/models/usgs.{type IncomingEarthquake}
+import message/reciever/models/earthquake_feature.{type IncomingEarthquake}
 import pog
+import repository/event_writer.{type EventDiff}
 
 pub type EarthquakeDiff {
-  EarthquakeDiff(new: List(Earthquake), updated: List(Earthquake))
+  EarthquakeDiff(
+    new: List(Earthquake),
+    updated: List(Earthquake),
+    events: EventDiff,
+  )
 }
+
+const empty_events = event_writer.EventDiff(new: [], updated: [], matched: 0)
 
 pub fn write_batch(
   records: List(Incoming(IncomingEarthquake)),
@@ -20,7 +27,14 @@ pub fn write_batch(
   conn: pog.Connection,
 ) -> Result(Written(EarthquakeDiff), String) {
   case records {
-    [] -> Ok(Written(EarthquakeDiff(new: [], updated: []), 0, 0, 0, 0))
+    [] ->
+      Ok(Written(
+        EarthquakeDiff(new: [], updated: [], events: empty_events),
+        0,
+        0,
+        0,
+        0,
+      ))
     _ ->
       pog.transaction(conn, fn(tx) { write_batch_tx(records, now_ms, tx) })
       |> result.map_error(fn(x) {
@@ -61,12 +75,15 @@ fn write_batch_tx(
     now_ms,
     conn,
   ))
+  let new_rows = list.map(inserted, fn(pair) { pair.0 })
+  let updated_earthquakes = list.map(updated_rows, fn(pair) { pair.0 })
+  use events <- result.try(event_writer.link_batch(
+    list.append(new_rows, updated_earthquakes),
+    conn,
+  ))
 
   Ok(Written(
-    result: EarthquakeDiff(
-      new: list.map(inserted, fn(pair) { pair.0 }),
-      updated: list.map(updated_rows, fn(pair) { pair.0 }),
-    ),
+    result: EarthquakeDiff(new: new_rows, updated: updated_earthquakes, events:),
     new: list.length(inserted),
     updated: list.length(updated_rows),
     unchanged: list.length(unchanged_pairs) + insert_lost + update_lost,

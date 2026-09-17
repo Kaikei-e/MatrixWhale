@@ -50,3 +50,28 @@ CREATE TABLE sea.earthquake_revision (
   PRIMARY KEY(source, source_id, updated_at_ms),
   CONSTRAINT earthquake_revision_parent_fk FOREIGN KEY(source, source_id) REFERENCES sea.earthquake(source, source_id) ON DELETE CASCADE
 );
+
+CREATE TABLE sea.event (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  kind TEXT NOT NULL,
+  preferred_source TEXT NOT NULL REFERENCES sea.source(id),
+  preferred_source_id TEXT NOT NULL,
+  magnitude DOUBLE PRECISION, magnitude_type TEXT,
+  occurred_at TIMESTAMPTZ NOT NULL, occurred_at_ms BIGINT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL, updated_at_ms BIGINT NOT NULL,
+  place TEXT, title TEXT, status TEXT, event_type TEXT,
+  longitude DOUBLE PRECISION NOT NULL, latitude DOUBLE PRECISION NOT NULL, depth_km DOUBLE PRECISION,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_event_occurred_at ON sea.event (occurred_at DESC);
+CREATE INDEX idx_event_match_window ON sea.event (occurred_at, latitude, longitude);
+
+CREATE TABLE sea.event_member (
+  event_id BIGINT NOT NULL REFERENCES sea.event(id) ON DELETE CASCADE,
+  source TEXT NOT NULL, source_id TEXT NOT NULL,
+  matched_by TEXT NOT NULL, misfit DOUBLE PRECISION,
+  linked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (source, source_id),
+  FOREIGN KEY (source, source_id) REFERENCES sea.earthquake(source, source_id) ON DELETE CASCADE
+);
+CREATE INDEX idx_event_member_event ON sea.event_member (event_id);

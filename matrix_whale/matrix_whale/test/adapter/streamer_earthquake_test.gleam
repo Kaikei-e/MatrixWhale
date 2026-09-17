@@ -3,6 +3,7 @@ import adapter/context
 import adapter/earthquake_hub
 import adapter/streamer
 import domain/earthquake
+import domain/event
 import gleam/erlang/process
 import gleam/http
 import gleam/http/request
@@ -112,10 +113,11 @@ pub fn sse_event_is_flat_and_marks_backfill_test() {
   let assert Ok(earthquake_hub.Emit("new", _, data)) =
     process.receive(subject, within: 500)
   string.contains(data, "\"is_backfill\":true") |> should.equal(True)
-  string.contains(data, "\"earthquake\":") |> should.equal(False)
+  string.contains(data, "\"event\":") |> should.equal(False)
+  string.contains(data, "\"members\":") |> should.equal(True)
 }
 
-fn sample_row() -> earthquake.Earthquake {
+fn sample_earthquake() -> earthquake.Earthquake {
   let time = timestamp.from_unix_seconds(0)
   earthquake.Earthquake(
     source: "usgs",
@@ -152,6 +154,52 @@ fn sample_row() -> earthquake.Earthquake {
     first_seen_at: time,
     last_seen_at: time,
   )
+}
+
+fn sample_row() -> event.EventView {
+  let eq = sample_earthquake()
+  let ev =
+    event.Event(
+      id: 1,
+      kind: "earthquake",
+      preferred_source: eq.source,
+      preferred_source_id: eq.source_id,
+      magnitude: eq.magnitude,
+      magnitude_type: eq.magnitude_type,
+      occurred_at: eq.occurred_at,
+      occurred_at_ms: eq.occurred_at_ms,
+      updated_at: eq.updated_at,
+      updated_at_ms: eq.updated_at_ms,
+      place: eq.place,
+      title: eq.title,
+      status: eq.status,
+      event_type: eq.event_type,
+      longitude: eq.longitude,
+      latitude: eq.latitude,
+      depth_km: eq.depth_km,
+      first_seen_at: eq.first_seen_at,
+      last_seen_at: eq.last_seen_at,
+    )
+  let member =
+    event.MemberView(
+      source: eq.source,
+      source_id: eq.source_id,
+      magnitude: eq.magnitude,
+      magnitude_type: eq.magnitude_type,
+      occurred_at_ms: eq.occurred_at_ms,
+      updated_at_ms: eq.updated_at_ms,
+      latitude: eq.latitude,
+      longitude: eq.longitude,
+      depth_km: eq.depth_km,
+      place: eq.place,
+      status: eq.status,
+      url: eq.url,
+      matched_by: "origin",
+      misfit: option.None,
+    )
+  event.EventView(event: ev, preferred: eq, members: [member], sources: [
+    eq.source,
+  ])
 }
 
 fn test_context() -> context.Context {

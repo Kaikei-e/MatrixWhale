@@ -1,30 +1,32 @@
 import adapter/context.{type Context}
 import adapter/earthquake_hub
-import domain/source
+import domain/source.{type Source}
 import gleam/list
 import gleam/result
 import gleam/time/timestamp
 import intake/pipeline
 import intake/record.{Incoming, Key}
-import message/reciever/models/usgs.{type IncomingEarthquake}
+import message/reciever/models/earthquake_feature.{type IncomingEarthquake}
 import repository/earthquake_writer
 
-pub type UsgsResult {
-  UsgsResult(
+pub type EarthquakeResult {
+  EarthquakeResult(
     new: Int,
     updated: Int,
     unchanged: Int,
     stale: Int,
     repeats: Int,
     expired: Int,
+    matched: Int,
   )
 }
 
 pub fn process(
+  source: Source,
   features: List(IncomingEarthquake),
   backfill: Bool,
   ctx: Context,
-) -> Result(UsgsResult, String) {
+) -> Result(EarthquakeResult, String) {
   let #(now_seconds, _) =
     timestamp.system_time() |> timestamp.to_unix_seconds_and_nanoseconds
   let now_ms = now_seconds * 1000
@@ -34,7 +36,7 @@ pub fn process(
   let records =
     list.map(features, fn(feature) {
       Incoming(
-        key: Key(source.usgs.id, feature.source_id),
+        key: Key(source.id, feature.source_id),
         revision: feature.updated,
         payload: feature,
       )
@@ -46,20 +48,23 @@ pub fn process(
   |> result.map(fn(outcome) {
     earthquake_hub.publish(
       ctx.earthquake_hub,
-      outcome.result.new,
-      outcome.result.updated,
+      outcome.result.events.new,
+      outcome.result.events.updated,
       backfill,
     )
-    UsgsResult(
+    EarthquakeResult(
       new: outcome.new,
       updated: outcome.updated,
       unchanged: outcome.unchanged,
       stale: outcome.stale,
       repeats: outcome.repeats,
       expired: expired,
+      matched: outcome.result.events.matched,
     )
   })
-  |> result.map_error(fn(error) { "USGS database write failed: " <> error })
+  |> result.map_error(fn(error) {
+    source.name <> " database write failed: " <> error
+  })
 }
 
 /// Source data outside the retention window is intentionally not sent to the

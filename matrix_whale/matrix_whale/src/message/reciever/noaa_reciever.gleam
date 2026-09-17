@@ -62,6 +62,7 @@ pub fn noaa_data_handler(req: Request, ctx: Context) -> Response {
           dedup_intake: result.repeats,
           dedup_unchanged: result.unchanged,
           dedup_stale: result.stale,
+          matched: 0,
         ),
       )
 

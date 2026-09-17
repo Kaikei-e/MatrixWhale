@@ -3,6 +3,7 @@ import gleam/option.{type Option, None, Some}
 pub type Source {
   Noaa
   Usgs
+  Emsc
   Unknown
 }
 
@@ -19,6 +20,8 @@ fn classify_name(name: String) -> Source {
     "noaa_adapter" -> Noaa
     "usgs" -> Usgs
     "usgs_adapter" -> Usgs
+    "emsc" -> Emsc
+    "emsc_adapter" -> Emsc
     _ -> Unknown
   }
 }
@@ -27,6 +30,7 @@ pub fn source_name(source: Source) -> String {
   case source {
     Noaa -> "noaa"
     Usgs -> "usgs"
+    Emsc -> "emsc"
     Unknown -> "unknown"
   }
 }

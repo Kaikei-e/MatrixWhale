@@ -1,4 +1,4 @@
-import domain/earthquake.{type Earthquake}
+import domain/event.{type EventView}
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject}
 import gleam/int
@@ -26,7 +26,7 @@ pub type EarthquakeHubMsg {
     reply: Subject(Int),
   )
   Unsubscribe(id: Int)
-  Publish(new: List(Earthquake), updated: List(Earthquake), backfill: Bool)
+  Publish(new: List(EventView), updated: List(EventView), backfill: Bool)
   Tick
 }
 
@@ -72,8 +72,8 @@ pub fn unsubscribe(h: Subject(EarthquakeHubMsg), id: Int) -> Nil {
 
 pub fn publish(
   h: Subject(EarthquakeHubMsg),
-  new: List(Earthquake),
-  updated: List(Earthquake),
+  new: List(EventView),
+  updated: List(EventView),
   backfill: Bool,
 ) -> Nil {
   process.send(h, Publish(new, updated, backfill))
@@ -128,13 +128,13 @@ fn handle(
 
 fn events_for(
   state: State,
-  rows: List(Earthquake),
-  event: String,
+  rows: List(EventView),
+  event_name: String,
   backfill: Bool,
 ) -> #(State, List(SSEMessage)) {
   list.fold(rows, #(state, []), fn(acc, row) {
     let id = acc.0.epoch <> ":" <> int.to_string(acc.0.next_event)
-    let base = json.to_string(earthquake.to_json(row))
+    let base = json.to_string(event.to_json(row))
     let data =
       string.slice(base, 0, string.length(base) - 1)
       <> ",\"is_backfill\":"
@@ -147,7 +147,7 @@ fn events_for(
       <> "}"
     #(
       State(..acc.0, next_event: acc.0.next_event + 1),
-      list.append(acc.1, [Emit(event, id, data)]),
+      list.append(acc.1, [Emit(event_name, id, data)]),
     )
   })
 }

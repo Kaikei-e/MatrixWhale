@@ -1,0 +1,409 @@
+import domain/earthquake.{type Earthquake}
+import domain/event.{type EventView, EventView}
+import gleam/dynamic/decode
+import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/result
+import gleam/string
+import matching/earthquake_matcher as matcher
+import matching/projection
+import pog
+
+pub type EventDiff {
+  EventDiff(new: List(EventView), updated: List(EventView), matched: Int)
+}
+
+const empty_diff = EventDiff(new: [], updated: [], matched: 0)
+
+/// Links each just-written earthquake row to a canonical event, in the same
+/// transaction as the earthquake writes: an existing link is re-projected,
+/// otherwise the row is matched against nearby events and either attached
+/// or turned into a new event.
+pub fn link_batch(
+  rows: List(Earthquake),
+  conn: pog.Connection,
+) -> Result(EventDiff, String) {
+  list.try_fold(rows, empty_diff, fn(diff, row) { link_one(diff, row, conn) })
+}
+
+fn link_one(
+  diff: EventDiff,
+  row: Earthquake,
+  conn: pog.Connection,
+) -> Result(EventDiff, String) {
+  use existing <- result.try(find_member_link(row, conn))
+  case existing {
+    Some(event_id) -> {
+      use view <- result.try(reproject(event_id, conn))
+      Ok(EventDiff(..diff, updated: list.append(diff.updated, [view])))
+    }
+    None -> {
+      use candidates <- result.try(load_candidates(row, conn))
+      case matcher.match(to_candidate(row), candidates) {
+        matcher.CreateNew -> {
+          use view <- result.try(create_event(row, conn))
+          Ok(EventDiff(..diff, new: list.append(diff.new, [view])))
+        }
+        matcher.Attach(event_id, matched_by, misfit) -> {
+          use _ <- result.try(insert_member(
+            event_id,
+            row,
+            matched_by,
+            misfit,
+            conn,
+          ))
+          use view <- result.try(reproject(event_id, conn))
+          Ok(
+            EventDiff(
+              ..diff,
+              updated: list.append(diff.updated, [view]),
+              matched: diff.matched + 1,
+            ),
+          )
+        }
+      }
+    }
+  }
+}
+
+/// Renders an already-fetched event row into its current `EventView`,
+/// re-projecting from its live members without touching the stored row.
+pub fn to_view(
+  event_row: event.Event,
+  conn: pog.Connection,
+) -> Result(EventView, String) {
+  use members <- result.try(load_members(event_row.id, conn))
+  let projected = projection.project(members)
+  Ok(EventView(
+    event: event_row,
+    preferred: projected.preferred,
+    members: projected.members,
+    sources: projected.sources,
+  ))
+}
+
+fn to_candidate(row: Earthquake) -> matcher.Candidate {
+  matcher.Candidate(
+    source: row.source,
+    source_id: row.source_id,
+    contributing_ids: row.contributing_ids,
+    occurred_at_ms: row.occurred_at_ms,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    magnitude: row.magnitude,
+  )
+}
+
+fn create_event(
+  row: Earthquake,
+  conn: pog.Connection,
+) -> Result(EventView, String) {
+  let member =
+    projection.MemberInput(earthquake: row, matched_by: "origin", misfit: None)
+  let projected = projection.project([member])
+  use event_id <- result.try(insert_event(row, projected, conn))
+  use _ <- result.try(insert_member(event_id, row, "origin", None, conn))
+  use event_row <- result.try(select_event(event_id, conn))
+  Ok(EventView(
+    event: event_row,
+    preferred: projected.preferred,
+    members: projected.members,
+    sources: projected.sources,
+  ))
+}
+
+fn reproject(event_id: Int, conn: pog.Connection) -> Result(EventView, String) {
+  use members <- result.try(load_members(event_id, conn))
+  let projected = projection.project(members)
+  use _ <- result.try(update_event(event_id, projected, conn))
+  use event_row <- result.try(select_event(event_id, conn))
+  Ok(EventView(
+    event: event_row,
+    preferred: projected.preferred,
+    members: projected.members,
+    sources: projected.sources,
+  ))
+}
+
+fn find_member_link(
+  row: Earthquake,
+  conn: pog.Connection,
+) -> Result(Option(Int), String) {
+  pog.query(
+    "SELECT event_id FROM sea.event_member WHERE source = $1 AND source_id = $2",
+  )
+  |> pog.parameter(pog.text(row.source))
+  |> pog.parameter(pog.text(row.source_id))
+  |> pog.returning({
+    use event_id <- decode.field(0, decode.int)
+    decode.success(event_id)
+  })
+  |> pog.execute(conn)
+  |> result.map(fn(x) { list.first(x.rows) |> option.from_result })
+  |> result.map_error(err)
+}
+
+fn load_candidates(
+  row: Earthquake,
+  conn: pog.Connection,
+) -> Result(List(matcher.CandidateEvent), String) {
+  let lo_ms = row.occurred_at_ms - window_ms
+  let hi_ms = row.occurred_at_ms + window_ms
+  let lo_lat = row.latitude -. matcher.window_deg
+  let hi_lat = row.latitude +. matcher.window_deg
+  use scalars <- result.try(select_candidate_scalars(
+    lo_ms,
+    hi_ms,
+    lo_lat,
+    hi_lat,
+    conn,
+  ))
+  scalars
+  |> list.try_map(fn(scalar) {
+    use members <- result.try(select_candidate_members(scalar.0, conn))
+    Ok(matcher.CandidateEvent(
+      id: scalar.0,
+      occurred_at_ms: scalar.1,
+      latitude: scalar.2,
+      longitude: scalar.3,
+      magnitude: scalar.4,
+      members: members,
+    ))
+  })
+}
+
+const window_ms = 60_000
+
+fn select_candidate_scalars(
+  lo_ms: Int,
+  hi_ms: Int,
+  lo_lat: Float,
+  hi_lat: Float,
+  conn: pog.Connection,
+) -> Result(List(#(Int, Int, Float, Float, Option(Float))), String) {
+  pog.query(
+    "SELECT id, occurred_at_ms, latitude, longitude, magnitude FROM sea.event WHERE occurred_at_ms BETWEEN $1 AND $2 AND latitude BETWEEN $3 AND $4",
+  )
+  |> pog.parameter(pog.int(lo_ms))
+  |> pog.parameter(pog.int(hi_ms))
+  |> pog.parameter(pog.float(lo_lat))
+  |> pog.parameter(pog.float(hi_lat))
+  |> pog.returning({
+    use id <- decode.field(0, decode.int)
+    use occurred_at_ms <- decode.field(1, decode.int)
+    use latitude <- decode.field(2, decode.float)
+    use longitude <- decode.field(3, decode.float)
+    use magnitude <- decode.field(4, decode.optional(decode.float))
+    decode.success(#(id, occurred_at_ms, latitude, longitude, magnitude))
+  })
+  |> pog.execute(conn)
+  |> result.map(fn(x) { x.rows })
+  |> result.map_error(err)
+}
+
+fn select_candidate_members(
+  event_id: Int,
+  conn: pog.Connection,
+) -> Result(List(matcher.EventMember), String) {
+  pog.query(
+    "SELECT em.source, em.source_id, eq.contributing_ids FROM sea.event_member em JOIN sea.earthquake eq ON eq.source = em.source AND eq.source_id = em.source_id WHERE em.event_id = $1",
+  )
+  |> pog.parameter(pog.int(event_id))
+  |> pog.returning({
+    use source <- decode.field(0, decode.string)
+    use source_id <- decode.field(1, decode.string)
+    use contributing_ids <- decode.field(2, decode.list(decode.string))
+    decode.success(matcher.EventMember(source:, source_id:, contributing_ids:))
+  })
+  |> pog.execute(conn)
+  |> result.map(fn(x) { x.rows })
+  |> result.map_error(err)
+}
+
+type MemberLink {
+  MemberLink(
+    source: String,
+    source_id: String,
+    matched_by: String,
+    misfit: Option(Float),
+  )
+}
+
+fn load_members(
+  event_id: Int,
+  conn: pog.Connection,
+) -> Result(List(projection.MemberInput), String) {
+  use links <- result.try(select_member_links(event_id, conn))
+  use rows <- result.try(
+    links
+    |> list.try_map(fn(link) {
+      select_earthquake(link.source, link.source_id, conn)
+    }),
+  )
+  Ok(
+    list.zip(links, rows)
+    |> list.map(fn(pair) {
+      let #(link, row) = pair
+      projection.MemberInput(
+        earthquake: row,
+        matched_by: link.matched_by,
+        misfit: link.misfit,
+      )
+    }),
+  )
+}
+
+fn select_member_links(
+  event_id: Int,
+  conn: pog.Connection,
+) -> Result(List(MemberLink), String) {
+  pog.query(
+    "SELECT source, source_id, matched_by, misfit FROM sea.event_member WHERE event_id = $1",
+  )
+  |> pog.parameter(pog.int(event_id))
+  |> pog.returning({
+    use source <- decode.field(0, decode.string)
+    use source_id <- decode.field(1, decode.string)
+    use matched_by <- decode.field(2, decode.string)
+    use misfit <- decode.field(3, decode.optional(decode.float))
+    decode.success(MemberLink(source:, source_id:, matched_by:, misfit:))
+  })
+  |> pog.execute(conn)
+  |> result.map(fn(x) { x.rows })
+  |> result.map_error(err)
+}
+
+fn select_earthquake(
+  source: String,
+  source_id: String,
+  conn: pog.Connection,
+) -> Result(Earthquake, String) {
+  pog.query(
+    "SELECT "
+    <> earthquake.columns
+    <> " FROM sea.earthquake WHERE source = $1 AND source_id = $2",
+  )
+  |> pog.parameter(pog.text(source))
+  |> pog.parameter(pog.text(source_id))
+  |> pog.returning(earthquake.row_decoder())
+  |> pog.execute(conn)
+  |> result.map_error(err)
+  |> result.try(fn(x) {
+    case x.rows {
+      [row] -> Ok(row)
+      _ ->
+        Error(
+          "event member earthquake row missing for "
+          <> source
+          <> ":"
+          <> source_id,
+        )
+    }
+  })
+}
+
+fn select_event(
+  event_id: Int,
+  conn: pog.Connection,
+) -> Result(event.Event, String) {
+  pog.query("SELECT " <> event.columns <> " FROM sea.event WHERE id = $1")
+  |> pog.parameter(pog.int(event_id))
+  |> pog.returning(event.row_decoder())
+  |> pog.execute(conn)
+  |> result.map_error(err)
+  |> result.try(fn(x) {
+    case x.rows {
+      [row] -> Ok(row)
+      _ -> Error("event row missing for id " <> string.inspect(event_id))
+    }
+  })
+}
+
+const insert_event_sql = "INSERT INTO sea.event (kind,preferred_source,preferred_source_id,magnitude,magnitude_type,occurred_at,occurred_at_ms,updated_at,updated_at_ms,place,title,status,event_type,longitude,latitude,depth_km) VALUES ($1,$2,$3,$4,$5,to_timestamp($6::double precision/1000),$6,to_timestamp($7::double precision/1000),$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id"
+
+fn insert_event(
+  row: Earthquake,
+  projected: projection.Projection,
+  conn: pog.Connection,
+) -> Result(Int, String) {
+  pog.query(insert_event_sql)
+  |> pog.parameter(pog.text("earthquake"))
+  |> pog.parameter(pog.text(row.source))
+  |> pog.parameter(pog.text(row.source_id))
+  |> pog.parameter(pog.nullable(pog.float, projected.magnitude))
+  |> pog.parameter(pog.nullable(pog.text, projected.magnitude_type))
+  |> pog.parameter(pog.int(projected.occurred_at_ms))
+  |> pog.parameter(pog.int(projected.updated_at_ms))
+  |> pog.parameter(pog.nullable(pog.text, projected.place))
+  |> pog.parameter(pog.nullable(pog.text, projected.title))
+  |> pog.parameter(pog.nullable(pog.text, projected.status))
+  |> pog.parameter(pog.nullable(pog.text, projected.event_type))
+  |> pog.parameter(pog.float(projected.longitude))
+  |> pog.parameter(pog.float(projected.latitude))
+  |> pog.parameter(pog.nullable(pog.float, projected.depth_km))
+  |> pog.returning({
+    use id <- decode.field(0, decode.int)
+    decode.success(id)
+  })
+  |> pog.execute(conn)
+  |> result.map_error(err)
+  |> result.try(fn(x) {
+    case x.rows {
+      [id] -> Ok(id)
+      _ -> Error("event insert returned no id")
+    }
+  })
+}
+
+const update_event_sql = "UPDATE sea.event SET preferred_source=$2,preferred_source_id=$3,magnitude=$4,magnitude_type=$5,occurred_at=to_timestamp($6::double precision/1000),occurred_at_ms=$6,updated_at=to_timestamp($7::double precision/1000),updated_at_ms=$7,place=$8,title=$9,status=$10,event_type=$11,longitude=$12,latitude=$13,depth_km=$14,last_seen_at=now() WHERE id=$1"
+
+fn update_event(
+  event_id: Int,
+  projected: projection.Projection,
+  conn: pog.Connection,
+) -> Result(Nil, String) {
+  pog.query(update_event_sql)
+  |> pog.parameter(pog.int(event_id))
+  |> pog.parameter(pog.text(projected.preferred.source))
+  |> pog.parameter(pog.text(projected.preferred.source_id))
+  |> pog.parameter(pog.nullable(pog.float, projected.magnitude))
+  |> pog.parameter(pog.nullable(pog.text, projected.magnitude_type))
+  |> pog.parameter(pog.int(projected.occurred_at_ms))
+  |> pog.parameter(pog.int(projected.updated_at_ms))
+  |> pog.parameter(pog.nullable(pog.text, projected.place))
+  |> pog.parameter(pog.nullable(pog.text, projected.title))
+  |> pog.parameter(pog.nullable(pog.text, projected.status))
+  |> pog.parameter(pog.nullable(pog.text, projected.event_type))
+  |> pog.parameter(pog.float(projected.longitude))
+  |> pog.parameter(pog.float(projected.latitude))
+  |> pog.parameter(pog.nullable(pog.float, projected.depth_km))
+  |> pog.returning(decode.success(Nil))
+  |> pog.execute(conn)
+  |> result.map(fn(_) { Nil })
+  |> result.map_error(err)
+}
+
+fn insert_member(
+  event_id: Int,
+  row: Earthquake,
+  matched_by: String,
+  misfit: Option(Float),
+  conn: pog.Connection,
+) -> Result(Nil, String) {
+  pog.query(
+    "INSERT INTO sea.event_member (event_id, source, source_id, matched_by, misfit) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+  )
+  |> pog.parameter(pog.int(event_id))
+  |> pog.parameter(pog.text(row.source))
+  |> pog.parameter(pog.text(row.source_id))
+  |> pog.parameter(pog.text(matched_by))
+  |> pog.parameter(pog.nullable(pog.float, misfit))
+  |> pog.returning(decode.success(Nil))
+  |> pog.execute(conn)
+  |> result.map(fn(_) { Nil })
+  |> result.map_error(err)
+}
+
+fn err(x: pog.QueryError) -> String {
+  "Database error: " <> string.inspect(x)
+}

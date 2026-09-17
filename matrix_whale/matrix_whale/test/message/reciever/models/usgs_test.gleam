@@ -1,9 +1,10 @@
-import controller/usgs_controller
+import controller/earthquake_controller
 import gleam/dynamic/decode
 import gleam/json
 import gleam/list
 import gleam/option
 import gleeunit/should
+import message/reciever/models/earthquake_feature
 import message/reciever/models/usgs
 
 pub fn nullable_feature_is_accepted_test() {
@@ -18,7 +19,13 @@ pub fn nullable_feature_is_accepted_test() {
   list.length(features) |> should.equal(1)
   meta
   |> should.equal(
-    option.Some(usgs.PollMeta("2026-09-17T00:00:00Z", 200, 1, 12, False)),
+    option.Some(earthquake_feature.PollMeta(
+      "2026-09-17T00:00:00Z",
+      200,
+      1,
+      12,
+      False,
+    )),
   )
 }
 
@@ -63,7 +70,7 @@ pub fn expired_features_are_dropped_not_deduped_test() {
     "{\"features\":[{\"id\":\"old\",\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[1,2]},\"properties\":{\"time\":1,\"updated\":2}},{\"id\":\"new\",\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[1,2]},\"properties\":{\"time\":11,\"updated\":12}}]}"
   let assert Ok(body) = json.parse(payload, decode.dynamic)
   let assert Ok(#(_, features, _, _)) = usgs.decode_body(body)
-  let #(live, expired) = usgs_controller.split_expired(features, 10)
+  let #(live, expired) = earthquake_controller.split_expired(features, 10)
   list.length(live) |> should.equal(1)
   expired |> should.equal(1)
 }

@@ -1,7 +1,8 @@
 // Shared harness for the opt-in PostgreSQL integration suites. Set
 // MATRIX_WHALE_TEST_DATABASE_URL to a disposable, dedicated database; this
 // module never connects to an application DB. The schema itself
-// (sea.alert/earthquake/earthquake_revision/source) is expected to already
+// (sea.alert/earthquake/earthquake_revision/source/event/event_member) is
+// expected to already
 // be applied by Atlas migrations before tests run.
 import adapter/alert_hub
 import adapter/context
@@ -51,7 +52,7 @@ pub fn with_test_db(run: fn(pog.Connection) -> Nil) -> Nil {
 fn setup_test_schema(conn: pog.Connection) -> Nil {
   exec(
     conn,
-    "TRUNCATE sea.earthquake_revision, sea.earthquake, sea.alert, sea.source",
+    "TRUNCATE sea.event_member, sea.event, sea.earthquake_revision, sea.earthquake, sea.alert, sea.source",
   )
   let assert Ok(Nil) = source_writer.sync(conn)
   exec(
@@ -71,7 +72,7 @@ fn setup_test_schema(conn: pog.Connection) -> Nil {
 fn teardown_test_schema(conn: pog.Connection) -> Nil {
   exec(
     conn,
-    "TRUNCATE sea.earthquake_revision, sea.earthquake, sea.alert, sea.source",
+    "TRUNCATE sea.event_member, sea.event, sea.earthquake_revision, sea.earthquake, sea.alert, sea.source",
   )
   exec(
     conn,

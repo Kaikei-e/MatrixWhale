@@ -34,7 +34,17 @@ pub const usgs = Source(
   priority: 100,
 )
 
-pub const all: List(Source) = [noaa, usgs]
+pub const emsc = Source(
+  id: "emsc",
+  name: "EMSC",
+  homepage: option.Some("https://www.seismicportal.eu/"),
+  license: "CC-BY-4.0",
+  attribution_text: "Credit: EMSC/CSEM, https://www.emsc-csem.org",
+  redistributable: True,
+  priority: 90,
+)
+
+pub const all: List(Source) = [noaa, usgs, emsc]
 
 pub fn lookup(id: String) -> Result(Source, Nil) {
   list.find(all, fn(source) { source.id == id })

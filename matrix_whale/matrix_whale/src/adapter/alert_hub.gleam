@@ -67,6 +67,7 @@ pub type SourceWrite {
     dedup_intake: Int,
     dedup_unchanged: Int,
     dedup_stale: Int,
+    matched: Int,
   )
 }
 
@@ -213,7 +214,8 @@ fn initial_state() -> State {
       sse_clients: 0,
       source_stats: dict.new()
         |> dict.insert("noaa", empty_source_stats())
-        |> dict.insert("usgs", empty_source_stats()),
+        |> dict.insert("usgs", empty_source_stats())
+        |> dict.insert("emsc", empty_source_stats()),
     ),
   )
 }
@@ -350,7 +352,7 @@ fn handle_message(state: State, message: HubMsg) -> actor.Next(State, HubMsg) {
           last_dedup_intake: write.dedup_intake,
           last_dedup_unchanged: write.dedup_unchanged,
           last_dedup_stale: write.dedup_stale,
-          last_matched: 0,
+          last_matched: write.matched,
         )
       actor.continue(
         State(

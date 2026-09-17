@@ -2,6 +2,7 @@ import adapter/context.{type Context}
 import gleam/erlang/process
 import gleam/string_tree
 import logs/reciever/usgs_adapter
+import message/reciever/emsc_reciever
 import message/reciever/noaa_reciever
 import message/reciever/usgs_reciever
 import mist
@@ -37,6 +38,8 @@ fn reciever_router(request: Request, ctx: Context) -> Response {
       noaa_reciever.noaa_data_handler(req, ctx)
     ["api", "v1", "usgs_data", "send"] ->
       usgs_reciever.usgs_data_handler(req, ctx)
+    ["api", "v1", "emsc_data", "send"] ->
+      emsc_reciever.emsc_data_handler(req, ctx)
     _ -> wisp.response(404)
   }
 }
