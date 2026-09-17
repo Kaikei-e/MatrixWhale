@@ -91,6 +91,7 @@ services:
       context: ./noaa_adapter
     environment:
       - ENV_VAR=test_value
+      - NOAA_CONTACT_EMAIL=${NOAA_CONTACT_EMAIL}
     tty: true
     restart: always
     volumes:
