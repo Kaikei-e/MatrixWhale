@@ -1,7 +1,9 @@
 import dot_env as dot
 import dot_env/env
+import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/int
+import gleam/list
 import gleam/string
 import pog
 import wisp
@@ -63,7 +65,7 @@ pub fn initialize_db() -> pog.Connection {
 
   let pool_name = process.new_name("matrix_whale_db")
   let conf = pog.url_config(pool_name, database_url)
-  let _config = case conf {
+  let config = case conf {
     Ok(config) -> config
     Error(err) -> {
       wisp.log_error("Error creating database config: " <> string.inspect(err))
@@ -71,5 +73,53 @@ pub fn initialize_db() -> pog.Connection {
     }
   }
 
-  pog.named_connection(pool_name)
+  case pog.start(config) {
+    Ok(_started) -> Nil
+    Error(err) -> {
+      wisp.log_error("Error starting database pool: " <> string.inspect(err))
+      panic
+    }
+  }
+
+  let conn = pog.named_connection(pool_name)
+  ensure_alert_schema(conn)
+  conn
+}
+
+// The dev Postgres volume persists across restarts, so `db/init/init.sql`
+// only ever runs once. Keep alert schema creation idempotent here too so a
+// fresh migration ships without requiring a volume wipe.
+fn ensure_alert_schema(conn: pog.Connection) -> Nil {
+  [
+    "CREATE EXTENSION IF NOT EXISTS pg_trgm",
+    "CREATE TABLE IF NOT EXISTS sea.alert (
+      id TEXT PRIMARY KEY,
+      event TEXT NOT NULL, severity TEXT NOT NULL, urgency TEXT NOT NULL, certainty TEXT NOT NULL,
+      message_type TEXT, headline TEXT, area_desc TEXT NOT NULL,
+      ugc TEXT[] NOT NULL DEFAULT '{}', same TEXT[] NOT NULL DEFAULT '{}',
+      geometry JSONB,
+      sent TIMESTAMPTZ, effective TIMESTAMPTZ, expires TIMESTAMPTZ, ends TIMESTAMPTZ,
+      first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      ended_at TIMESTAMPTZ
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_alert_active_expires ON sea.alert (expires) WHERE ended_at IS NULL",
+    "CREATE INDEX IF NOT EXISTS idx_alert_ended_at ON sea.alert (ended_at)",
+    "CREATE INDEX IF NOT EXISTS idx_alert_severity_active ON sea.alert (severity) WHERE ended_at IS NULL",
+    "CREATE INDEX IF NOT EXISTS idx_alert_area_desc_trgm ON sea.alert USING GIN (area_desc gin_trgm_ops)",
+    "CREATE INDEX IF NOT EXISTS idx_alert_event_trgm ON sea.alert USING GIN (event gin_trgm_ops)",
+  ]
+  |> list.each(fn(sql) {
+    case
+      pog.query(sql)
+      |> pog.returning(decode.success(Nil))
+      |> pog.execute(conn)
+    {
+      Ok(_) -> Nil
+      Error(err) -> {
+        wisp.log_error("Error ensuring alert schema: " <> string.inspect(err))
+        panic
+      }
+    }
+  })
 }

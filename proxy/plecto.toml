@@ -17,8 +17,11 @@ path = "/"
 name = "matrix_whale"
 addresses = ["10.254.100.30:8080"]
 
+# Probes the reciever listener's dedicated health port (6000), separate from the traffic port
+# (8080) this upstream forwards to -- matrix_whale's own /api/v1/health lives there, not on 8080.
 [upstream.health]
-path = "/api/v1/streamer/health"
+path = "/api/v1/health"
+port = 6000
 
 [[route]]
 upstream = "matrix_whale"
