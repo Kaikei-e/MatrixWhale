@@ -15,6 +15,10 @@
 
 	let { centroids, onselect }: Props = $props();
 
+	// FeatureState calls setFeatureState as soon as it mounts, which MapLibre
+	// rejects until the source has been added to a loaded style.
+	let source = $state<maplibregl.GeoJSONSource | undefined>(undefined);
+
 	const DEFAULT_NWS_COLOR = '#B8338F';
 
 	const LIGHT: maplibregl.ExpressionSpecification = [
@@ -129,7 +133,7 @@
 	}
 </script>
 
-<GeoJSONSource id="alert-centroids" data={points} promoteId="id">
+<GeoJSONSource id="alert-centroids" data={points} promoteId="id" bind:source>
 	<CircleLayer
 		id="alert-centroids-ring"
 		paint={{
@@ -153,10 +157,16 @@
 			'circle-stroke-opacity-transition': { duration: 0 }
 		}}
 	/>
-	{#each entries as entry (entry.alertId)}
-		<FeatureState
-			id={entry.alertId}
-			state={{ severity: entry.severity, blinkBucket: entry.blinkBucket, nwsColor: entry.nwsColor }}
-		/>
-	{/each}
+	{#if source}
+		{#each entries as entry (entry.alertId)}
+			<FeatureState
+				id={entry.alertId}
+				state={{
+					severity: entry.severity,
+					blinkBucket: entry.blinkBucket,
+					nwsColor: entry.nwsColor
+				}}
+			/>
+		{/each}
+	{/if}
 </GeoJSONSource>
