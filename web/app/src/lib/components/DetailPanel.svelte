@@ -6,9 +6,10 @@
 		alert: Alert;
 		onclose: () => void;
 		onacknowledge: () => void;
+		showHeader?: boolean;
 	}
 
-	let { alert, onclose, onacknowledge }: Props = $props();
+	let { alert, onclose, onacknowledge, showHeader = true }: Props = $props();
 
 	function formatExpires(iso: string): string {
 		const local = formatLocalDateTime(iso);
@@ -21,17 +22,19 @@
 </script>
 
 <div class="border-ink-2/30 flex flex-col gap-2 border-b px-3 py-3 text-sm">
-	<div class="flex items-start justify-between gap-2">
-		<h2 class="text-base font-semibold">{alert.event}</h2>
-		<button
-			type="button"
-			onclick={onclose}
-			aria-label="Close details"
-			class="text-ink-2 hover:text-ink"
-		>
-			&times;
-		</button>
-	</div>
+	{#if showHeader}
+		<div class="flex items-start justify-between gap-2">
+			<h2 class="text-base font-semibold">{alert.event}</h2>
+			<button
+				type="button"
+				onclick={onclose}
+				aria-label="Close details"
+				class="text-ink-2 hover:text-ink"
+			>
+				&times;
+			</button>
+		</div>
+	{/if}
 
 	<p class="text-ink-2 tabular text-xs">{alert.severity} · {alert.urgency} · {alert.certainty}</p>
 

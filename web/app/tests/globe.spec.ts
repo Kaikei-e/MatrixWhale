@@ -273,6 +273,8 @@ test('renders the legend, feed order, alert detail, and the stop-blink toggle', 
 	// The mobile bottom-sheet renders its own (hidden) copy of the feed and
 	// detail panel, so scope queries to the visible desktop side panel.
 	const sidePanel = page.getByTestId('side-panel');
+	// The legacy feed list lives under the "Feed" tab now that the pane is tabbed.
+	await sidePanel.getByRole('tab', { name: 'Feed' }).click();
 	const feedItems = sidePanel.getByTestId('feed-item');
 	await expect(feedItems).toHaveCount(3);
 	await expect(feedItems.nth(0)).toContainText('Tornado Warning');
@@ -330,6 +332,10 @@ test('renders USGS points with filters and a correctly labelled event detail', a
 	await expect(
 		sidePanel.getByTestId('earthquake-event-sources').getByText('Credit: U.S. Geological Survey')
 	).toBeVisible();
+
+	// The detail view is a drill-in that replaces the list (no layout shift);
+	// going back must restore it with every row intact.
+	await sidePanel.getByRole('button', { name: 'Back to list' }).click();
 	await expect(earthquakes.nth(1)).toBeVisible();
 
 	const sevenDaySnapshot = page.waitForRequest((request) =>

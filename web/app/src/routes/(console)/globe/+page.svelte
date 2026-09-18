@@ -8,23 +8,27 @@
 	import PulseLayer from '$lib/chart/PulseLayer.svelte';
 	import CentroidMarkers from '$lib/chart/CentroidMarkers.svelte';
 	import EarthquakeMarkers from '$lib/chart/EarthquakeMarkers.svelte';
+	import HazardMarkers from '$lib/chart/HazardMarkers.svelte';
 	import Legend from '$lib/chart/Legend.svelte';
 	import PresetButtons from '$lib/components/PresetButtons.svelte';
 	import FeedPanel from '$lib/components/FeedPanel.svelte';
 	import DetailPanel from '$lib/components/DetailPanel.svelte';
 	import BottomSheet from '$lib/components/BottomSheet.svelte';
 	import EarthquakePanel from '$lib/components/EarthquakePanel.svelte';
+	import SidePane from '$lib/components/pane/SidePane.svelte';
 	import { LAND_50M, ZONE_CENTROIDS } from '$lib/chart/dataFiles';
 	import { REGION_PRESETS, bboxOfAlerts, initialViewBbox, type Bbox } from '$lib/chart/presets';
 	import { alertStore } from '$lib/alerts/store.svelte';
 	import { themeState } from '$lib/theme.svelte';
 	import { BlinkEngine } from '$lib/alerts/blinkEngine.svelte';
 	import { earthquakeStore } from '$lib/earthquakes/store.svelte';
+	import { hazardStore } from '$lib/hazards/store.svelte';
 
 	let map = $state<maplibregl.Map | undefined>();
 	let centroids = $state<Record<string, [number, number]>>({});
 	let selectedId = $state<string | null>(null);
 	let selectedEarthquakeId = $state<number | null>(null);
+	let selectedHazardId = $state<string | null>(null);
 	let earthquakeSourceMounted = $state(false);
 	let earthquakeLayerReady = $state(false);
 	let sheetExpanded = $state(false);
@@ -71,6 +75,17 @@
 	$effect(() => {
 		if (!browser) return;
 		void earthquakeStore.fetchSources('/api/v1/sources');
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		void hazardStore.connect('/api/v1/hazards/recent', '/api/v1/hazards/stream');
+		return () => hazardStore.disconnect();
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		void hazardStore.fetchSources('/api/v1/sources');
 	});
 
 	$effect(() => {
@@ -124,10 +139,11 @@
 		selectEarthquake(id);
 	});
 
-	// The desktop side panel (md:w-[22rem]) overlays the map instead of
-	// resizing it, so fitBounds needs extra right padding on wide viewports or
-	// fitted points can end up hidden behind it.
-	const SIDE_PANEL_WIDTH = 352;
+	// The desktop side panel overlays the map instead of resizing it, so
+	// fitBounds needs extra right padding on wide viewports or fitted points
+	// can end up hidden behind it. SidePane's width prop is driven by this
+	// same constant so the two can never drift apart.
+	const SIDE_PANEL_WIDTH = 380;
 	const MD_BREAKPOINT = 768;
 
 	function mapPadding(base: number): maplibregl.PaddingOptions {
@@ -190,13 +206,32 @@
 		selectedEarthquakeId = null;
 	}
 
+	function selectHazard(id: string): void {
+		const hazard = hazardStore.hazards.get(id);
+		if (!hazard) return;
+		selectedHazardId = id;
+		userInteracted = true;
+		sheetExpanded = true;
+		map?.easeTo({
+			center: [hazard.longitude, hazard.latitude],
+			// Hazard footprints (droughts, cyclones) are often country-scale, so
+			// this flies in less tightly than the earthquake point-source zoom.
+			zoom: Math.max(map.getZoom(), 4),
+			duration: alertStore.reducedMotion ? 0 : 600
+		});
+	}
+
+	function closeHazardDetail(): void {
+		selectedHazardId = null;
+	}
+
 	function handlePreset(bbox: Bbox): void {
 		userInteracted = true;
 		fitToBbox(bbox, alertStore.reducedMotion ? 0 : 600);
 	}
 </script>
 
-<div class="relative h-full w-full">
+<div class="relative h-full w-full overflow-hidden">
 	<ChartFrame
 		bind:map
 		landUrl={LAND_50M}
@@ -215,6 +250,7 @@
 			onselect={selectEarthquake}
 			onready={() => (earthquakeSourceMounted = true)}
 		/>
+		<HazardMarkers selectedId={selectedHazardId} onselect={selectHazard} />
 		<CentroidMarkers {centroids} phase={engine.phase} onselect={selectAlert} />
 	</ChartFrame>
 	<div
@@ -238,24 +274,20 @@
 
 	<Legend class="absolute bottom-16 left-3 md:bottom-3" />
 
-	<div
-		data-testid="side-panel"
-		class="border-ink-2/30 bg-paper absolute top-0 right-0 bottom-0 hidden w-[22rem] flex-col border-l md:flex"
-	>
-		<EarthquakePanel
-			selectedId={selectedEarthquakeId}
-			onselect={selectEarthquake}
-			onclose={closeEarthquakeDetail}
-		/>
-		{#if selectedAlert}
-			<DetailPanel
-				alert={selectedAlert}
-				onclose={closeDetail}
-				onacknowledge={() => alertStore.acknowledge(selectedAlert.id)}
-			/>
-		{/if}
-		<FeedPanel {selectedId} onselect={selectAlert} />
-	</div>
+	<SidePane
+		class="absolute top-0 right-0 bottom-0 hidden md:flex"
+		width={SIDE_PANEL_WIDTH}
+		{selectedEarthquakeId}
+		{selectedHazardId}
+		selectedAlertId={selectedId}
+		onSelectEarthquake={selectEarthquake}
+		onSelectHazard={selectHazard}
+		onSelectAlert={selectAlert}
+		onCloseEarthquake={closeEarthquakeDetail}
+		onCloseHazard={closeHazardDetail}
+		onCloseAlert={closeDetail}
+		onAcknowledgeAlert={(id) => alertStore.acknowledge(id)}
+	/>
 
 	<div class="md:hidden">
 		<BottomSheet bind:expanded={sheetExpanded}>

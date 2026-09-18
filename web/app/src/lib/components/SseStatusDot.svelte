@@ -3,10 +3,15 @@
 
 	interface Props {
 		variant?: 'nav' | 'feed';
+		connected?: 'connecting' | 'open' | 'closed';
 		class?: string;
 	}
 
-	let { variant = 'nav', class: className = 'text-sm' }: Props = $props();
+	let {
+		variant = 'nav',
+		connected = alertStore.connected,
+		class: className = 'text-sm'
+	}: Props = $props();
 
 	const LABEL = {
 		nav: { open: 'Live', connecting: 'Connecting', closed: 'Disconnected' },
@@ -21,9 +26,8 @@
 
 <span
 	class="text-ink-2 flex items-center gap-2 {className}"
-	aria-label="SSE status: {LABEL[variant][alertStore.connected]}"
+	aria-label="SSE status: {LABEL[variant][connected]}"
 >
-	<span class="h-2 w-2 rounded-full {DOT_COLOR[variant][alertStore.connected]}" aria-hidden="true"
-	></span>
-	{LABEL[variant][alertStore.connected]}
+	<span class="h-2 w-2 rounded-full {DOT_COLOR[variant][connected]}" aria-hidden="true"></span>
+	{LABEL[variant][connected]}
 </span>

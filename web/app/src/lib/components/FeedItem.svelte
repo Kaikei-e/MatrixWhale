@@ -42,6 +42,7 @@
 <button
 	type="button"
 	data-testid="feed-item"
+	data-row-id={alert.id}
 	onclick={onselect}
 	aria-current={selected ? 'true' : undefined}
 	class="border-ink-2/10 hover:bg-shoal focus-visible:bg-shoal flex w-full flex-col gap-0.5 border-b px-3 py-2 text-left text-sm {selected
