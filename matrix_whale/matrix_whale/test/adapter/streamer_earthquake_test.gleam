@@ -17,15 +17,14 @@ import gleeunit/should
 import intake/seen_set
 import message/reciever/usgs_reciever
 import pog
-import repository/earthquake_reader
 import wisp/simulate
 
 pub fn snapshot_filters_reject_invalid_values_test() {
-  streamer.parse_minmag("all")
-  |> should.equal(Ok(earthquake_reader.AllMagnitudes))
-  streamer.parse_minmag("2.5")
-  |> should.equal(Ok(earthquake_reader.Minimum(2.5)))
-  case streamer.parse_minmag("many") {
+  earthquake.parse_minmag("all")
+  |> should.equal(Ok(earthquake.AllMagnitudes))
+  earthquake.parse_minmag("2.5")
+  |> should.equal(Ok(earthquake.Minimum(2.5)))
+  case earthquake.parse_minmag("many") {
     Error(_) -> True |> should.equal(True)
     Ok(_) -> False |> should.equal(True)
   }

@@ -9,6 +9,24 @@ import gleam/time/timestamp.{type Timestamp}
 
 pub const columns = "source, source_id, contributing_ids, sources, net, code, magnitude, magnitude_type, occurred_at, occurred_at_ms, updated_at, updated_at_ms, place, title, status, event_type, tsunami, significance, alert, mmi, cdi, felt, nst, dmin, rms, gap, url, detail, longitude, latitude, depth_km, first_seen_at, last_seen_at"
 
+pub type MagnitudeFilter {
+  Minimum(Float)
+  AllMagnitudes
+}
+
+/// Shared by `/api/v1/earthquakes/recent` and `/api/v1/timeline`.
+pub fn parse_minmag(value: String) -> Result(MagnitudeFilter, String) {
+  case value {
+    "" -> Ok(Minimum(2.5))
+    "all" -> Ok(AllMagnitudes)
+    value ->
+      case float.parse(value) {
+        Ok(value) -> Ok(Minimum(value))
+        Error(_) -> Error("minmag must be a number or all")
+      }
+  }
+}
+
 pub type Earthquake {
   Earthquake(
     source: String,

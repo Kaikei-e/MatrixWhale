@@ -3,14 +3,15 @@ import adapter/context.{type Context}
 import adapter/earthquake_hub
 import adapter/hazard_hub
 import domain/alert
+import domain/earthquake
 import domain/event
 import domain/hazard
 import domain/source
+import domain/timeline
 import gleam/bit_array
 import gleam/bytes_tree
 import gleam/crypto
 import gleam/erlang/process.{type Subject}
-import gleam/float
 import gleam/http
 import gleam/http/request.{type Request}
 import gleam/http/response.{type Response}
@@ -28,6 +29,7 @@ import mist
 import repository/alert_reader
 import repository/earthquake_reader
 import repository/hazard_reader
+import repository/timeline_reader
 import wisp
 
 type SSEState {
@@ -92,6 +94,7 @@ fn router(
       }
     ["api", "v1", "hazards", hazard_source, hazard_source_id] ->
       hazard_detail_response(hazard_source, hazard_source_id, ctx)
+    ["api", "v1", "timeline"] -> timeline_response(req, ctx)
     _ -> not_found_response()
   }
 }
@@ -180,7 +183,11 @@ fn earthquakes_get_response(
     Error(error) ->
       json_response(400, json.object([#("error", json.string(error))]))
     Ok(hours) ->
-      case parse_minmag(query |> list.key_find("minmag") |> result.unwrap("")) {
+      case
+        earthquake.parse_minmag(
+          query |> list.key_find("minmag") |> result.unwrap(""),
+        )
+      {
         Error(error) ->
           json_response(400, json.object([#("error", json.string(error))]))
         Ok(minmag) ->
@@ -213,20 +220,6 @@ fn earthquakes_get_response(
                   }
               }
           }
-      }
-  }
-}
-
-pub fn parse_minmag(
-  value: String,
-) -> Result(earthquake_reader.MagnitudeFilter, String) {
-  case value {
-    "" -> Ok(earthquake_reader.Minimum(2.5))
-    "all" -> Ok(earthquake_reader.AllMagnitudes)
-    value ->
-      case float.parse(value) {
-        Ok(value) -> Ok(earthquake_reader.Minimum(value))
-        Error(_) -> Error("minmag must be a number or all")
       }
   }
 }
@@ -441,6 +434,40 @@ fn hazard_detail_response(
           #("episodes", json.array(episodes, hazard.episode_to_json)),
         ]),
       )
+  }
+}
+
+pub fn timeline_response(
+  req: Request(connection),
+  ctx: Context,
+) -> Response(mist.ResponseData) {
+  case req.method {
+    http.Get -> timeline_get_response(req, ctx)
+    _ -> response.new(405) |> response.set_body(mist.Bytes(bytes_tree.new()))
+  }
+}
+
+fn timeline_get_response(
+  req: Request(connection),
+  ctx: Context,
+) -> Response(mist.ResponseData) {
+  let query = request.get_query(req) |> result.unwrap([])
+  case timeline.parse_query(query) {
+    Error(error) ->
+      json_response(400, json.object([#("error", json.string(error))]))
+    Ok(parsed) ->
+      case timeline_reader.page(parsed, ctx.db) {
+        Error(error) -> error_response(error)
+        Ok(page) ->
+          etag_json_response(
+            req,
+            json.object([
+              #("items", json.array(page.items, timeline.to_json)),
+              #("next_cursor", json.nullable(page.next_cursor, json.string)),
+              #("generated_at", json.string(now_rfc3339())),
+            ]),
+          )
+      }
   }
 }
 

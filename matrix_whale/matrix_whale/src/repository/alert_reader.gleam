@@ -36,6 +36,18 @@ pub fn list_active(conn: pog.Connection) -> Result(List(AlertRow), String) {
   |> result.map_error(query_error_to_string)
 }
 
+pub fn by_ids(
+  ids: List(String),
+  conn: pog.Connection,
+) -> Result(List(AlertRow), String) {
+  pog.query("SELECT " <> alert.columns <> " FROM sea.alert WHERE id = ANY($1)")
+  |> pog.parameter(pog.array(pog.text, ids))
+  |> pog.returning(alert.row_decoder())
+  |> pog.execute(conn)
+  |> result.map(fn(returned) { returned.rows })
+  |> result.map_error(query_error_to_string)
+}
+
 pub fn search(
   query: String,
   conn: pog.Connection,

@@ -2,6 +2,7 @@
 // the shared harness; MATRIX_WHALE_TEST_DATABASE_URL must be set to a
 // disposable, dedicated database.
 import adapter/streamer
+import domain/earthquake
 import gleam/bit_array
 import gleam/bytes_tree
 import gleam/dynamic/decode
@@ -94,7 +95,7 @@ pub fn cross_source_matching_and_projection_integration_test() {
     let assert Ok(rows) =
       earthquake_reader.recent(
         24,
-        earthquake_reader.AllMagnitudes,
+        earthquake.AllMagnitudes,
         earthquake_reader.AllTypes,
         conn,
       )

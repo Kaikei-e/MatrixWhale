@@ -2,6 +2,7 @@
 // the shared harness; MATRIX_WHALE_TEST_DATABASE_URL must be set to a
 // disposable, dedicated database.
 import adapter/streamer
+import domain/earthquake
 import gleam/http
 import gleam/http/request
 import gleam/http/response
@@ -100,7 +101,7 @@ pub fn reader_filters_and_cleanup_integration_test() {
     let assert Ok(default_rows) =
       earthquake_reader.recent(
         24,
-        earthquake_reader.Minimum(2.5),
+        earthquake.Minimum(2.5),
         earthquake_reader.EarthquakesOnly,
         conn,
       )
@@ -108,7 +109,7 @@ pub fn reader_filters_and_cleanup_integration_test() {
     let assert Ok(all_rows) =
       earthquake_reader.recent(
         24,
-        earthquake_reader.AllMagnitudes,
+        earthquake.AllMagnitudes,
         earthquake_reader.AllTypes,
         conn,
       )

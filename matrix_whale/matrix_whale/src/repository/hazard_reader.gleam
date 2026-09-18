@@ -39,6 +39,26 @@ pub fn recent(
   |> result.map_error(err)
 }
 
+/// Hazards by exact `(source, source_id)` key, in no particular order.
+pub fn by_keys(
+  keys: List(#(String, String)),
+  conn: pog.Connection,
+) -> Result(List(Hazard), String) {
+  let sources = list.map(keys, fn(key) { key.0 })
+  let source_ids = list.map(keys, fn(key) { key.1 })
+  pog.query(
+    "SELECT "
+    <> hazard.columns
+    <> " FROM sea.hazard WHERE (source, source_id) IN (SELECT * FROM unnest($1::text[], $2::text[]))",
+  )
+  |> pog.parameter(pog.array(pog.text, sources))
+  |> pog.parameter(pog.array(pog.text, source_ids))
+  |> pog.returning(hazard.row_decoder())
+  |> pog.execute(conn)
+  |> result.map(fn(x) { x.rows })
+  |> result.map_error(err)
+}
+
 /// A hazard's full detail (including `geometries`) plus its raw episode
 /// history. `episodes` is only populated for GDACS-sourced hazards, whose
 /// `source_id` is `"<event_type>-<event_id>"`.
