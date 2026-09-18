@@ -84,3 +84,12 @@ jobs:
       - name: Check formatting
         run: gleam format --check src test
         working-directory: matrix_whale/matrix_whale
+
+  decisions:
+    name: Decision records
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Kaikei-e/DocDag@v0.4.1
+        with:
+          version: v0.4.1

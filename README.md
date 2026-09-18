@@ -82,6 +82,10 @@ To change the schema:
 
 `make db-status` shows applied/pending migrations against `MATRIX_WHALE_DATABASE_URL` (e.g. `postgres://user:pass@localhost:5440/sea?sslmode=disable` for the compose `db` service). `make test-core` runs the Gleam integration test suite against a throwaway Postgres container with the migrations applied.
 
+## Decision records
+
+Architecture decisions are recorded in `docs/ADR/` as numbered Markdown files with YAML frontmatter. [DocDag](https://github.com/Kaikei-e/DocDag) validates the `supersedes` and `depends-on` graph declared in that frontmatter (`make adr-validate` locally, the `decisions` job in CI). Start a new record from `docs/ADR/template.md`.
+
 ## USGS earthquake pipeline
 
 `usgs_adapter` starts with the USGS `all_week.geojson` feed and sends that snapshot to MatrixWhale with `poll_meta.backfill=true`. It switches to `all_day.geojson` only after the core accepts the startup snapshot. Subsequent requests honor `Expires`/`Cache-Control`, use `If-Modified-Since`, and forward 304 polls with an empty feature list. The conditional validator advances only after the core POST succeeds, so a delivery failure is retried safely.

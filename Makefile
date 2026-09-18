@@ -15,3 +15,6 @@ db-status:
 
 test-core:
 	./db/scripts/test_core.sh
+
+adr-validate:
+	docdag validate

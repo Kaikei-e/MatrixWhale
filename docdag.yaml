@@ -1,0 +1,5 @@
+preset: adr
+dir: docs/ADR
+id_width: 4
+references:
+  dangling: error

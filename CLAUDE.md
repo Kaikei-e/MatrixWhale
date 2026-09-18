@@ -125,6 +125,7 @@ go test ./...
 - `Makefile` - Build automation for protobuf generation
 - `db/` - PostgreSQL database configuration and initialization scripts
 - `proxy/` - Nginx proxy configuration
+- `docs/ADR/` - Architecture decision records validated by DocDag (`docdag.yaml` at the repo root)
 
 ## Development Workflow
 
@@ -133,6 +134,7 @@ go test ./...
 3. **Gleam Development**: Use standard Gleam workflow with `gleam build`, `gleam test`, `gleam format`
 4. **Frontend Development**: Standard Node.js workflow with package.json scripts
 5. **Go Services**: Standard Go development with modules
+6. **Decision records**: ADRs live in `docs/ADR/` as `NNNN-kebab-title.md` (copy `docs/ADR/template.md`); `docdag validate` from the repo root checks the frontmatter graph (`supersedes` / `depends-on`) and CI runs it. Install with `go install github.com/Kaikei-e/DocDag/cmd/docdag@v0.4.1`
 
 ## Environment Setup
 
