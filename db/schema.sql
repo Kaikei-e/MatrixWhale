@@ -31,6 +31,7 @@ CREATE INDEX idx_alert_ended_at ON sea.alert (ended_at);
 CREATE INDEX idx_alert_severity_active ON sea.alert (severity) WHERE ended_at IS NULL;
 CREATE INDEX idx_alert_area_desc_trgm ON sea.alert USING GIN (area_desc gin_trgm_ops);
 CREATE INDEX idx_alert_event_trgm ON sea.alert USING GIN (event gin_trgm_ops);
+CREATE INDEX idx_alert_first_seen_at ON sea.alert (first_seen_at DESC);
 
 CREATE TABLE sea.source (
   id TEXT PRIMARY KEY,
@@ -72,6 +73,7 @@ CREATE TABLE sea.event (
 );
 CREATE INDEX idx_event_occurred_at ON sea.event (occurred_at DESC);
 CREATE INDEX idx_event_match_window ON sea.event (occurred_at_ms, latitude);
+CREATE INDEX idx_event_first_seen_at ON sea.event (first_seen_at DESC, id DESC);
 
 CREATE TABLE sea.event_member (
   event_id BIGINT NOT NULL REFERENCES sea.event(id) ON DELETE CASCADE,
@@ -168,6 +170,7 @@ CREATE TABLE sea.hazard (
   PRIMARY KEY (source, source_id)
 );
 CREATE INDEX idx_hazard_modified_at_ms ON sea.hazard (modified_at_ms);
+CREATE INDEX idx_hazard_first_seen_at ON sea.hazard (first_seen_at DESC);
 CREATE INDEX idx_hazard_type_level ON sea.hazard (hazard_type, alert_level);
 CREATE INDEX idx_hazard_centroid ON sea.hazard USING GIST (centroid);
 CREATE INDEX idx_hazard_primary_geometry ON sea.hazard USING GIST (primary_geometry);
