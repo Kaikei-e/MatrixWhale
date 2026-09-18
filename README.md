@@ -6,7 +6,7 @@ MatrixWhale is developed as a foundation for processing large amounts of data, a
 
 ## Demo
 
-Live NWS alerts and USGS earthquakes on the nautical chart at `/globe`, day and night palettes.
+Live NWS alerts, USGS & EMSC earthquakes, and GDACS multi-hazards (tropical cyclones, floods, volcanoes, wildfires, droughts, and tsunamis) on the nautical chart at `/globe`, in day and night palettes. A tabbed side pane provides arrival-ordered Timeline, Earthquakes, Hazards, Alerts, and Feed views with real-time SSE streaming, severity filtering, and drill-in detail panels.
 
 <table>
   <tr>
@@ -23,64 +23,106 @@ Live NWS alerts and USGS earthquakes on the nautical chart at `/globe`, day and 
 
 ## Architecture
 
-The diagram below covers only the paths that carry data today: NOAA alerts and USGS earthquakes flow from their upstream APIs through Go adapters into the Gleam/BEAM core, which persists them in PostgreSQL and fans them out to the browser through the Plecto proxy.
+The diagram below reflects the live data paths across all integrated sources: NOAA alerts, USGS earthquakes, EMSC earthquakes, and GDACS multi-hazards flow from upstream services through Go adapters into the Gleam/BEAM core, which normalizes, deduplicates, and merges records into PostgreSQL 18 + PostGIS 3.6, streaming them out to the browser through the Plecto reverse proxy.
 
 ```mermaid
 flowchart LR
-  subgraph Upstream["Upstream"]
+  subgraph Upstream["Upstream APIs & Feeds"]
     NWS["NWS API<br/>api.weather.gov/alerts/active"]
     USGSFeed["USGS summary feeds<br/>all_day / all_week .geojson"]
+    EMSCFeed["EMSC SeismicPortal<br/>WebSocket + FDSN backfill"]
+    GDACSFeed["GDACS API<br/>polled 5m + geometry on-demand"]
   end
 
-  subgraph Adapters["Adapters (Go)"]
+  subgraph Adapters["Adapters (Go) & Common"]
     NoaaAdapter["noaa_adapter"]
     UsgsAdapter["usgs_adapter"]
+    EmscAdapter["emsc_adapter"]
+    GdacsAdapter["gdacs_adapter"]
+    CommonPkg["adapters/common"]
   end
 
   subgraph Core["matrix_whale (Gleam / BEAM)"]
-    Receiver["receiver :6000"]
-    Streamer["streamer :8080"]
+    Receiver["receiver :6000<br/>intake, dedup, merge, normalizer"]
+    Streamer["streamer :8080<br/>REST, SSE, timeline keyset reader"]
+    Hubs["In-process Pub/Sub Hubs<br/>alerts, earthquakes, hazards"]
   end
 
-  DB[("PostgreSQL sea schema<br/>alert, earthquake, earthquake_revision")]
+  subgraph DB["PostgreSQL 18 + PostGIS 3.6 (sea schema)"]
+    SourceReg[("sea.source")]
+    AlertTbl[("sea.alert")]
+    EqTbl[("sea.earthquake & revision")]
+    CanonicalTbl[("sea.event & event_member")]
+    GdacsTbl[("sea.gdacs_event (raw episodes)")]
+    HazardTbl[("sea.hazard (PostGIS normalized)")]
+  end
 
   subgraph Edge["Edge"]
-    Proxy["Plecto proxy :80"]
-    Web["web (SvelteKit) :4173"]
+    Proxy["Plecto proxy :80 / :8180"]
+    Web["web (SvelteKit) :4173 / :4174"]
   end
 
   Browser["Browser"]
 
   NWS -->|"GET alerts/active, polled"| NoaaAdapter
-  USGSFeed -->|"GET all_day.geojson every >=60s, If-Modified-Since"| UsgsAdapter
+  USGSFeed -->|"GET all_day.geojson, If-Modified-Since"| UsgsAdapter
+  EMSCFeed -->|"WebSocket push + FDSN queries"| EmscAdapter
+  GDACSFeed -->|"GET geteventlist, polled 5m"| GdacsAdapter
+
   NoaaAdapter -->|"POST /api/v1/noaa_data/send"| Receiver
   UsgsAdapter -->|"POST /api/v1/usgs_data/send"| Receiver
-  Receiver -->|"upsert + diff"| DB
-  Receiver -.->|"in-process fan-out (hub)"| Streamer
-  Streamer -->|"query"| DB
+  EmscAdapter -->|"POST /api/v1/emsc_data/send"| Receiver
+  GdacsAdapter -->|"POST /api/v1/gdacs_data/send"| Receiver
+
+  Receiver -->|"GET /api/v1/gdacs_data/geometry/pending"| GdacsAdapter
+  GdacsAdapter -->|"POST /api/v1/gdacs_data/geometry"| Receiver
+
+  Receiver -->|"upsert, diff, merge, normalize"| DB
+  Receiver -.->|"fan-out events"| Hubs
+  Hubs -.->|"push new/updates"| Streamer
+  Streamer -->|"query events, hazards, timeline"| DB
+
   Browser -->|"HTTP :80"| Proxy
   Proxy -->|"REST + SSE via /api"| Streamer
   Proxy -->|"static app /"| Web
 ```
 
-- The `noaa_adapter` and `usgs_adapter` Go services poll their upstream APIs on their own schedules (USGS honors `Expires`/`Cache-Control` with a >=60s floor) and POST raw GeoJSON envelopes to the core's receiver on port 6000.
-- The receiver upserts alerts and earthquakes into PostgreSQL, diffs earthquakes against their stored revision, and hands new/updated records to the streamer through an in-process pub/sub hub, both being sibling processes of the same BEAM node.
-- The streamer serves REST reads (`/api/v1/alerts/*`, `/api/v1/earthquakes/recent`, `/api/v1/pipeline/status`) and SSE feeds (`/api/v1/alerts/stream`, `/api/v1/earthquakes/stream`) on port 8080, all reading from the same PostgreSQL tables.
-- The Plecto proxy is the single public entry point on port 80: it forwards `/api` to the streamer and everything else to the SvelteKit `web` app, which the browser talks to directly for both.
-- Earthquakes keep a rolling 7-day window (`sea.earthquake`), with every observed revision kept in `sea.earthquake_revision` until its parent row is retired.
+- **Go adapters** ingest data on source-optimal schedules and share common utilities (`adapters/common`) for core HTTP clients, backoff, structured logging, and User-Agent headers:
+  - `noaa_adapter`: Polls NWS active alerts and sends raw GeoJSON envelopes to the core receiver.
+  - `usgs_adapter`: Starts with `all_week.geojson` backfill, switches to `all_day.geojson` with conditional GET (`If-Modified-Since`, >=60s floor), retrying safely on delivery failures.
+  - `emsc_adapter`: Subscribes to real-time WebSocket push (`standing_order`), backfills via FDSN query, and runs gap-fill queries on reconnects.
+  - `gdacs_adapter`: Polls multi-hazard events every 5 minutes (with a 10s minimum request interval), and pulls pending episode geometries in the background driven by the core's pending queue.
+- **Core (`matrix_whale`)**: Built in Gleam on the Erlang/BEAM VM:
+  - **Receiver (`:6000`)**: Classifies revisions and deduplicates incoming payloads in pure Gleam functions (`domain/` and `intake/`). Merges earthquakes from USGS, EMSC, and GDACS into canonical events (`sea.event`), and normalizes GDACS raw episodes into `sea.hazard` with PostGIS geometry in the same database transaction.
+  - **Streamer (`:8080`)**: Serves REST endpoints (`/api/v1/alerts/*`, `/api/v1/earthquakes/recent`, `/api/v1/hazards/recent`, `/api/v1/hazards/{source}/{source_id}`, `/api/v1/timeline`, `/api/v1/sources`, `/api/v1/pipeline/status`) and real-time SSE streams (`/api/v1/alerts/stream`, `/api/v1/earthquakes/stream`, `/api/v1/hazards/stream`).
+  - **In-process pub/sub hubs**: Sibling OTP processes on the same BEAM node provide low-latency fan-out from receiver to streamer without external message brokers.
+- **Database (PostgreSQL 18 + PostGIS 3.6)**:
+  - `sea.source`: Central registry for licenses, priorities, and attribution text.
+  - `sea.earthquake` & `sea.earthquake_revision`: 7-day rolling window of earthquake source rows with full revision histories.
+  - `sea.event` & `sea.event_member`: Canonical merged earthquakes combining cross-source detections by origin/ID matching and spatio-temporal misfit scoring.
+  - `sea.gdacs_event`: Raw GDACS episode storage preserving all historical episodes and unprojected GeoJSON geometry.
+  - `sea.hazard`: Normalized multi-hazard layer containing PostGIS `Point` centroid, `Polygon` bbox, and `Geometry` primary polygon with GiST spatial indexes.
+  - `sea.alert`: NWS weather alerts with geometry polygons and lifecycle timestamps (`sent`, `expires`, `ended_at`).
+- **Edge**:
+  - **Plecto reverse proxy (`:80` / `:8180`)**: Single entry point routing `/api` to the Gleam streamer and everything else to the SvelteKit frontend, enforcing rate limits.
+  - **Web (`:4173` / `:4174`)**: SvelteKit application with MapLibre GL rendering nautical charts (`/globe`), earthquake flasher markers, hazard polygons, and a 5-tab side pane (Timeline, Earthquakes, Hazards, Alerts, Feed).
 
 ## Database migrations
 
-`db/schema.sql` is the desired state of the `sea` schema; [Atlas](https://atlasgo.io) generates and applies versioned migrations from it under `db/migrations/`. The `migrate` compose service applies pending migrations before `matrix_whale` starts. `pg_trgm` is a database-level extension that Atlas's community edition cannot manage, so it is created as plain SQL in the first migration file instead of in `db/schema.sql`.
+`db/schema.sql` is the desired state of the `sea` schema; [Atlas](https://atlasgo.io) generates and applies versioned migrations from it under `db/migrations/`. The database runs PostgreSQL 18 with PostGIS 3.6 (`postgis/postgis:18-3.6`) storing its data in `./db/data18` (matching PostgreSQL 18's volume layout).
+
+The `migrate` compose service applies pending migrations before `matrix_whale` starts. Database-level extensions (`pg_trgm` and `postgis`) cannot be fully managed by Atlas's community edition, so they are declared in both `db/schema.sql` and the respective versioned migration files (`20260918000000_init.sql` and `20260918110612_gdacs_hazards.sql`).
 
 To change the schema:
 
 1. Edit `db/schema.sql`.
 2. `make db-diff name=add_thing` to generate `db/migrations/<timestamp>_add_thing.sql`.
 3. Review the generated SQL.
-4. `docker compose up` applies it via the `migrate` service.
+4. `make db-apply` (locally) or run `docker compose up` to apply via the `migrate` service.
 
-`make db-status` shows applied/pending migrations against `MATRIX_WHALE_DATABASE_URL` (e.g. `postgres://user:pass@localhost:5440/sea?sslmode=disable` for the compose `db` service). `make test-core` runs the Gleam integration test suite against a throwaway Postgres container with the migrations applied.
+Useful database commands:
+- `make db-status`: Shows applied and pending migrations against `MATRIX_WHALE_DATABASE_URL` (defaulting to port 5440 in compose).
+- `make test-core`: Runs the Gleam integration test suite against a throwaway PostGIS 18 container with all migrations applied.
 
 ## Decision records
 
@@ -104,9 +146,9 @@ Because the production poll switches from all_week to all_day, a revision more t
 
 `GET /api/v1/earthquakes/recent` defaults to the latest 24 hours at M2.5+; `hours=1..168`, `minmag=<number>|all`, and `type=earthquake|all` refine the snapshot, filtering on each canonical event's projected columns. It returns `{"earthquakes": [<Event>, ...]}`, where each event carries its projected scalar fields (from the highest-priority, most-recently-updated member) plus a `members` list of every linked source row with its `matched_by` (`origin`, `id`, or `misfit`) and `misfit` score. It sends a content-hash ETag and `Cache-Control: no-cache`; clients should revalidate it. `GET /api/v1/earthquakes/stream` emits the same canonical event JSON in `new` and `update` events with `is_backfill`, plus `heartbeat` and `resync`; `new` is a newly created event, `update` is a change to an existing event's projection (a member added, revised, or its status changed). The event id contains a process epoch. A reconnect receives `resync` and must refetch the snapshot rather than assuming a replay buffer survived a core restart.
 
-`GET /api/v1/pipeline/status` keeps the existing NOAA top-level fields and adds `sources.noaa`, `sources.usgs`, and `sources.emsc`, each with `last_fetch_at`, `last_http_status`, `received`, `deduped`, `written`, `dropped`, `bytes`, a `dedup` breakdown (`intake`, `unchanged`, `stale`), and `matched` (how many of that source's rows in the most recent write attached to an existing canonical event rather than creating one).
+`GET /api/v1/pipeline/status` keeps the existing NOAA top-level fields and adds per-source statistics under `sources.<source_id>` (`noaa`, `usgs`, `emsc`, and `gdacs`), each with `last_fetch_at`, `last_http_status`, `received`, `deduped`, `written`, `dropped`, `bytes`, a `dedup` breakdown (`intake`, `unchanged`, `stale`), and `matched` (how many of that source's rows in the most recent write attached to an existing canonical event rather than creating one).
 
-`GET /api/v1/sources` returns the core's source registry (`id`, `name`, `homepage`, `license`, `attribution_text`, `redistributable`, `priority`, currently `noaa`, `usgs`, and `emsc`) — the only place clients get license/attribution text; canonical events carry a `preferred_source`/`sources` list but no license fields of their own.
+`GET /api/v1/sources` returns the core's source registry (`id`, `name`, `homepage`, `license`, `attribution_text`, `redistributable`, `priority`, currently `noaa`, `usgs`, `emsc`, and `gdacs`) — the only place clients get license/attribution text; canonical events carry a `preferred_source`/`sources` list but no license fields of their own.
 
 Start it with `docker compose --env-file .env up --build usgs_adapter` after MatrixWhale and PostgreSQL are available. The adapter shuts down when it receives SIGTERM/SIGINT and does not advance a feed validator if the core POST fails.
 
@@ -139,3 +181,26 @@ go test -race ./...
 go vet ./...
 go build ./...
 ```
+
+## GDACS multi-hazard pipeline
+
+`gdacs_adapter` polls GDACS (Global Disaster Alert and Coordination System) every 5 minutes (`GDACS_POLL_INTERVAL`) for earthquakes, tropical cyclones, floods, volcanoes, wildfires, droughts, and tsunamis. It sends raw event pages to `POST /api/v1/gdacs_data/send` with a 14-day startup backfill. Between ticks, it fetches pending episode geometries from `GET /api/v1/gdacs_data/geometry/pending` and POSTs them to `POST /api/v1/gdacs_data/geometry` with a 10s rate limiter (`GDACS_MIN_REQUEST_INTERVAL`).
+
+The core stores raw episodes in `sea.gdacs_event` and normalizes the latest episode into `sea.hazard` with PostGIS geometry (`centroid Point`, `bbox Polygon`, `primary_geometry Geometry`) and CAP-aligned severity (`green -> minor`, `orange -> severe`, `red -> extreme`). When earthquake geometry arrives with an NEIC/USGS ID, the event is dual-written to `sea.earthquake` and merged into the canonical earthquake model. GDACS data is credited as "Global Disaster Awareness and Coordination System, GDACS".
+
+Start it with `docker compose --env-file .env up --build gdacs_adapter` after MatrixWhale and PostgreSQL are available.
+
+Run adapter checks locally with:
+
+```sh
+cd gdacs_adapter/app
+go test -race ./...
+go vet ./...
+go build ./...
+```
+
+## Arrival-ordered timeline
+
+`GET /api/v1/timeline` streams all event kinds (`earthquake`, `hazard`, `alert`) in arrival order (`first_seen_at DESC`) using keyset pagination (`?limit=50&before=<cursor>&kinds=...&minmag=...&min_severity=...`). The cursor is an opaque base64url string. Severity across sources is normalized to CAP levels (minor, moderate, severe, extreme).
+
+On the `/globe` side pane, the **Timeline** tab combines this keyset API with real-time SSE streams, displaying sticky "N new" pills for background arrivals, in-place update badges, and kind-specific detail drill-ins.

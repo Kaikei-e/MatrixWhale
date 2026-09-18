@@ -11,13 +11,17 @@ MatrixWhale is a distributed data management system designed for processing larg
 The project follows a microservices architecture with the following components:
 
 ### Core Services
-- **matrix_whale** (Port 8080, 6000) - Main Gleam service that handles data processing and API endpoints
+- **matrix_whale** (Port 8081:8080 streamer, 6000 receiver) - Main Gleam/BEAM service handling intake pipelines, canonical models, REST/SSE streaming, and timeline keyset pagination
 - **federation_orchestrator** (Port 5000) - Go service that manages service coordination using gRPC/protobuf
-- **noaa_adapter** (No exposed port) - Go service adapter for NOAA data integration
-- **rss_feed_adapter** (Port 8086) - Go service for RSS feed processing
-- **web** (Port 4173) - SvelteKit frontend application with TypeScript
-- **proxy** (Port 80) - Nginx proxy for routing requests
-- **db** (Port 5432) - PostgreSQL database
+- **noaa_adapter** (No exposed port) - Go service adapter for NOAA/NWS active alerts polling
+- **usgs_adapter** (No exposed port) - Go service adapter for USGS earthquake feeds (startup `all_week` backfill, `all_day` polling with conditional GET)
+- **emsc_adapter** (No exposed port) - Go service adapter for EMSC real-time WebSocket feed (`wss://www.seismicportal.eu/standing_order/websocket`) and FDSN backfill/gap-fill
+- **gdacs_adapter** (No exposed port) - Go service adapter for GDACS multi-hazard polling (5-minute cycle) and core-driven pending geometry fetching (10s rate limiter)
+- **rss_feed_adapter** (Port 8086:8085) - Go service for RSS feed processing
+- **web** (Port 4174:4173) - SvelteKit frontend application with TypeScript, MapLibre nautical chart (`/globe`), tabbed side pane (Timeline, Earthquakes, Hazards, Alerts, Feed)
+- **proxy** (Port 8180:80, 9190:9090) - Plecto reverse proxy routing `/api` to streamer and `/` to web
+- **db** (Port 5440:5432) - PostgreSQL 18 + PostGIS 3.6 database (`postgis/postgis:18-3.6`, storage `./db/data18`)
+- **migrate** - Atlas runner applying versioned migrations from `db/migrations/` before `matrix_whale` starts
 
 All services run in Docker containers with a custom network (10.254.100.0/24) for inter-service communication.
 
@@ -42,7 +46,7 @@ cd matrix_whale/matrix_whale
 # Build the project
 gleam build
 
-# Run tests
+# Run unit tests
 gleam test
 
 # Format code
@@ -50,6 +54,24 @@ gleam format
 
 # Run the application
 gleam run
+```
+
+### Database & Integration Testing
+```bash
+# Check migration status
+make db-status
+
+# Generate a new versioned migration from db/schema.sql
+make db-diff name=<change_name>
+
+# Apply pending migrations locally
+make db-apply
+
+# Run full Gleam integration test suite against a throwaway PostGIS container
+make test-core
+
+# Validate Architecture Decision Records (ADR) graph with DocDag
+make adr-validate
 ```
 
 ### Web Frontend (SvelteKit)
@@ -68,7 +90,7 @@ npm run build
 # Preview production build
 npm run preview
 
-# Run tests
+# Run tests (Playwright + Vitest)
 npm run test
 
 # Type checking
@@ -88,53 +110,67 @@ make buf_generate
 make copy_proto_ts
 ```
 
-### Go Services
+### Go Services & Adapters
 ```bash
-# For noaa_adapter, rss_feed_adapter, federation_orchestrator
-cd [service_directory]/[service_name]
+# Shared adapter library
+cd adapters/common && go test ./...
 
-# Build
-go build
+# NOAA adapter
+cd noaa_adapter/app && go test ./...
 
-# Run
-go run main.go
+# USGS adapter
+cd usgs_adapter/app && go test -race ./...
 
-# Test
-go test ./...
+# EMSC adapter
+cd emsc_adapter/app && go test -race ./...
+
+# GDACS adapter
+cd gdacs_adapter/app && go test -race ./...
+
+# RSS feed adapter & Federation orchestrator
+cd rss_feed_adapter/rss_feed_adapter && go test ./...
+cd federation_orchestrator/federation_orchestrator && go test ./...
 ```
 
 ## Key Directories and Files
 
 ### Gleam Projects
 - `matrix_whale/matrix_whale/` - Main Gleam application with dependency management in `gleam.toml`
-- `matrix_whale/matrix_whale/src/` - Gleam source code
-- `matrix_whale/matrix_whale/test/` - Gleam tests
+- `matrix_whale/matrix_whale/src/` - Gleam source code (intake pipelines, canonical event matching, domain models, streamer, receiver)
+- `matrix_whale/matrix_whale/test/` - Gleam unit and integration tests
 
 ### Web Frontend
 - `web/app/` - SvelteKit application
-- `web/app/src/` - Frontend source code
+- `web/app/src/` - Frontend source code (MapLibre nautical chart `/globe`, tabbed side pane, stores for alerts/earthquakes/hazards/timeline)
 - `web/app/src/gen/` - Generated protobuf files from federation orchestrator
+- `web/app/tests/` - Vitest unit tests and Playwright integration tests
 
-### Go Services
-- `noaa_adapter/app/` - Go NOAA adapter with `go.mod`
+### Go Services and Adapters
+- `adapters/common/` - Shared adapter utilities (core HTTP client, backoff, acknowledgments, logging, User-Agent)
+- `noaa_adapter/app/` - Go NOAA active alerts polling adapter
+- `usgs_adapter/app/` - Go USGS earthquake feed adapter
+- `emsc_adapter/app/` - Go EMSC real-time WebSocket and FDSN backfill adapter
+- `gdacs_adapter/app/` - Go GDACS multi-hazard polling and pending geometry adapter
 - `rss_feed_adapter/rss_feed_adapter/` - Go RSS feed service with `go.mod`
 - `federation_orchestrator/federation_orchestrator/` - Go orchestrator with gRPC/protobuf definitions
 
-### Infrastructure
-- `compose.yaml` - Docker Compose configuration for all services
-- `Makefile` - Build automation for protobuf generation
-- `db/` - PostgreSQL database configuration and initialization scripts
-- `proxy/` - Nginx proxy configuration
-- `docs/ADR/` - Architecture decision records validated by DocDag (`docdag.yaml` at the repo root)
+### Infrastructure & Database
+- `compose.yaml` - Docker Compose configuration for all services and network `10.254.100.0/24`
+- `Makefile` - Build and test automation (db migrations, test-core, adr-validate, protobuf)
+- `db/schema.sql` - Desired state SQL schema for the `sea` database
+- `db/migrations/` - Atlas-managed versioned migrations
+- `db/data18/` - Host mount directory for PostgreSQL 18 + PostGIS 3.6 data
+- `proxy/` - Plecto reverse proxy configuration and source
+- `docs/ADR/` - Architecture Decision Records validated by DocDag (`docdag.yaml` at the repo root)
 
 ## Development Workflow
 
-1. **Protobuf Changes**: When modifying gRPC definitions, run `make buf_generate` and `make copy_proto_ts` to regenerate code
-2. **Database Changes**: Edit `db/schema.sql`, run `make db-diff name=<change>` to generate a migration under `db/migrations/`, review it, then `docker compose up` applies it via the `migrate` service
-3. **Gleam Development**: Use standard Gleam workflow with `gleam build`, `gleam test`, `gleam format`
-4. **Frontend Development**: Standard Node.js workflow with package.json scripts
-5. **Go Services**: Standard Go development with modules
-6. **Decision records**: ADRs live in `docs/ADR/` as `NNNN-kebab-title.md` (copy `docs/ADR/template.md`); `docdag validate` from the repo root checks the frontmatter graph (`supersedes` / `depends-on`) and CI runs it. Install with `go install github.com/Kaikei-e/DocDag/cmd/docdag@v0.4.1`
+1. **Architecture Decisions**: Record major changes in `docs/ADR/` using `docs/ADR/template.md`. Run `make adr-validate` to check frontmatter dependencies.
+2. **Database Changes**: Edit `db/schema.sql`, run `make db-diff name=<change>` to generate a migration under `db/migrations/`, review the SQL, and verify with `make test-core`. The `migrate` compose service applies pending migrations on container boot.
+3. **Gleam Development**: Follow Gleam OTP/Wisp/Mist patterns. Place domain logic in pure functions under `src/domain/` and database queries under `src/repository/`. Run `gleam test` and `make test-core`.
+4. **Go Adapters**: Inherit shared behaviors (exponential backoff, core client POST, structured logging) from `adapters/common`. Ensure `-race` tests pass.
+5. **Frontend Development**: SvelteKit 5 runes (`$state`, `$derived`, `$effect`). Maintain tab synchronization in `src/lib/pane/state.ts` and test with `npm run test`.
+6. **Protobuf Changes**: When modifying gRPC definitions, run `make buf_generate` and `make copy_proto_ts` to regenerate code.
 
 ## Environment Setup
 
@@ -144,7 +180,7 @@ go test ./...
 
 ## Testing
 
-- **Gleam**: `gleam test` in matrix_whale/matrix_whale/
-- **Frontend**: `npm run test` (includes Playwright integration tests and Vitest unit tests)
-- **Go Services**: `go test ./...` in respective service directories
-- **Integration**: Web testing available in `testing/web/` with Playwright configuration
+- **Gleam**: `gleam test` in `matrix_whale/matrix_whale/` (unit tests) and `make test-core` at root (database integration tests)
+- **Frontend**: `npm run test` in `web/app/` (Playwright integration tests and Vitest unit tests), `npm run check`
+- **Go Services**: `go test -race ./...` in respective adapter directories
+- **Architecture Validation**: `make adr-validate` verifies ADR graph validity using DocDag
