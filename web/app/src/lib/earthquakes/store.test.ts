@@ -115,7 +115,7 @@ describe('EarthquakeStore', () => {
 	});
 
 	it('waits until SSE is open before loading the initial snapshot', async () => {
-		fetchMock.mockResolvedValue(new Response(JSON.stringify([])));
+		fetchMock.mockResolvedValue(new Response(JSON.stringify({ earthquakes: [] })));
 		const store = new EarthquakeStore();
 		await store.connect('/recent', '/stream');
 
@@ -141,7 +141,7 @@ describe('EarthquakeStore', () => {
 		stream.open();
 		const newer = makeEarthquake({ updated_at_ms: 20 });
 		stream.emit('new', newer);
-		resolveSnapshot!(new Response(JSON.stringify([makeEarthquake({ updated_at_ms: 10 })])));
+		resolveSnapshot!(new Response(JSON.stringify({ earthquakes: [makeEarthquake({ updated_at_ms: 10 })] })));
 		await settle();
 
 		expect(store.earthquakes.get(1)?.updated_at_ms).toBe(20);
@@ -153,8 +153,8 @@ describe('EarthquakeStore', () => {
 		const first = makeEarthquake({ id: 1 });
 		const removed = makeEarthquake({ id: 2 });
 		fetchMock
-			.mockResolvedValueOnce(new Response(JSON.stringify([first, removed])))
-			.mockResolvedValueOnce(new Response(JSON.stringify([first])));
+			.mockResolvedValueOnce(new Response(JSON.stringify({ earthquakes: [first, removed] })))
+			.mockResolvedValueOnce(new Response(JSON.stringify({ earthquakes: [first] })));
 		const store = new EarthquakeStore();
 		await store.connect('/recent', '/stream');
 		const stream = FakeEventSource.instances[0];
@@ -169,7 +169,7 @@ describe('EarthquakeStore', () => {
 	});
 
 	it('removes events when an update is deleted or stops matching the filter', async () => {
-		fetchMock.mockResolvedValue(new Response(JSON.stringify([])));
+		fetchMock.mockResolvedValue(new Response(JSON.stringify({ earthquakes: [] })));
 		const store = new EarthquakeStore();
 		await store.connect('/recent', '/stream');
 		const stream = FakeEventSource.instances[0];
@@ -189,7 +189,7 @@ describe('EarthquakeStore', () => {
 	});
 
 	it('applies a higher-revision update and ignores a lower-revision one, keyed by id', async () => {
-		fetchMock.mockResolvedValue(new Response(JSON.stringify([])));
+		fetchMock.mockResolvedValue(new Response(JSON.stringify({ earthquakes: [] })));
 		const store = new EarthquakeStore();
 		await store.connect('/recent', '/stream');
 		const stream = FakeEventSource.instances[0];
@@ -209,9 +209,9 @@ describe('EarthquakeStore', () => {
 
 	it('uses ETags per filter URL and does not flash a backfill event', async () => {
 		fetchMock
-			.mockResolvedValueOnce(new Response(JSON.stringify([]), { headers: { etag: '"24h"' } }))
+			.mockResolvedValueOnce(new Response(JSON.stringify({ earthquakes: [] }), { headers: { etag: '"24h"' } }))
 			.mockResolvedValueOnce(new Response(null, { status: 304 }))
-			.mockResolvedValueOnce(new Response(JSON.stringify([])));
+			.mockResolvedValueOnce(new Response(JSON.stringify({ earthquakes: [] })));
 		const store = new EarthquakeStore();
 		await store.connect('/recent', '/stream');
 		const stream = FakeEventSource.instances[0];
@@ -236,9 +236,9 @@ describe('EarthquakeStore', () => {
 			occurred_at_ms: Date.now() - 48 * 60 * 60 * 1000
 		});
 		fetchMock
-			.mockResolvedValueOnce(new Response(JSON.stringify([recent]), { headers: { etag: '"24h"' } }))
+			.mockResolvedValueOnce(new Response(JSON.stringify({ earthquakes: [recent] }), { headers: { etag: '"24h"' } }))
 			.mockResolvedValueOnce(
-				new Response(JSON.stringify([recent, weekOnly]), { headers: { etag: '"7d"' } })
+				new Response(JSON.stringify({ earthquakes: [recent, weekOnly] }), { headers: { etag: '"7d"' } })
 			)
 			.mockResolvedValueOnce(new Response(null, { status: 304 }))
 			.mockResolvedValueOnce(new Response(null, { status: 304 }));
@@ -280,7 +280,7 @@ describe('EarthquakeStore', () => {
 
 	it('includes null magnitudes only when the all-magnitudes API filter is selected', async () => {
 		const unknownMagnitude = makeEarthquake({ id: 5, magnitude: null });
-		fetchMock.mockResolvedValue(new Response(JSON.stringify([unknownMagnitude])));
+		fetchMock.mockResolvedValue(new Response(JSON.stringify({ earthquakes: [unknownMagnitude] })));
 		const store = new EarthquakeStore();
 		await store.connect('/recent', '/stream', { minMagnitude: 'all' });
 		FakeEventSource.instances[0].open();
@@ -296,8 +296,8 @@ describe('EarthquakeStore', () => {
 	it('hides a quarry blast under the default filter and shows it with eventType "all"', async () => {
 		const blast = makeEarthquake({ id: 6, event_type: 'quarry blast' });
 		fetchMock
-			.mockResolvedValueOnce(new Response(JSON.stringify([blast])))
-			.mockResolvedValueOnce(new Response(JSON.stringify([blast])));
+			.mockResolvedValueOnce(new Response(JSON.stringify({ earthquakes: [blast] })))
+			.mockResolvedValueOnce(new Response(JSON.stringify({ earthquakes: [blast] })));
 		const store = new EarthquakeStore();
 		await store.connect('/recent', '/stream');
 		FakeEventSource.instances[0].open();

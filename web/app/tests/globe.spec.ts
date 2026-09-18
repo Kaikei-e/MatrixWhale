@@ -247,7 +247,7 @@ async function mockBackend(page: Page): Promise<void> {
 	);
 	await page.route('**/api/v1/alerts/history**', (route) => route.fulfill({ json: [] }));
 	await page.route('**/api/v1/earthquakes/recent**', (route) =>
-		route.fulfill({ json: EARTHQUAKES })
+		route.fulfill({ json: { earthquakes: EARTHQUAKES } })
 	);
 	await page.route('**/api/v1/earthquakes/stream', (route) =>
 		route.fulfill({ contentType: 'text/event-stream', body: 'event: heartbeat\ndata: {}\n\n' })

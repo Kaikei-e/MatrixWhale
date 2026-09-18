@@ -175,7 +175,7 @@ export class EarthquakeStore {
 				return;
 			}
 			if (!response.ok) throw new Error(`snapshot request failed with status ${response.status}`);
-			const earthquakes = (await response.json()) as Earthquake[];
+			const { earthquakes } = (await response.json()) as { earthquakes: Earthquake[] };
 			if (
 				generation !== this.#generation ||
 				filterRevision !== this.#filterRevision ||
