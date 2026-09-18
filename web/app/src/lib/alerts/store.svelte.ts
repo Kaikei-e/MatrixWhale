@@ -1,5 +1,12 @@
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { SEVERITIES, type Alert, type BlinkMode, type BlinkState, type Severity } from './types';
+import {
+	SEVERITIES,
+	type Alert,
+	type BlinkMode,
+	type BlinkState,
+	type RawAlertEvent,
+	type Severity
+} from './types';
 import { sortByNwsPriority } from './priority';
 import { loadAcknowledged, saveAcknowledged, loadFlag, saveFlag } from './storage';
 
@@ -28,6 +35,7 @@ export class AlertStore {
 	#snapshotUrl: string | undefined;
 	#alertTimers = new SvelteMap<string, ReturnType<typeof setTimeout>>();
 	#watchdog: ReturnType<typeof setTimeout> | undefined;
+	#rawListeners = new SvelteSet<(event: RawAlertEvent) => void>();
 
 	get stopAll(): boolean {
 		return this.#stopAll;
@@ -110,6 +118,16 @@ export class AlertStore {
 		if (this.#snapshotUrl) void this.#loadSnapshot(this.#snapshotUrl);
 	}
 
+	/** Raw SSE payloads for the unified timeline, delivered before this store's own filtering. */
+	subscribeRaw(listener: (event: RawAlertEvent) => void): () => void {
+		this.#rawListeners.add(listener);
+		return () => this.#rawListeners.delete(listener);
+	}
+
+	#emitRaw(event: RawAlertEvent): void {
+		for (const listener of this.#rawListeners) listener(event);
+	}
+
 	async #loadSnapshot(url: string): Promise<void> {
 		try {
 			const response = await fetch(url);
@@ -149,6 +167,7 @@ export class AlertStore {
 
 	#handleNew = (event: MessageEvent<string>): void => {
 		const alert = JSON.parse(event.data) as Alert;
+		this.#emitRaw({ type: 'new', record: alert });
 		this.activeAlerts.set(alert.id, alert);
 		this.blink.set(alert.id, { mode: 'arrival', until: performance.now() + ARRIVAL_MS });
 		this.#clearAlertTimer(alert.id);
@@ -162,6 +181,7 @@ export class AlertStore {
 
 	#handleUpdate = (event: MessageEvent<string>): void => {
 		const alert = JSON.parse(event.data) as Alert;
+		this.#emitRaw({ type: 'update', record: alert });
 		this.activeAlerts.set(alert.id, alert);
 		this.blink.set(alert.id, { mode: 'update', until: performance.now() + UPDATE_MS });
 		this.#clearAlertTimer(alert.id);
@@ -175,6 +195,7 @@ export class AlertStore {
 
 	#handleEnded = (event: MessageEvent<string>): void => {
 		const alert = JSON.parse(event.data) as Alert;
+		this.#emitRaw({ type: 'ended', record: alert });
 		this.activeAlerts.set(alert.id, alert);
 		this.blink.set(alert.id, { mode: 'fading', until: performance.now() + ENDED_MS });
 		this.#clearAlertTimer(alert.id);

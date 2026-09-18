@@ -50,3 +50,9 @@ export interface HistoryBucket {
 	hour_start: string;
 	counts: Record<Severity, number>;
 }
+
+/** Raw SSE payload, exposed before the store applies acknowledgement/blink state. */
+export interface RawAlertEvent {
+	type: 'new' | 'update' | 'ended';
+	record: Alert;
+}

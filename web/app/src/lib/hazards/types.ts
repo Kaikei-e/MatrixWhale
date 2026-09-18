@@ -72,6 +72,10 @@ export interface HazardFilter {
 	levels: Set<AlertLevel>;
 }
 
+/** Raw SSE payload, exposed before the store applies its own type/level filter. */
+export type RawHazardEvent =
+	{ type: 'new'; record: Hazard } | { type: 'update'; record: Hazard } | { type: 'resync' };
+
 export const HAZARD_TYPES: HazardType[] = [
 	'earthquake',
 	'tropical_cyclone',

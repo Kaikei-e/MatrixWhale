@@ -251,6 +251,29 @@ describe('HazardStore', () => {
 		expect(detail).toBeNull();
 	});
 
+	it('subscribeRaw delivers the raw record even when the store filter would drop it', async () => {
+		fetchMock.mockResolvedValue(new Response(JSON.stringify({ hazards: [] })));
+		const store = new HazardStore();
+		await store.connect('/api/v1/hazards/recent', '/api/v1/hazards/stream');
+		const stream = FakeEventSource.instances[0];
+		stream.open();
+		await settle();
+
+		const received: Hazard[] = [];
+		const unsubscribe = store.subscribeRaw((event) => {
+			if (event.type === 'new') received.push(event.record);
+		});
+
+		// The default filter excludes GDACS earthquake hazards; the timeline still needs them.
+		const earthquakeHazard = makeHazard({ id: 'gdacs:EQ-1', hazard_type: 'earthquake' });
+		stream.emit('new', earthquakeHazard);
+
+		expect(received).toEqual([earthquakeHazard]);
+		expect(store.hazards.has('gdacs:EQ-1')).toBe(false);
+		unsubscribe();
+		store.disconnect();
+	});
+
 	it('fetches and exposes data sources for attribution', async () => {
 		fetchMock.mockResolvedValue(
 			new Response(

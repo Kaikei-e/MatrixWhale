@@ -83,3 +83,7 @@ export interface EarthquakeBlinkState {
 	mode: EarthquakeBlinkMode;
 	until: number | null;
 }
+
+/** Raw SSE payload, exposed before the store applies its own window/magnitude filter. */
+export type RawEarthquakeEvent =
+	{ type: 'new'; record: Earthquake } | { type: 'update'; record: Earthquake } | { type: 'resync' };

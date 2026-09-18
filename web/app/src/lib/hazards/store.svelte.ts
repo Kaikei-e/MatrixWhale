@@ -6,7 +6,8 @@ import {
 	HAZARD_TYPE_CODES,
 	type Hazard,
 	type HazardDetail,
-	type HazardFilter
+	type HazardFilter,
+	type RawHazardEvent
 } from './types';
 
 const HEARTBEAT_TIMEOUT_MS = 60000;
@@ -60,6 +61,7 @@ export class HazardStore {
 	#streamSequence = 0;
 	#streamSequenceByKey = new SvelteMap<string, number>();
 	#streamHazardByKey = new SvelteMap<string, Hazard>();
+	#rawListeners = new SvelteSet<(event: RawHazardEvent) => void>();
 
 	sorted = $derived.by(() =>
 		[...this.hazards.values()].sort((a, b) => b.modified_at_ms - a.modified_at_ms)
@@ -129,6 +131,16 @@ export class HazardStore {
 
 	retrySnapshot(): void {
 		void this.#loadSnapshot();
+	}
+
+	/** Raw SSE payloads for the unified timeline, delivered before this store's own filtering. */
+	subscribeRaw(listener: (event: RawHazardEvent) => void): () => void {
+		this.#rawListeners.add(listener);
+		return () => this.#rawListeners.delete(listener);
+	}
+
+	#emitRaw(event: RawHazardEvent): void {
+		for (const listener of this.#rawListeners) listener(event);
 	}
 
 	trim(): void {
@@ -275,14 +287,19 @@ export class HazardStore {
 	}
 
 	#handleNew = (event: MessageEvent<string>): void => {
-		this.#applyStreamHazard(JSON.parse(event.data) as Hazard);
+		const hazard = JSON.parse(event.data) as Hazard;
+		this.#emitRaw({ type: 'new', record: hazard });
+		this.#applyStreamHazard(hazard);
 	};
 
 	#handleUpdate = (event: MessageEvent<string>): void => {
-		this.#applyStreamHazard(JSON.parse(event.data) as Hazard);
+		const hazard = JSON.parse(event.data) as Hazard;
+		this.#emitRaw({ type: 'update', record: hazard });
+		this.#applyStreamHazard(hazard);
 	};
 
 	#handleResync = (): void => {
+		this.#emitRaw({ type: 'resync' });
 		void this.#loadSnapshot();
 	};
 

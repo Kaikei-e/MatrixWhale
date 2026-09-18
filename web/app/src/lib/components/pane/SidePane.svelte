@@ -3,7 +3,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { browser } from '$app/environment';
 	import { earthquakeStore } from '$lib/earthquakes/store.svelte';
-	import type { DataSource, EarthquakeMember } from '$lib/earthquakes/types';
+	import type { DataSource, Earthquake, EarthquakeMember } from '$lib/earthquakes/types';
 	import { hazardStore } from '$lib/hazards/store.svelte';
 	import {
 		ALERT_LEVELS,
@@ -11,10 +11,18 @@
 		HAZARD_TYPES,
 		HAZARD_TYPE_LABELS,
 		type AlertLevel,
+		type Hazard,
 		type HazardType
 	} from '$lib/hazards/types';
 	import { alertStore } from '$lib/alerts/store.svelte';
+	import type { Alert } from '$lib/alerts/types';
 	import { formatLocalDateTime } from '$lib/alerts/timeFormat';
+	import { timelineStore } from '$lib/timeline/store.svelte';
+	import type {
+		AlertTimelineItem,
+		EarthquakeTimelineItem,
+		HazardTimelineItem
+	} from '$lib/timeline/types';
 	import {
 		PANE_TAB_LABELS,
 		loadStoredTab,
@@ -36,6 +44,7 @@
 	import FilterChip from './FilterChip.svelte';
 	import ListRow from './ListRow.svelte';
 	import DetailHeader from './DetailHeader.svelte';
+	import TimelineList from './TimelineList.svelte';
 	import FeedPanel from '../FeedPanel.svelte';
 	import DetailPanel from '../DetailPanel.svelte';
 	import SseStatusDot from '../SseStatusDot.svelte';
@@ -79,6 +88,7 @@
 	let earthquakeListEl = $state<HTMLUListElement | undefined>();
 	let hazardListEl = $state<HTMLUListElement | undefined>();
 	let alertListEl = $state<HTMLUListElement | undefined>();
+	let timelineListEl = $state<HTMLUListElement | undefined>();
 	const pendingFocus: Partial<Record<PaneTab, string | null>> = {};
 
 	let lastEarthquakeId: number | null = null;
@@ -107,6 +117,7 @@
 	);
 
 	const counts = $derived<Record<PaneTab, number>>({
+		timeline: timelineStore.items.length + timelineStore.pending.length,
 		earthquakes: earthquakeStore.sorted.length,
 		hazards: hazardStore.sorted.length,
 		alerts: alertStore.sorted.length,
@@ -222,16 +233,26 @@
 		onSelectAlert(id);
 	}
 
+	// Rows in the unified timeline are keyed as "<kind>:<id>", not the raw id the
+	// per-kind tabs use, so the remembered focus target must match whichever
+	// list is about to reappear.
 	function closeEarthquake(): void {
-		pendingFocus.earthquakes = selectedEarthquakeId !== null ? String(selectedEarthquakeId) : null;
+		const id = selectedEarthquakeId !== null ? String(selectedEarthquakeId) : null;
+		pendingFocus[activeTab] = activeTab === 'timeline' && id !== null ? `earthquake:${id}` : id;
 		onCloseEarthquake();
 	}
 	function closeHazard(): void {
-		pendingFocus.hazards = selectedHazardId;
+		pendingFocus[activeTab] =
+			activeTab === 'timeline' && selectedHazardId !== null
+				? `hazard:${selectedHazardId}`
+				: selectedHazardId;
 		onCloseHazard();
 	}
 	function closeAlert(): void {
-		pendingFocus[activeTab] = selectedAlertId;
+		pendingFocus[activeTab] =
+			activeTab === 'timeline' && selectedAlertId !== null
+				? `alert:${selectedAlertId}`
+				: selectedAlertId;
 		onCloseAlert();
 	}
 
@@ -265,13 +286,70 @@
 		}
 	});
 
-	const detailOpen = $derived(
-		isDetailOpen(activeTab, {
-			earthquakeId: selectedEarthquakeId,
-			hazardId: selectedHazardId,
-			alertId: selectedAlertId
-		})
-	);
+	const selection = $derived({
+		earthquakeId: selectedEarthquakeId,
+		hazardId: selectedHazardId,
+		alertId: selectedAlertId
+	});
+
+	const detailOpen = $derived(isDetailOpen(activeTab, selection));
+	// The timeline tab can show any of the three kinds; this is both which
+	// detail it renders and which one Escape/back closes, kept in sync by
+	// construction since both read the same closeKindForTab priority.
+	const timelineDetailOpen = $derived(isDetailOpen('timeline', selection));
+	const timelineDetailKind = $derived(closeKindForTab('timeline', selection));
+
+	// The record embedded in a timeline row survives eviction from the live
+	// per-kind stores (7-day earthquake retention, ended alerts, non-current
+	// hazards), so a drill-in from the timeline tab prefers it and only falls
+	// back to the live store for an id the timeline hasn't loaded yet.
+	const timelineSelectedEarthquake = $derived.by(() => {
+		if (selectedEarthquakeId === null) return null;
+		const key = `earthquake:${selectedEarthquakeId}`;
+		const item = [...timelineStore.items, ...timelineStore.pending].find(
+			(candidate): candidate is EarthquakeTimelineItem =>
+				candidate.kind === 'earthquake' && candidate.key === key
+		);
+		return item?.earthquake ?? selectedEarthquake;
+	});
+	const timelineSelectedHazard = $derived.by(() => {
+		if (selectedHazardId === null) return null;
+		const key = `hazard:${selectedHazardId}`;
+		const item = [...timelineStore.items, ...timelineStore.pending].find(
+			(candidate): candidate is HazardTimelineItem =>
+				candidate.kind === 'hazard' && candidate.key === key
+		);
+		return item?.hazard ?? selectedHazard;
+	});
+	const timelineSelectedAlert = $derived.by(() => {
+		if (selectedAlertId === null) return null;
+		const key = `alert:${selectedAlertId}`;
+		const item = [...timelineStore.items, ...timelineStore.pending].find(
+			(candidate): candidate is AlertTimelineItem =>
+				candidate.kind === 'alert' && candidate.key === key
+		);
+		return item?.alert ?? selectedAlert;
+	});
+
+	$effect(() => {
+		if (timelineDetailOpen || !timelineListEl) return;
+		timelineListEl.scrollTop = scrollMemory.recall('timeline');
+		const focusId = pendingFocus.timeline;
+		if (focusId) {
+			timelineListEl.querySelector<HTMLElement>(`[data-row-id="${focusId}"]`)?.focus();
+			pendingFocus.timeline = null;
+		}
+	});
+
+	$effect(() => {
+		if (!timelineListEl) return;
+		const list = timelineListEl;
+		const handleScroll = (event: Event): void => {
+			scrollMemory.remember('timeline', (event.currentTarget as HTMLElement).scrollTop);
+		};
+		list.addEventListener('scroll', handleScroll);
+		return () => list.removeEventListener('scroll', handleScroll);
+	});
 
 	// A drill-in removes the row that had focus, so Escape can't rely on
 	// bubbling through the pane; listen on window only while a detail is open.
@@ -279,7 +357,7 @@
 		if (!browser || !detailOpen) return;
 		const handleEscape = (event: KeyboardEvent): void => {
 			if (event.key !== 'Escape') return;
-			const kind = closeKindForTab(activeTab);
+			const kind = closeKindForTab(activeTab, selection);
 			if (kind === 'earthquake') closeEarthquake();
 			else if (kind === 'hazard') closeHazard();
 			else closeAlert();
@@ -289,18 +367,122 @@
 	});
 </script>
 
-{#snippet alertDetail()}
-	{#if selectedAlert}
-		<DetailHeader title={selectedAlert.event} onback={closeAlert} />
-		<div class="min-h-0 flex-1 overflow-y-auto">
-			<DetailPanel
-				alert={selectedAlert}
-				onclose={closeAlert}
-				onacknowledge={() => onAcknowledgeAlert(selectedAlert.id)}
-				showHeader={false}
-			/>
+{#snippet earthquakeDetail(earthquake: Earthquake)}
+	<DetailHeader
+		title={earthquake.place ?? earthquake.title ?? 'Unknown location'}
+		onback={closeEarthquake}
+	/>
+	<div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-3 text-sm">
+		<p class="text-amber text-base font-semibold">
+			{magnitudeLabel(earthquake.magnitude)}
+		</p>
+		<p class="tabular text-ink-2 text-xs">
+			<time datetime={earthquake.occurred_at} title={earthquake.occurred_at}
+				>{formatLocalDateTime(earthquake.occurred_at)}</time
+			>
+			· {earthquake.depth_km === null ? 'Depth —' : `Depth ${earthquake.depth_km.toFixed(1)} km`}
+		</p>
+		<p class="tabular text-ink-2 text-xs">
+			{earthquake.latitude.toFixed(3)}°, {earthquake.longitude.toFixed(3)}° · {earthquake.status ??
+				'status unavailable'}
+		</p>
+		{#if earthquake.tsunami === 1}
+			<p class="text-ink-2 text-xs">USGS tsunami screening flag; this is not a tsunami warning.</p>
+		{/if}
+		<ul class="flex flex-col gap-0.5">
+			{#each earthquake.members as member (member.source + member.source_id)}
+				<li class="text-ink-2 text-xs">{memberLabel(member)}</li>
+			{/each}
+		</ul>
+		{#if earthquake.url}
+			<a
+				href={earthquake.url}
+				target="_blank"
+				rel="external noopener noreferrer"
+				class="border-ink-2/30 hover:bg-shoal w-fit border px-2 py-1 text-xs"
+				>{earthquake.preferred_source.toUpperCase()} event</a
+			>
+		{/if}
+		<div data-testid="earthquake-event-sources" class="flex flex-col gap-0.5">
+			{#each earthquake.sources as sourceId (sourceId)}
+				{@const source = earthquakeStore.sources.get(sourceId)}
+				{#if source}
+					<a
+						href={source.homepage}
+						target="_blank"
+						rel="external noopener noreferrer"
+						class="text-ink-2 text-xs hover:underline">{source.attribution_text}</a
+					>
+				{/if}
+			{/each}
 		</div>
-	{/if}
+	</div>
+{/snippet}
+
+{#snippet hazardDetail(hazard: Hazard)}
+	<DetailHeader title={hazard.title} onback={closeHazard} />
+	<div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-3 text-sm">
+		<p class="tabular text-ink-2 flex items-center gap-1 text-xs">
+			<span
+				class="inline-block h-2 w-2 rounded-full"
+				style:background-color={ALERT_LEVEL_COLORS[hazard.alert_level]}
+				aria-hidden="true"
+			></span>
+			{HAZARD_TYPE_LABELS[hazard.hazard_type]} · {levelLabel(hazard.alert_level)}
+			{#if hazard.severity_label}
+				· {hazard.severity_label}
+			{/if}
+		</p>
+		<p>{hazard.description}</p>
+		<p class="tabular text-ink-2 text-xs">
+			Onset <time datetime={hazard.onset_at} title={hazard.onset_at}
+				>{formatLocalDateTime(hazard.onset_at)}</time
+			>
+			· Expires
+			<time datetime={hazard.expires_at} title={hazard.expires_at}
+				>{formatLocalDateTime(hazard.expires_at)}</time
+			>
+		</p>
+		<p class="tabular text-ink-2 text-xs">
+			{hazard.countries.join(', ') || 'Countries unknown'} · Episode {hazard.episode_count}
+		</p>
+		{#if hazard.external_ids.length > 0}
+			<ul class="flex flex-col gap-0.5">
+				{#each hazard.external_ids as externalId (externalId)}
+					<li class="text-ink-2 text-xs">{externalIdLabel(externalId)}</li>
+				{/each}
+			</ul>
+		{/if}
+		{#if hazard.report_url}
+			<a
+				href={hazard.report_url}
+				target="_blank"
+				rel="external noopener noreferrer"
+				class="border-ink-2/30 hover:bg-shoal w-fit border px-2 py-1 text-xs">GDACS report</a
+			>
+		{/if}
+		{#if hazardStore.sources.get(hazard.source)}
+			{@const source = hazardStore.sources.get(hazard.source)}
+			<a
+				href={source!.homepage}
+				target="_blank"
+				rel="external noopener noreferrer"
+				class="text-ink-2 text-xs hover:underline">{source!.attribution_text}</a
+			>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet alertDetail(alert: Alert)}
+	<DetailHeader title={alert.event} onback={closeAlert} />
+	<div class="min-h-0 flex-1 overflow-y-auto">
+		<DetailPanel
+			{alert}
+			onclose={closeAlert}
+			onacknowledge={() => onAcknowledgeAlert(alert.id)}
+			showHeader={false}
+		/>
+	</div>
 {/snippet}
 
 <div
@@ -320,6 +502,33 @@
 			</div>
 		{/if}
 
+		{#if activeTab === 'timeline'}
+			<div
+				id="pane-panel-timeline"
+				role="tabpanel"
+				aria-labelledby="pane-tab-timeline"
+				class="flex h-full min-h-0 flex-col"
+			>
+				{#if timelineDetailOpen}
+					{#if timelineDetailKind === 'earthquake' && timelineSelectedEarthquake}
+						{@render earthquakeDetail(timelineSelectedEarthquake)}
+					{:else if timelineDetailKind === 'hazard' && timelineSelectedHazard}
+						{@render hazardDetail(timelineSelectedHazard)}
+					{:else if timelineDetailKind === 'alert' && timelineSelectedAlert}
+						{@render alertDetail(timelineSelectedAlert)}
+					{/if}
+				{:else}
+					<TimelineList
+						bind:listEl={timelineListEl}
+						{now}
+						onSelectEarthquake={openEarthquake}
+						onSelectHazard={openHazard}
+						onSelectAlert={openAlert}
+					/>
+				{/if}
+			</div>
+		{/if}
+
 		{#if activeTab === 'earthquakes'}
 			<div
 				id="pane-panel-earthquakes"
@@ -328,59 +537,7 @@
 				class="flex h-full min-h-0 flex-col"
 			>
 				{#if selectedEarthquake}
-					<DetailHeader
-						title={selectedEarthquake.place ?? selectedEarthquake.title ?? 'Unknown location'}
-						onback={closeEarthquake}
-					/>
-					<div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-3 text-sm">
-						<p class="text-amber text-base font-semibold">
-							{magnitudeLabel(selectedEarthquake.magnitude)}
-						</p>
-						<p class="tabular text-ink-2 text-xs">
-							<time datetime={selectedEarthquake.occurred_at} title={selectedEarthquake.occurred_at}
-								>{formatLocalDateTime(selectedEarthquake.occurred_at)}</time
-							>
-							· {selectedEarthquake.depth_km === null
-								? 'Depth —'
-								: `Depth ${selectedEarthquake.depth_km.toFixed(1)} km`}
-						</p>
-						<p class="tabular text-ink-2 text-xs">
-							{selectedEarthquake.latitude.toFixed(3)}°, {selectedEarthquake.longitude.toFixed(3)}°
-							· {selectedEarthquake.status ?? 'status unavailable'}
-						</p>
-						{#if selectedEarthquake.tsunami === 1}
-							<p class="text-ink-2 text-xs">
-								USGS tsunami screening flag; this is not a tsunami warning.
-							</p>
-						{/if}
-						<ul class="flex flex-col gap-0.5">
-							{#each selectedEarthquake.members as member (member.source + member.source_id)}
-								<li class="text-ink-2 text-xs">{memberLabel(member)}</li>
-							{/each}
-						</ul>
-						{#if selectedEarthquake.url}
-							<a
-								href={selectedEarthquake.url}
-								target="_blank"
-								rel="external noopener noreferrer"
-								class="border-ink-2/30 hover:bg-shoal w-fit border px-2 py-1 text-xs"
-								>{selectedEarthquake.preferred_source.toUpperCase()} event</a
-							>
-						{/if}
-						<div data-testid="earthquake-event-sources" class="flex flex-col gap-0.5">
-							{#each selectedEarthquake.sources as sourceId (sourceId)}
-								{@const source = earthquakeStore.sources.get(sourceId)}
-								{#if source}
-									<a
-										href={source.homepage}
-										target="_blank"
-										rel="external noopener noreferrer"
-										class="text-ink-2 text-xs hover:underline">{source.attribution_text}</a
-									>
-								{/if}
-							{/each}
-						</div>
-					</div>
+					{@render earthquakeDetail(selectedEarthquake)}
 				{:else}
 					<div class="border-ink-2/30 shrink-0 border-b px-3 py-2">
 						<div class="flex items-center justify-between gap-2">
@@ -498,60 +655,7 @@
 				class="flex h-full min-h-0 flex-col"
 			>
 				{#if selectedHazard}
-					<DetailHeader title={selectedHazard.title} onback={closeHazard} />
-					<div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-3 text-sm">
-						<p class="tabular text-ink-2 flex items-center gap-1 text-xs">
-							<span
-								class="inline-block h-2 w-2 rounded-full"
-								style:background-color={ALERT_LEVEL_COLORS[selectedHazard.alert_level]}
-								aria-hidden="true"
-							></span>
-							{HAZARD_TYPE_LABELS[selectedHazard.hazard_type]} · {levelLabel(
-								selectedHazard.alert_level
-							)}
-							{#if selectedHazard.severity_label}
-								· {selectedHazard.severity_label}
-							{/if}
-						</p>
-						<p>{selectedHazard.description}</p>
-						<p class="tabular text-ink-2 text-xs">
-							Onset <time datetime={selectedHazard.onset_at} title={selectedHazard.onset_at}
-								>{formatLocalDateTime(selectedHazard.onset_at)}</time
-							>
-							· Expires
-							<time datetime={selectedHazard.expires_at} title={selectedHazard.expires_at}
-								>{formatLocalDateTime(selectedHazard.expires_at)}</time
-							>
-						</p>
-						<p class="tabular text-ink-2 text-xs">
-							{selectedHazard.countries.join(', ') || 'Countries unknown'} · Episode {selectedHazard.episode_count}
-						</p>
-						{#if selectedHazard.external_ids.length > 0}
-							<ul class="flex flex-col gap-0.5">
-								{#each selectedHazard.external_ids as externalId (externalId)}
-									<li class="text-ink-2 text-xs">{externalIdLabel(externalId)}</li>
-								{/each}
-							</ul>
-						{/if}
-						{#if selectedHazard.report_url}
-							<a
-								href={selectedHazard.report_url}
-								target="_blank"
-								rel="external noopener noreferrer"
-								class="border-ink-2/30 hover:bg-shoal w-fit border px-2 py-1 text-xs"
-								>GDACS report</a
-							>
-						{/if}
-						{#if hazardStore.sources.get(selectedHazard.source)}
-							{@const source = hazardStore.sources.get(selectedHazard.source)}
-							<a
-								href={source!.homepage}
-								target="_blank"
-								rel="external noopener noreferrer"
-								class="text-ink-2 text-xs hover:underline">{source!.attribution_text}</a
-							>
-						{/if}
-					</div>
+					{@render hazardDetail(selectedHazard)}
 				{:else}
 					<div class="border-ink-2/30 shrink-0 border-b px-3 py-2">
 						<div class="flex items-center justify-between gap-2">
@@ -648,7 +752,7 @@
 				class="flex h-full min-h-0 flex-col"
 			>
 				{#if selectedAlert}
-					{@render alertDetail()}
+					{@render alertDetail(selectedAlert)}
 				{:else}
 					<div
 						class="border-ink-2/30 flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2"
@@ -701,7 +805,7 @@
 				class="flex h-full min-h-0 flex-col"
 			>
 				{#if selectedAlert}
-					{@render alertDetail()}
+					{@render alertDetail(selectedAlert)}
 				{:else}
 					<FeedPanel selectedId={selectedAlertId} onselect={openAlert} />
 				{/if}

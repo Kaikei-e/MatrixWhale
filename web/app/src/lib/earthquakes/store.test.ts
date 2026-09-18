@@ -141,7 +141,9 @@ describe('EarthquakeStore', () => {
 		stream.open();
 		const newer = makeEarthquake({ updated_at_ms: 20 });
 		stream.emit('new', newer);
-		resolveSnapshot!(new Response(JSON.stringify({ earthquakes: [makeEarthquake({ updated_at_ms: 10 })] })));
+		resolveSnapshot!(
+			new Response(JSON.stringify({ earthquakes: [makeEarthquake({ updated_at_ms: 10 })] }))
+		);
 		await settle();
 
 		expect(store.earthquakes.get(1)?.updated_at_ms).toBe(20);
@@ -209,7 +211,9 @@ describe('EarthquakeStore', () => {
 
 	it('uses ETags per filter URL and does not flash a backfill event', async () => {
 		fetchMock
-			.mockResolvedValueOnce(new Response(JSON.stringify({ earthquakes: [] }), { headers: { etag: '"24h"' } }))
+			.mockResolvedValueOnce(
+				new Response(JSON.stringify({ earthquakes: [] }), { headers: { etag: '"24h"' } })
+			)
 			.mockResolvedValueOnce(new Response(null, { status: 304 }))
 			.mockResolvedValueOnce(new Response(JSON.stringify({ earthquakes: [] })));
 		const store = new EarthquakeStore();
@@ -236,9 +240,13 @@ describe('EarthquakeStore', () => {
 			occurred_at_ms: Date.now() - 48 * 60 * 60 * 1000
 		});
 		fetchMock
-			.mockResolvedValueOnce(new Response(JSON.stringify({ earthquakes: [recent] }), { headers: { etag: '"24h"' } }))
 			.mockResolvedValueOnce(
-				new Response(JSON.stringify({ earthquakes: [recent, weekOnly] }), { headers: { etag: '"7d"' } })
+				new Response(JSON.stringify({ earthquakes: [recent] }), { headers: { etag: '"24h"' } })
+			)
+			.mockResolvedValueOnce(
+				new Response(JSON.stringify({ earthquakes: [recent, weekOnly] }), {
+					headers: { etag: '"7d"' }
+				})
 			)
 			.mockResolvedValueOnce(new Response(null, { status: 304 }))
 			.mockResolvedValueOnce(new Response(null, { status: 304 }));
@@ -308,6 +316,28 @@ describe('EarthquakeStore', () => {
 		store.setFilter({ eventType: 'all' });
 		await settle();
 		expect(store.earthquakes.has(6)).toBe(true);
+		store.disconnect();
+	});
+
+	it('subscribeRaw delivers the raw record even when the store filter would drop it', async () => {
+		fetchMock.mockResolvedValue(new Response(JSON.stringify({ earthquakes: [] })));
+		const store = new EarthquakeStore();
+		await store.connect('/recent', '/stream', { minMagnitude: 2.5 });
+		const stream = FakeEventSource.instances[0];
+		stream.open();
+		await settle();
+
+		const received: Earthquake[] = [];
+		const unsubscribe = store.subscribeRaw((event) => {
+			if (event.type === 'new') received.push(event.record);
+		});
+
+		const small = makeEarthquake({ id: 99, magnitude: 1.0 });
+		stream.emit('new', small);
+
+		expect(received).toEqual([small]);
+		expect(store.earthquakes.has(99)).toBe(false);
+		unsubscribe();
 		store.disconnect();
 	});
 

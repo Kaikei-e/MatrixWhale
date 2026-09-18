@@ -1,8 +1,9 @@
-export const PANE_TABS = ['earthquakes', 'hazards', 'alerts', 'feed'] as const;
+export const PANE_TABS = ['timeline', 'earthquakes', 'hazards', 'alerts', 'feed'] as const;
 
 export type PaneTab = (typeof PANE_TABS)[number];
 
 export const PANE_TAB_LABELS: Record<PaneTab, string> = {
+	timeline: 'Timeline',
 	earthquakes: 'Earthquakes',
 	hazards: 'Hazards',
 	alerts: 'Alerts',
@@ -44,11 +45,13 @@ export function nextTabIndex(current: number, direction: 1 | -1, length: number)
 export type SelectionKind = 'earthquake' | 'hazard' | 'alert';
 
 // Alerts can drill in from either the Alerts or the legacy Feed tab; earthquakes
-// and hazards each own exactly one tab.
+// and hazards each own one more tab besides their own. Every kind can also drill
+// in from the unified Timeline tab, listed last so it never displaces a kind's
+// primary tab as the switch-to default.
 const TAB_CANDIDATES: Record<SelectionKind, readonly PaneTab[]> = {
-	earthquake: ['earthquakes'],
-	hazard: ['hazards'],
-	alert: ['alerts', 'feed']
+	earthquake: ['earthquakes', 'timeline'],
+	hazard: ['hazards', 'timeline'],
+	alert: ['alerts', 'feed', 'timeline']
 };
 
 export interface TabResolution {
@@ -72,12 +75,30 @@ export interface DetailSelection {
 export function isDetailOpen(activeTab: PaneTab, selection: DetailSelection): boolean {
 	if (activeTab === 'earthquakes') return selection.earthquakeId !== null;
 	if (activeTab === 'hazards') return selection.hazardId !== null;
+	if (activeTab === 'timeline') {
+		return (
+			selection.earthquakeId !== null || selection.hazardId !== null || selection.alertId !== null
+		);
+	}
 	return selection.alertId !== null;
 }
 
-/** Which selection kind a tab's Escape/back action would close. */
-export function closeKindForTab(tab: PaneTab): SelectionKind {
+const NO_SELECTION: DetailSelection = { earthquakeId: null, hazardId: null, alertId: null };
+
+/**
+ * Which selection kind a tab's Escape/back action would close. The timeline tab
+ * can show any kind's detail, so it picks whichever one is actually open.
+ */
+export function closeKindForTab(
+	tab: PaneTab,
+	selection: DetailSelection = NO_SELECTION
+): SelectionKind {
 	if (tab === 'earthquakes') return 'earthquake';
 	if (tab === 'hazards') return 'hazard';
+	if (tab === 'timeline') {
+		if (selection.earthquakeId !== null) return 'earthquake';
+		if (selection.hazardId !== null) return 'hazard';
+		return 'alert';
+	}
 	return 'alert';
 }

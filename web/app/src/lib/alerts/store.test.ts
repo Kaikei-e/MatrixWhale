@@ -1,6 +1,32 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { AlertStore, nextBlinkAfterArrival } from './store.svelte';
 import type { Alert } from './types';
+
+class FakeEventSource {
+	static instances: FakeEventSource[] = [];
+	listeners = new Map<string, Array<(event: MessageEvent<string>) => void>>();
+	onopen: ((event: Event) => void) | null = null;
+	onerror: ((event: Event) => void) | null = null;
+	closed = false;
+
+	constructor(readonly url: string) {
+		FakeEventSource.instances.push(this);
+	}
+
+	addEventListener(type: string, listener: (event: MessageEvent<string>) => void): void {
+		this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+	}
+
+	close(): void {
+		this.closed = true;
+	}
+
+	emit(type: string, body: unknown): void {
+		for (const listener of this.listeners.get(type) ?? []) {
+			listener(new MessageEvent(type, { data: JSON.stringify(body) }));
+		}
+	}
+}
 
 function makeAlert(overrides: Partial<Alert>): Alert {
 	return {
@@ -107,5 +133,42 @@ describe('AlertStore derived state', () => {
 		);
 
 		expect(store.sorted.map((a) => a.id)).toEqual(['a2', 'a1']);
+	});
+});
+
+describe('AlertStore.subscribeRaw', () => {
+	beforeEach(() => {
+		FakeEventSource.instances = [];
+		vi.stubGlobal('EventSource', FakeEventSource);
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([]))));
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it('delivers every raw lifecycle event with its record, independent of acknowledgement', async () => {
+		const store = new AlertStore();
+		await store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+		const stream = FakeEventSource.instances[0];
+
+		const received: Array<{ type: string; id: string }> = [];
+		const unsubscribe = store.subscribeRaw((event) => {
+			received.push({ type: event.type, id: event.record.id });
+		});
+
+		const alert = makeAlert({ id: 'raw-1', severity: 'Minor' });
+		store.acknowledge('raw-1');
+		stream.emit('alert.new', alert);
+		stream.emit('alert.update', alert);
+		stream.emit('alert.ended', { ...alert, ended_at: '2026-09-18T00:00:00Z' });
+
+		expect(received).toEqual([
+			{ type: 'new', id: 'raw-1' },
+			{ type: 'update', id: 'raw-1' },
+			{ type: 'ended', id: 'raw-1' }
+		]);
+		unsubscribe();
+		store.disconnect();
 	});
 });

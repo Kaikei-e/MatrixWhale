@@ -10,10 +10,10 @@
 
 	let { active, counts, onselect }: Props = $props();
 
-	// "Earthquakes" is the longest label; 14px left only ~3px of slack in a
-	// 95px tab (380px / 4), so 13px is used for every label for a safe margin
-	// (measured ~77px vs ~87px available — see TabBar visual verification).
-	const TAB_LABEL_FONT_PX = 13;
+	// "Earthquakes" is the longest label and now shares the 380px pane with a 5th
+	// (Timeline) tab, so each tab has only ~76px (was ~95px at 4 tabs); the font
+	// is scaled down from the previous 13px to keep the same safety margin.
+	const TAB_LABEL_FONT_PX = 11;
 
 	function focusTab(tab: PaneTab): void {
 		document.getElementById(`pane-tab-${tab}`)?.focus();

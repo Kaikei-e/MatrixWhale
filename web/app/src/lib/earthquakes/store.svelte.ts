@@ -4,7 +4,8 @@ import type {
 	Earthquake,
 	EarthquakeBlinkState,
 	EarthquakeEventType,
-	EarthquakeFilter
+	EarthquakeFilter,
+	RawEarthquakeEvent
 } from './types';
 
 const ARRIVAL_MS = 5000;
@@ -68,6 +69,7 @@ export class EarthquakeStore {
 	#streamSequenceByKey = new SvelteMap<number, number>();
 	#streamOccurredAtByKey = new SvelteMap<number, number>();
 	#streamEarthquakeByKey = new SvelteMap<number, Earthquake>();
+	#rawListeners = new SvelteSet<(event: RawEarthquakeEvent) => void>();
 
 	sorted = $derived.by(() =>
 		[...this.earthquakes.values()].sort(
@@ -135,6 +137,16 @@ export class EarthquakeStore {
 
 	retrySnapshot(): void {
 		void this.#loadSnapshot();
+	}
+
+	/** Raw SSE payloads for the unified timeline, delivered before this store's own filtering. */
+	subscribeRaw(listener: (event: RawEarthquakeEvent) => void): () => void {
+		this.#rawListeners.add(listener);
+		return () => this.#rawListeners.delete(listener);
+	}
+
+	#emitRaw(event: RawEarthquakeEvent): void {
+		for (const listener of this.#rawListeners) listener(event);
 	}
 
 	trim(now = Date.now()): void {
@@ -313,6 +325,7 @@ export class EarthquakeStore {
 
 	#handleNew = (event: MessageEvent<string>): void => {
 		const earthquake = JSON.parse(event.data) as Earthquake;
+		this.#emitRaw({ type: 'new', record: earthquake });
 		const key = earthquake.id;
 		const streamCurrent = this.#streamEarthquakeByKey.get(key);
 		if (streamCurrent && streamCurrent.updated_at_ms >= earthquake.updated_at_ms) return;
@@ -325,6 +338,7 @@ export class EarthquakeStore {
 
 	#handleUpdate = (event: MessageEvent<string>): void => {
 		const earthquake = JSON.parse(event.data) as Earthquake;
+		this.#emitRaw({ type: 'update', record: earthquake });
 		const key = earthquake.id;
 		const streamCurrent = this.#streamEarthquakeByKey.get(key);
 		if (streamCurrent && streamCurrent.updated_at_ms >= earthquake.updated_at_ms) return;
@@ -336,6 +350,7 @@ export class EarthquakeStore {
 	};
 
 	#handleResync = (): void => {
+		this.#emitRaw({ type: 'resync' });
 		void this.#loadSnapshot();
 	};
 

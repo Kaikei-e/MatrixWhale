@@ -23,6 +23,7 @@
 	import { BlinkEngine } from '$lib/alerts/blinkEngine.svelte';
 	import { earthquakeStore } from '$lib/earthquakes/store.svelte';
 	import { hazardStore } from '$lib/hazards/store.svelte';
+	import { timelineStore } from '$lib/timeline/store.svelte';
 
 	let map = $state<maplibregl.Map | undefined>();
 	let centroids = $state<Record<string, [number, number]>>({});
@@ -81,6 +82,12 @@
 		if (!browser) return;
 		void hazardStore.connect('/api/v1/hazards/recent', '/api/v1/hazards/stream');
 		return () => hazardStore.disconnect();
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		void timelineStore.connect('/api/v1/timeline');
+		return () => timelineStore.disconnect();
 	});
 
 	$effect(() => {
@@ -176,11 +183,14 @@
 		);
 	}
 
+	// The timeline tab can select an ended alert (or an earthquake/hazard outside
+	// the live store's window) that has no map presence any more; the detail
+	// still opens, it just skips the fly-to since there is nothing to focus.
 	function selectAlert(id: string): void {
-		if (!alertStore.activeAlerts.has(id)) return;
 		selectedId = id;
 		userInteracted = true;
 		sheetExpanded = true;
+		if (!alertStore.activeAlerts.has(id)) return;
 		if (alertStore.blink.get(id)?.mode === 'persistent') alertStore.acknowledge(id);
 		fitToAlertId(id);
 	}
@@ -190,11 +200,11 @@
 	}
 
 	function selectEarthquake(id: number): void {
-		const earthquake = earthquakeStore.earthquakes.get(id);
-		if (!earthquake) return;
 		selectedEarthquakeId = id;
 		userInteracted = true;
 		sheetExpanded = true;
+		const earthquake = earthquakeStore.earthquakes.get(id);
+		if (!earthquake) return;
 		map?.easeTo({
 			center: [earthquake.longitude, earthquake.latitude],
 			zoom: Math.max(map.getZoom(), 7),
@@ -207,11 +217,11 @@
 	}
 
 	function selectHazard(id: string): void {
-		const hazard = hazardStore.hazards.get(id);
-		if (!hazard) return;
 		selectedHazardId = id;
 		userInteracted = true;
 		sheetExpanded = true;
+		const hazard = hazardStore.hazards.get(id);
+		if (!hazard) return;
 		map?.easeTo({
 			center: [hazard.longitude, hazard.latitude],
 			// Hazard footprints (droughts, cyclones) are often country-scale, so

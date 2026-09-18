@@ -4,14 +4,16 @@
 		pressed: boolean;
 		onclick: () => void;
 		dotColor?: string;
+		testid?: string;
 		class?: string;
 	}
 
-	let { label, pressed, onclick, dotColor, class: className }: Props = $props();
+	let { label, pressed, onclick, dotColor, testid, class: className }: Props = $props();
 </script>
 
 <button
 	type="button"
+	data-testid={testid}
 	aria-pressed={pressed}
 	{onclick}
 	class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors {pressed

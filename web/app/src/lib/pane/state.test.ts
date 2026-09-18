@@ -107,6 +107,21 @@ describe('resolveTabForSelection', () => {
 		expect(resolveTabForSelection('feed', 'alert')).toEqual({ tab: 'feed', switched: false });
 	});
 
+	it('keeps the timeline tab for any selection kind (it can drill into all three)', () => {
+		expect(resolveTabForSelection('timeline', 'earthquake')).toEqual({
+			tab: 'timeline',
+			switched: false
+		});
+		expect(resolveTabForSelection('timeline', 'hazard')).toEqual({
+			tab: 'timeline',
+			switched: false
+		});
+		expect(resolveTabForSelection('timeline', 'alert')).toEqual({
+			tab: 'timeline',
+			switched: false
+		});
+	});
+
 	it('switches to the home tab when the active tab does not own the kind', () => {
 		expect(resolveTabForSelection('hazards', 'earthquake')).toEqual({
 			tab: 'earthquakes',
@@ -133,11 +148,18 @@ describe('isDetailOpen', () => {
 		expect(isDetailOpen('feed', { ...none, alertId: 'urn:1' })).toBe(true);
 	});
 
+	it('is true for the timeline tab when any of the three kinds is selected', () => {
+		expect(isDetailOpen('timeline', { ...none, earthquakeId: 1 })).toBe(true);
+		expect(isDetailOpen('timeline', { ...none, hazardId: 'gdacs:1' })).toBe(true);
+		expect(isDetailOpen('timeline', { ...none, alertId: 'urn:1' })).toBe(true);
+	});
+
 	it('is false when nothing is selected', () => {
 		expect(isDetailOpen('earthquakes', none)).toBe(false);
 		expect(isDetailOpen('hazards', none)).toBe(false);
 		expect(isDetailOpen('alerts', none)).toBe(false);
 		expect(isDetailOpen('feed', none)).toBe(false);
+		expect(isDetailOpen('timeline', none)).toBe(false);
 	});
 
 	it('is false when the active tab does not own the selected kind', () => {
@@ -148,10 +170,26 @@ describe('isDetailOpen', () => {
 });
 
 describe('closeKindForTab', () => {
-	it('maps each tab to the selection kind it can close', () => {
+	const none = { earthquakeId: null, hazardId: null, alertId: null };
+
+	it('maps each single-kind tab to the selection kind it can close', () => {
 		expect(closeKindForTab('earthquakes')).toBe('earthquake');
 		expect(closeKindForTab('hazards')).toBe('hazard');
 		expect(closeKindForTab('alerts')).toBe('alert');
 		expect(closeKindForTab('feed')).toBe('alert');
+	});
+
+	it('picks whichever kind is actually open on the timeline tab, earthquake first', () => {
+		expect(closeKindForTab('timeline', { ...none, earthquakeId: 1, hazardId: 'gdacs:1' })).toBe(
+			'earthquake'
+		);
+		expect(closeKindForTab('timeline', { ...none, hazardId: 'gdacs:1', alertId: 'urn:1' })).toBe(
+			'hazard'
+		);
+		expect(closeKindForTab('timeline', { ...none, alertId: 'urn:1' })).toBe('alert');
+	});
+
+	it('defaults to alert on the timeline tab when nothing is selected', () => {
+		expect(closeKindForTab('timeline')).toBe('alert');
 	});
 });
