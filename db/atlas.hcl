@@ -1,8 +1,9 @@
 env "local" {
   src = "file://schema.sql"
-  # Extensions are Atlas Pro-only (require `atlas login`), so pg_trgm is
-  # created as plain SQL in migrations/..._init.sql instead of here.
-  dev = "docker://postgres/16/dev"
+  # Extensions are Atlas Pro-only (require `atlas login`), so pg_trgm and
+  # postgis are created as plain SQL in migrations/..._init.sql /
+  # ..._gdacs_hazards.sql instead of here.
+  dev = "docker://postgis/18-3.6/dev"
   url = getenv("MATRIX_WHALE_DATABASE_URL")
 
   # Full-database scope (not schema-scoped via ?search_path=sea): a schema-scoped

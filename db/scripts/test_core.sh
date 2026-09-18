@@ -11,18 +11,25 @@ DB_NAME="matrixwhale_test"
 DB_USER="test"
 DB_PASSWORD="test"
 CONTAINER_NAME="matrixwhale_test_core_$$"
+IMAGE_TAG="matrixwhale_test_core_db_$$"
 
 cleanup() {
   docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  docker rmi "$IMAGE_TAG" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
+
+# Build the same db/Dockerfile image compose uses: the stock postgis/postgis
+# image runs its own initdb hook that creates topology/tiger schemas Atlas
+# has never heard of, so the hook-stripped image is what stays "clean".
+docker build -t "$IMAGE_TAG" "$REPO_ROOT/db" >/dev/null
 
 docker run --rm -d --name "$CONTAINER_NAME" \
   -e POSTGRES_USER="$DB_USER" \
   -e POSTGRES_PASSWORD="$DB_PASSWORD" \
   -e POSTGRES_DB="$DB_NAME" \
   -p "127.0.0.1::5432" \
-  postgres:16 >/dev/null
+  "$IMAGE_TAG" >/dev/null
 
 HOST_PORT="$(docker port "$CONTAINER_NAME" 5432/tcp | head -n 1 | cut -d: -f2)"
 

@@ -153,7 +153,7 @@ services:
     tty: true
     restart: always
     volumes:
-      - ./db/data:/var/lib/postgresql/data
+      - ./db/data18:/var/lib/postgresql
     networks:
       matrix_network:
         ipv4_address: 10.254.100.50
