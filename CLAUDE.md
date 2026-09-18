@@ -184,3 +184,12 @@ cd federation_orchestrator/federation_orchestrator && go test ./...
 - **Frontend**: `npm run test` in `web/app/` (Playwright integration tests and Vitest unit tests), `npm run check`
 - **Go Services**: `go test -race ./...` in respective adapter directories
 - **Architecture Validation**: `make adr-validate` verifies ADR graph validity using DocDag
+
+## Antigravity delegation
+
+This project can use the local `antigravity` MCP server for bounded research, design review, or a second opinion. Start with `mode: "plan"` and `autonomy: "safe"`; safe follows the configured `agy` permissions and is not a read-only guarantee.
+
+- Keep each delegated request narrowly scoped and use this repository's absolute workspace path.
+- Preserve a returned `conversation_id` and provide it with the same workspace to `antigravity_continue` for follow-up work.
+- The server permits one active `agy` call at a time; wait for it to finish before another call.
+- Do not ask a delegated agent to invoke this MCP server or otherwise create recursive delegation.
