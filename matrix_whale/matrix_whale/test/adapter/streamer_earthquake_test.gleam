@@ -1,6 +1,7 @@
 import adapter/alert_hub
 import adapter/context
 import adapter/earthquake_hub
+import adapter/hazard_hub
 import adapter/streamer
 import domain/earthquake
 import domain/event
@@ -205,11 +206,13 @@ fn sample_row() -> event.EventView {
 fn test_context() -> context.Context {
   let assert Ok(alert) = alert_hub.start()
   let assert Ok(earthquake) = earthquake_hub.start()
+  let assert Ok(hazard) = hazard_hub.start()
   context.Context(
     secret: "test",
     db: pog.named_connection(process.new_name("unused_snapshot_db")),
     hub: alert.data,
     earthquake_hub: earthquake.data,
+    hazard_hub: hazard.data,
     seen: seen_set.new("streamer_earthquake_test_seen", 3_600_000),
   )
 }

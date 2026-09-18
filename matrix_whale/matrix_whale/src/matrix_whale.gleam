@@ -1,6 +1,7 @@
 import adapter/alert_hub
 import adapter/context
 import adapter/earthquake_hub
+import adapter/hazard_hub
 import adapter/reciever
 import adapter/streamer
 import dot_env/env
@@ -39,6 +40,7 @@ pub fn main() {
   let secret = wisp.random_string(256)
   let assert Ok(hub) = alert_hub.start()
   let assert Ok(earthquake_hub) = earthquake_hub.start()
+  let assert Ok(hazard_hub) = hazard_hub.start()
 
   let ctx =
     context.Context(
@@ -46,6 +48,7 @@ pub fn main() {
       db: db,
       hub: hub.data,
       earthquake_hub: earthquake_hub.data,
+      hazard_hub: hazard_hub.data,
       seen: seen,
     )
 

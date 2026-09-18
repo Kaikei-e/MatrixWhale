@@ -3,6 +3,7 @@ import gleam/erlang/process
 import gleam/string_tree
 import logs/reciever/usgs_adapter
 import message/reciever/emsc_reciever
+import message/reciever/gdacs_reciever
 import message/reciever/noaa_reciever
 import message/reciever/usgs_reciever
 import mist
@@ -40,6 +41,12 @@ fn reciever_router(request: Request, ctx: Context) -> Response {
       usgs_reciever.usgs_data_handler(req, ctx)
     ["api", "v1", "emsc_data", "send"] ->
       emsc_reciever.emsc_data_handler(req, ctx)
+    ["api", "v1", "gdacs_data", "send"] ->
+      gdacs_reciever.gdacs_data_handler(req, ctx)
+    ["api", "v1", "gdacs_data", "geometry", "pending"] ->
+      gdacs_reciever.gdacs_geometry_pending_handler(req, ctx)
+    ["api", "v1", "gdacs_data", "geometry"] ->
+      gdacs_reciever.gdacs_geometry_handler(req, ctx)
     _ -> wisp.response(404)
   }
 }

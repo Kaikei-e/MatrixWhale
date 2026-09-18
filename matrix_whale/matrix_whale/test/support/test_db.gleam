@@ -7,6 +7,7 @@
 import adapter/alert_hub
 import adapter/context
 import adapter/earthquake_hub
+import adapter/hazard_hub
 import dot_env/env
 import exception
 import gleam/dynamic/decode
@@ -52,7 +53,7 @@ pub fn with_test_db(run: fn(pog.Connection) -> Nil) -> Nil {
 fn setup_test_schema(conn: pog.Connection) -> Nil {
   exec(
     conn,
-    "TRUNCATE sea.event_member, sea.event, sea.earthquake_revision, sea.earthquake, sea.alert, sea.source",
+    "TRUNCATE sea.hazard, sea.gdacs_event, sea.event_member, sea.event, sea.earthquake_revision, sea.earthquake, sea.alert, sea.source",
   )
   let assert Ok(Nil) = source_writer.sync(conn)
   exec(
@@ -72,7 +73,7 @@ fn setup_test_schema(conn: pog.Connection) -> Nil {
 fn teardown_test_schema(conn: pog.Connection) -> Nil {
   exec(
     conn,
-    "TRUNCATE sea.event_member, sea.event, sea.earthquake_revision, sea.earthquake, sea.alert, sea.source",
+    "TRUNCATE sea.hazard, sea.gdacs_event, sea.event_member, sea.event, sea.earthquake_revision, sea.earthquake, sea.alert, sea.source",
   )
   exec(
     conn,
@@ -86,11 +87,13 @@ fn teardown_test_schema(conn: pog.Connection) -> Nil {
 pub fn integration_context(conn: pog.Connection) -> context.Context {
   let assert Ok(alert) = alert_hub.start()
   let assert Ok(earthquake) = earthquake_hub.start()
+  let assert Ok(hazard) = hazard_hub.start()
   context.Context(
     secret: "integration-test",
     db: conn,
     hub: alert.data,
     earthquake_hub: earthquake.data,
+    hazard_hub: hazard.data,
     seen: seen_set.new("test_seen_" <> wisp.random_string(16), 3_600_000),
   )
 }

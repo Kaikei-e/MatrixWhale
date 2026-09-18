@@ -44,7 +44,17 @@ pub const emsc = Source(
   priority: 90,
 )
 
-pub const all: List(Source) = [noaa, usgs, emsc]
+pub const gdacs = Source(
+  id: "gdacs",
+  name: "GDACS",
+  homepage: option.Some("https://www.gdacs.org/"),
+  license: "Public domain (GDACS RSS); attribution requested",
+  attribution_text: "Global Disaster Awareness and Coordination System, GDACS",
+  redistributable: False,
+  priority: 80,
+)
+
+pub const all: List(Source) = [noaa, usgs, emsc, gdacs]
 
 pub fn lookup(id: String) -> Result(Source, Nil) {
   list.find(all, fn(source) { source.id == id })

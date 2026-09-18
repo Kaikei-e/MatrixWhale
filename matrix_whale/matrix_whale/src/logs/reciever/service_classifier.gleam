@@ -4,6 +4,7 @@ pub type Source {
   Noaa
   Usgs
   Emsc
+  Gdacs
   Unknown
 }
 
@@ -22,6 +23,8 @@ fn classify_name(name: String) -> Source {
     "usgs_adapter" -> Usgs
     "emsc" -> Emsc
     "emsc_adapter" -> Emsc
+    "gdacs" -> Gdacs
+    "gdacs_adapter" -> Gdacs
     _ -> Unknown
   }
 }
@@ -31,6 +34,7 @@ pub fn source_name(source: Source) -> String {
     Noaa -> "noaa"
     Usgs -> "usgs"
     Emsc -> "emsc"
+    Gdacs -> "gdacs"
     Unknown -> "unknown"
   }
 }

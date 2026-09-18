@@ -1,8 +1,10 @@
 import adapter/alert_hub.{type HubMsg, type SSEMessage, Emit, Heartbeat}
 import adapter/context.{type Context}
 import adapter/earthquake_hub
+import adapter/hazard_hub
 import domain/alert
 import domain/event
+import domain/hazard
 import domain/source
 import gleam/bit_array
 import gleam/bytes_tree
@@ -20,9 +22,12 @@ import gleam/otp/actor
 import gleam/result
 import gleam/string
 import gleam/string_tree
+import gleam/time/calendar
+import gleam/time/timestamp
 import mist
 import repository/alert_reader
 import repository/earthquake_reader
+import repository/hazard_reader
 import wisp
 
 type SSEState {
@@ -33,6 +38,14 @@ type EarthquakeSSEState {
   EarthquakeSSEState(
     id: Int,
     hub: Subject(earthquake_hub.EarthquakeHubMsg),
+    sent_retry: Bool,
+  )
+}
+
+type HazardSSEState {
+  HazardSSEState(
+    id: Int,
+    hub: Subject(hazard_hub.HazardHubMsg),
     sent_retry: Bool,
   )
 }
@@ -70,6 +83,15 @@ fn router(
       }
     ["api", "v1", "pipeline", "status"] -> pipeline_status_response(ctx)
     ["api", "v1", "sources"] -> sources_response()
+    ["api", "v1", "hazards", "recent"] -> hazards_response(req, ctx)
+    ["api", "v1", "hazards", "stream"] ->
+      case req.method {
+        http.Get -> hazard_stream_response(req, ctx)
+        _ ->
+          response.new(405) |> response.set_body(mist.Bytes(bytes_tree.new()))
+      }
+    ["api", "v1", "hazards", hazard_source, hazard_source_id] ->
+      hazard_detail_response(hazard_source, hazard_source_id, ctx)
     _ -> not_found_response()
   }
 }
@@ -344,6 +366,130 @@ fn sources_response() -> Response(mist.ResponseData) {
     json.object([
       #("sources", json.array(source.all, source.to_json)),
     ]),
+  )
+}
+
+fn hazards_response(
+  req: Request(connection),
+  ctx: Context,
+) -> Response(mist.ResponseData) {
+  case req.method {
+    http.Get -> hazards_get_response(req, ctx)
+    _ -> response.new(405) |> response.set_body(mist.Bytes(bytes_tree.new()))
+  }
+}
+
+fn hazards_get_response(
+  req: Request(connection),
+  ctx: Context,
+) -> Response(mist.ResponseData) {
+  let query = request.get_query(req) |> result.unwrap([])
+  let hours =
+    query
+    |> list.key_find("hours")
+    |> result.try(int.parse)
+    |> result.unwrap(336)
+  let types = query |> list.key_find("types") |> result.unwrap("") |> comma_list
+  let levels =
+    query |> list.key_find("levels") |> result.unwrap("") |> comma_list
+
+  case hazard_reader.recent(hours, types, levels, ctx.db) {
+    Error(error) -> error_response(error)
+    Ok(rows) ->
+      etag_json_response(
+        req,
+        json.object([
+          #("hazards", json.array(rows, hazard.to_json)),
+          #("generated_at", json.string(now_rfc3339())),
+          #("count", json.int(list.length(rows))),
+        ]),
+      )
+  }
+}
+
+fn comma_list(value: String) -> List(String) {
+  case value {
+    "" -> []
+    _ ->
+      string.split(value, ",")
+      |> list.map(string.trim)
+      |> list.filter(fn(x) { x != "" })
+  }
+}
+
+fn now_rfc3339() -> String {
+  timestamp.system_time() |> timestamp.to_rfc3339(calendar.utc_offset)
+}
+
+fn hazard_detail_response(
+  hazard_source: String,
+  hazard_source_id: String,
+  ctx: Context,
+) -> Response(mist.ResponseData) {
+  case hazard_reader.detail(hazard_source, hazard_source_id, ctx.db) {
+    Error(error) -> error_response(error)
+    Ok(option.None) ->
+      json_response(
+        404,
+        json.object([#("error", json.string("hazard not found"))]),
+      )
+    Ok(option.Some(#(row, episodes))) ->
+      json_response(
+        200,
+        json.object([
+          #("hazard", hazard.to_detail_json(row)),
+          #("episodes", json.array(episodes, hazard.episode_to_json)),
+        ]),
+      )
+  }
+}
+
+fn hazard_stream_response(
+  req: Request(mist.Connection),
+  ctx: Context,
+) -> Response(mist.ResponseData) {
+  let since = request.get_header(req, "last-event-id") |> option.from_result
+  mist.server_sent_events(
+    req,
+    response.new(200),
+    init: fn(subject) {
+      HazardSSEState(
+        id: hazard_hub.subscribe(ctx.hazard_hub, subject, since),
+        hub: ctx.hazard_hub,
+        sent_retry: False,
+      )
+    },
+    loop: fn(
+      state: HazardSSEState,
+      message: hazard_hub.SSEMessage,
+      conn: mist.SSEConnection,
+    ) -> actor.Next(HazardSSEState, hazard_hub.SSEMessage) {
+      let event = case message {
+        hazard_hub.Emit(name, id, data) ->
+          mist.event(string_tree.from_string(data))
+          |> mist.event_name(name)
+          |> mist.event_id(id)
+        hazard_hub.Heartbeat(id) ->
+          mist.event(string_tree.from_string("{}"))
+          |> mist.event_name("heartbeat")
+          |> mist.event_id(id)
+        hazard_hub.Resync(id) ->
+          mist.event(string_tree.from_string("{\"reason\":\"event_gap\"}"))
+          |> mist.event_name("resync")
+          |> mist.event_id(id)
+      }
+      let event = case state.sent_retry {
+        True -> event
+        False -> mist.event_retry(event, 3000)
+      }
+      case mist.send_event(conn, event) {
+        Ok(_) -> actor.continue(HazardSSEState(..state, sent_retry: True))
+        Error(_) -> {
+          hazard_hub.unsubscribe(state.hub, state.id)
+          actor.stop()
+        }
+      }
+    },
   )
 }
 
