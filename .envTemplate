@@ -19,3 +19,6 @@ USGS_MIN_MAG=
 
 # Optional User-Agent contact for the EMSC real-time earthquake feed
 EMSC_CONTACT_EMAIL=
+
+# Optional User-Agent contact for the GDACS multi-hazard feed
+GDACS_CONTACT_EMAIL=

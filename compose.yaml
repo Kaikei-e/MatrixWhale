@@ -139,6 +139,26 @@ services:
       matrix_network:
         ipv4_address: 10.254.100.43
 
+  gdacs_adapter:
+    build:
+      context: .
+      dockerfile: gdacs_adapter/Dockerfile
+    environment:
+      GDACS_CONTACT_EMAIL: ${GDACS_CONTACT_EMAIL:-}
+      MATRIX_WHALE_URL: http://matrix_whale:6000/api/v1
+      GDACS_BACKFILL_DAYS: 14
+      GDACS_POLL_INTERVAL: 5m
+      GDACS_MIN_REQUEST_INTERVAL: 10s
+    tty: true
+    restart: always
+    volumes:
+      - ./gdacs_adapter/app:/app
+    depends_on:
+      - matrix_whale
+    networks:
+      matrix_network:
+        ipv4_address: 10.254.100.44
+
   db:
     build:
       context: ./db
