@@ -903,12 +903,14 @@ func TestControllerAlertBatchCappedBySize(t *testing.T) {
 	defer coreServer.Close()
 
 	cfg := Config{HostMinInterval: 1 * time.Millisecond, MaxParallelHosts: 4}
-	coreClient := core.NewClient(coreServer.URL+"/api/v1", &http.Client{Timeout: 5 * time.Second})
+	coreClient := core.NewClient(coreServer.URL+"/api/v1", &http.Client{Timeout: time.Minute})
 	mwClient := adapter.NewMatrixWhaleClient(coreClient, nil)
 	limiter := adapter.NewHostLimiter(cfg.HostMinInterval, cfg.MaxParallelHosts)
-	ctrl := NewController(cfg, mwClient, &http.Client{Timeout: 5 * time.Second}, limiter, time.Now)
+	ctrl := NewController(cfg, mwClient, &http.Client{Timeout: time.Minute}, limiter, time.Now)
 
-	ctrl.drainPending(context.Background(), time.Now().Add(5*time.Second))
+	// The drain returns as soon as pending is empty; the deadline only has to
+	// outlast parsing three 6 MiB documents on a slow, race-instrumented runner.
+	ctrl.drainPending(context.Background(), time.Now().Add(2*time.Minute))
 
 	alertBatchesMu.Lock()
 	defer alertBatchesMu.Unlock()
