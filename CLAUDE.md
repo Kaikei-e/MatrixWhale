@@ -192,9 +192,13 @@ cd federation_orchestrator/federation_orchestrator && go test ./...
 
 ## Antigravity delegation
 
-This project can use the local `antigravity` MCP server for bounded research, design review, or a second opinion. Start with `mode: "plan"` and `autonomy: "safe"`; safe follows the configured `agy` permissions and is not a read-only guarantee.
+This project uses the local `antigravity` MCP server (`agy`) as the preferred implementer, with Claude reviewing and running the checks. Use `mode: "plan"` for research or a second opinion and `mode: "accept-edits"` for implementation, both with `autonomy: "safe"`; safe follows the configured `agy` permissions and is not a read-only guarantee.
 
-- Keep each delegated request narrowly scoped and use this repository's absolute workspace path.
-- Preserve a returned `conversation_id` and provide it with the same workspace to `antigravity_continue` for follow-up work.
-- The server permits one active `agy` call at a time; wait for it to finish before another call.
+- Keep each delegated request narrowly scoped, give it the files it owns, and use this repository's absolute workspace path. Parallel runs share the working tree, so their file scopes must not overlap.
+- Up to 4 `agy` calls can run at once. Calls longer than about 2 minutes move to the background and report back when they finish.
+- Preserve a returned `conversation_id` and provide it with the same workspace to `antigravity_continue` for follow-up work, including after a run was cut off.
+- Runs are headless. Any shell command not allowed in `~/.gemini/antigravity-cli/settings.json` (`permissions.allow`, `command(<prefix>)`) is auto-denied and aborts the whole run. Command lines with globs, pipes, redirects or parentheses are denied even when the command is allowed. Tell the agent to run plain commands one at a time and to search with its built-in tools.
+- Commands longer than about 10 s go async inside `agy`. Tell the agent to poll `command_status` until the command finishes and never to end its turn while one is running. Otherwise it returns without a report, and an interrupted Playwright run can leave `vite preview` listening on port 4199.
+- Forbid the agent's own subagents: they are killed when its turn ends.
+- Quotas are per model and reset after a few hours ("Individual quota reached"). After a quota, connection or 503 failure, the edits made so far remain on disk. Check `git diff` and the build before continuing.
 - Do not ask a delegated agent to invoke this MCP server or otherwise create recursive delegation.
