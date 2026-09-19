@@ -3,6 +3,7 @@ import gleam/dynamic/decode
 import gleam/int
 import gleam/json
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
 import gleam/string
@@ -25,11 +26,36 @@ pub type HistoryBucket {
   HistoryBucket(hour_start: Timestamp, counts: SeverityCounts)
 }
 
-pub fn list_active(conn: pog.Connection) -> Result(List(AlertRow), String) {
-  pog.query("SELECT " <> alert.columns <> " FROM sea.alert
-     WHERE ended_at IS NULL
-       AND (COALESCE(ends, expires) IS NULL OR COALESCE(ends, expires) > now())
-     ORDER BY sent DESC NULLS LAST")
+pub fn list_active(
+  sources: List(String),
+  countries: List(String),
+  severities: List(String),
+  conn: pog.Connection,
+) -> Result(List(AlertRow), String) {
+  let sources_param = case sources {
+    [] -> pog.null()
+    s -> pog.array(pog.text, s)
+  }
+  let countries_param = case countries {
+    [] -> pog.null()
+    c -> pog.array(pog.text, c)
+  }
+  let severities_param = case severities {
+    [] -> pog.null()
+    sev -> pog.array(pog.text, sev)
+  }
+
+  pog.query("SELECT " <> alert.columns <> " FROM sea.alert a
+       JOIN sea.source s ON s.id = a.source
+       WHERE a.ended_at IS NULL
+         AND a.active_until > now()
+         AND ($1::text[] IS NULL OR a.source = ANY($1))
+         AND ($2::text[] IS NULL OR a.countries && $2)
+         AND ($3::text[] IS NULL OR a.severity = ANY($3))
+       ORDER BY a.sent DESC NULLS LAST")
+  |> pog.parameter(sources_param)
+  |> pog.parameter(countries_param)
+  |> pog.parameter(severities_param)
   |> pog.returning(alert.row_decoder())
   |> pog.execute(conn)
   |> result.map(fn(returned) { returned.rows })
@@ -37,15 +63,72 @@ pub fn list_active(conn: pog.Connection) -> Result(List(AlertRow), String) {
 }
 
 pub fn by_ids(
-  ids: List(String),
+  public_ids: List(String),
   conn: pog.Connection,
 ) -> Result(List(AlertRow), String) {
-  pog.query("SELECT " <> alert.columns <> " FROM sea.alert WHERE id = ANY($1)")
-  |> pog.parameter(pog.array(pog.text, ids))
-  |> pog.returning(alert.row_decoder())
+  let pairs =
+    public_ids
+    |> list.filter_map(fn(id) {
+      case string.split_once(id, ":") {
+        Ok(#(source, source_id)) -> Ok(#(source, source_id))
+        Error(Nil) -> Error(Nil)
+      }
+    })
+
+  case pairs {
+    [] -> Ok([])
+    _ -> {
+      let #(sources, source_ids) = list.unzip(pairs)
+      pog.query("SELECT " <> alert.columns <> " FROM sea.alert a
+           JOIN sea.source s ON s.id = a.source
+           WHERE (a.source, a.source_id) IN (SELECT * FROM unnest($1::text[], $2::text[]))")
+      |> pog.parameter(pog.array(pog.text, sources))
+      |> pog.parameter(pog.array(pog.text, source_ids))
+      |> pog.returning(alert.row_decoder())
+      |> pog.execute(conn)
+      |> result.map(fn(returned) { returned.rows })
+      |> result.map_error(query_error_to_string)
+    }
+  }
+}
+
+pub fn detail(
+  source: String,
+  source_id: String,
+  conn: pog.Connection,
+) -> Result(
+  Option(#(AlertRow, json.Json, Option(String), Option(String))),
+  String,
+) {
+  pog.query("SELECT
+       " <> alert.detail_columns <> ",
+       (m.cap->'info')::text AS infos_text,
+       m.cap_url,
+       m.feed_url
+     FROM sea.alert a
+     JOIN sea.source s ON s.id = a.source
+     LEFT JOIN sea.cap_message m ON m.sender = a.sender AND m.identifier = a.identifier
+     WHERE a.source = $1 AND a.source_id = $2")
+  |> pog.parameter(pog.text(source))
+  |> pog.parameter(pog.text(source_id))
+  |> pog.returning(detail_row_decoder())
   |> pog.execute(conn)
-  |> result.map(fn(returned) { returned.rows })
+  |> result.map(fn(returned) { list.first(returned.rows) |> option.from_result })
   |> result.map_error(query_error_to_string)
+}
+
+fn detail_row_decoder() -> decode.Decoder(
+  #(AlertRow, json.Json, Option(String), Option(String)),
+) {
+  use row <- decode.then(alert.row_decoder())
+  use infos_text <- decode.field(35, decode.optional(decode.string))
+  use cap_url <- decode.field(36, decode.optional(decode.string))
+  use feed_url <- decode.field(37, decode.optional(decode.string))
+  let infos = case infos_text {
+    Some(text) -> alert.json_of_text(text)
+    None -> json.preprocessed_array([])
+  }
+  decode.success(#(row, infos, cap_url, feed_url))
 }
 
 pub fn search(
@@ -55,9 +138,12 @@ pub fn search(
   case string.trim(query) {
     "" -> Ok([])
     trimmed ->
-      pog.query("SELECT " <> alert.columns <> " FROM sea.alert
-         WHERE area_desc ILIKE '%' || $1 || '%' OR event ILIKE '%' || $1 || '%'
-         ORDER BY sent DESC NULLS LAST LIMIT 200")
+      pog.query("SELECT " <> alert.columns <> " FROM sea.alert a
+           JOIN sea.source s ON s.id = a.source
+           WHERE a.area_desc ILIKE '%' || $1 || '%'
+              OR a.event ILIKE '%' || $1 || '%'
+              OR a.headline ILIKE '%' || $1 || '%'
+           ORDER BY a.sent DESC NULLS LAST LIMIT 200")
       |> pog.parameter(pog.text(trimmed))
       |> pog.returning(alert.row_decoder())
       |> pog.execute(conn)
@@ -66,9 +152,6 @@ pub fn search(
   }
 }
 
-/// Returns exactly `hours` (clamped to 1..168) hourly buckets, oldest to
-/// newest, ending at the current hour, filling in zero counts for hours
-/// with no alerts.
 pub fn history(
   hours: Int,
   conn: pog.Connection,
@@ -98,7 +181,7 @@ pub fn count_active_by_severity(
   pog.query(
     "SELECT severity, count(*) FROM sea.alert
      WHERE ended_at IS NULL
-       AND (COALESCE(ends, expires) IS NULL OR COALESCE(ends, expires) > now())
+       AND active_until > now()
      GROUP BY 1",
   )
   |> pog.returning(severity_count_decoder())

@@ -6,6 +6,9 @@ import domain/timeline
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/time/calendar
+import gleam/time/duration
+import gleam/time/timestamp
 import gleeunit/should
 import intake/record
 import message/reciever/models/earthquake_feature
@@ -13,16 +16,6 @@ import pog
 import repository/earthquake_writer
 import repository/timeline_reader
 import support/test_db
-
-const tie_ts = "2026-06-01 00:00:00+00"
-
-const newer_ts = "2026-06-01 01:00:00+00"
-
-const older_ts = "2026-05-31 23:00:00+00"
-
-const much_older_ts = "2026-05-31 22:00:00+00"
-
-const much_older_ts2 = "2026-05-31 21:00:00+00"
 
 type Seed {
   Seed(
@@ -149,6 +142,58 @@ pub fn timeline_severity_matches_domain_mapping_integration_test() {
   })
 }
 
+pub fn timeline_paging_across_cap_and_noaa_same_first_seen_at_integration_test() {
+  test_db.with_test_db(fn(conn) {
+    test_db.exec(
+      conn,
+      "INSERT INTO sea.source (id, name, license, attribution_text, redistributable, priority) VALUES ('cap-test', 'Test CAP', 'CC-BY', 'Test Attribution', true, 50) ON CONFLICT DO NOTHING;",
+    )
+    let now = timestamp.system_time()
+    let same_first_seen = timestamp.to_rfc3339(now, calendar.utc_offset)
+
+    let cap_id = "sender@dwd.de,item.123"
+    let noaa_id = "urn:oid:2.49.0.1.840.0.same"
+    create_alert(conn, "cap-test", cap_id, "Severe", False, same_first_seen)
+    create_alert(conn, "noaa", noaa_id, "Severe", False, same_first_seen)
+
+    let cap_key = timeline.alert_key("cap-test", cap_id)
+    let noaa_key = timeline.alert_key("noaa", noaa_id)
+
+    let q1 =
+      timeline.Query(
+        limit: 1,
+        before: None,
+        kinds: [timeline.Alert],
+        minmag: earthquake.AllMagnitudes,
+        min_severity: None,
+      )
+    let assert Ok(page1) = timeline_reader.page(q1, conn)
+    let keys1 = keys_of(page1.items)
+    list.length(keys1) |> should.equal(1)
+    let assert Some(c1_str) = page1.next_cursor
+    let assert Ok(c1) = timeline.decode_cursor(c1_str)
+
+    let q2 = timeline.Query(..q1, before: Some(c1))
+    let assert Ok(page2) = timeline_reader.page(q2, conn)
+    let keys2 = keys_of(page2.items)
+    list.length(keys2) |> should.equal(1)
+    let assert Some(c2_str) = page2.next_cursor
+    let assert Ok(c2) = timeline.decode_cursor(c2_str)
+
+    let q3 = timeline.Query(..q1, before: Some(c2))
+    let assert Ok(page3) = timeline_reader.page(q3, conn)
+    let keys3 = keys_of(page3.items)
+    keys3 |> should.equal([])
+    page3.next_cursor |> should.equal(None)
+
+    let assert [k1] = keys1
+    let assert [k2] = keys2
+    k1 |> should.not_equal(k2)
+    [k1, k2] |> list.contains(cap_key) |> should.equal(True)
+    [k1, k2] |> list.contains(noaa_key) |> should.equal(True)
+  })
+}
+
 fn default_query() -> timeline.Query {
   timeline.Query(
     limit: 50,
@@ -197,6 +242,28 @@ fn severity_of(
 }
 
 fn seed(conn: pog.Connection) -> Seed {
+  let now_ts = timestamp.system_time()
+  let tie_ts = timestamp.to_rfc3339(now_ts, calendar.utc_offset)
+  let newer_ts =
+    timestamp.to_rfc3339(
+      timestamp.add(now_ts, duration.hours(1)),
+      calendar.utc_offset,
+    )
+  let older_ts =
+    timestamp.to_rfc3339(
+      timestamp.subtract(now_ts, duration.hours(1)),
+      calendar.utc_offset,
+    )
+  let much_older_ts =
+    timestamp.to_rfc3339(
+      timestamp.subtract(now_ts, duration.hours(2)),
+      calendar.utc_offset,
+    )
+  let much_older_ts2 =
+    timestamp.to_rfc3339(
+      timestamp.subtract(now_ts, duration.hours(3)),
+      calendar.utc_offset,
+    )
   let now = test_db.now_ms()
   let e1 = create_earthquake(conn, "tl-e1", now, Some(5.0), None, tie_ts)
   let e2 = create_earthquake(conn, "tl-e2", now, None, None, much_older_ts)
@@ -210,9 +277,30 @@ fn seed(conn: pog.Connection) -> Seed {
   create_hazard(conn, "EQ-100", "earthquake", "extreme", True, tie_ts)
   create_hazard(conn, "VO-100", "volcano", "extreme", True, tie_ts)
 
-  create_alert(conn, "urn:oid:2.49.0.1.840.0.sev1", "Severe", False, tie_ts)
-  create_alert(conn, "urn:oid:2.49.0.1.840.0.min1", "Minor", False, tie_ts)
-  create_alert(conn, "urn:oid:2.49.0.1.840.0.ext1", "Extreme", True, newer_ts)
+  create_alert(
+    conn,
+    "noaa",
+    "urn:oid:2.49.0.1.840.0.sev1",
+    "Severe",
+    False,
+    tie_ts,
+  )
+  create_alert(
+    conn,
+    "noaa",
+    "urn:oid:2.49.0.1.840.0.min1",
+    "Minor",
+    False,
+    tie_ts,
+  )
+  create_alert(
+    conn,
+    "noaa",
+    "urn:oid:2.49.0.1.840.0.ext1",
+    "Extreme",
+    True,
+    newer_ts,
+  )
 
   Seed(
     e1: timeline.earthquake_key(e1),
@@ -223,9 +311,9 @@ fn seed(conn: pog.Connection) -> Seed {
     h2: timeline.hazard_key("gdacs", "FL-100"),
     h3: timeline.hazard_key("gdacs", "EQ-100"),
     h4: timeline.hazard_key("gdacs", "VO-100"),
-    a1: timeline.alert_key("urn:oid:2.49.0.1.840.0.sev1"),
-    a2: timeline.alert_key("urn:oid:2.49.0.1.840.0.min1"),
-    a3: timeline.alert_key("urn:oid:2.49.0.1.840.0.ext1"),
+    a1: timeline.alert_key("noaa", "urn:oid:2.49.0.1.840.0.sev1"),
+    a2: timeline.alert_key("noaa", "urn:oid:2.49.0.1.840.0.min1"),
+    a3: timeline.alert_key("noaa", "urn:oid:2.49.0.1.840.0.ext1"),
   )
 }
 
@@ -315,6 +403,7 @@ fn create_hazard(
 
 fn create_alert(
   conn: pog.Connection,
+  source: String,
   id: String,
   severity: String,
   ended: Bool,
@@ -326,11 +415,13 @@ fn create_alert(
   }
   test_db.exec(
     conn,
-    "INSERT INTO sea.alert (id, event, severity, urgency, certainty, area_desc, first_seen_at, last_seen_at, ended_at) VALUES ('"
+    "INSERT INTO sea.alert (source, source_id, event, severity, urgency, certainty, area_desc, active_until, first_seen_at, last_seen_at, ended_at) VALUES ('"
+      <> source
+      <> "', '"
       <> id
       <> "', 'Test Event', '"
       <> severity
-      <> "', 'Immediate', 'Observed', 'Test Area', '"
+      <> "', 'Immediate', 'Observed', 'Test Area', now() + INTERVAL '1 day', '"
       <> first_seen_at
       <> "'::timestamptz, now(), "
       <> ended_sql

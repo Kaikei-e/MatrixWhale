@@ -28,7 +28,8 @@ pub fn with_test_db(run: fn(pog.Connection) -> Nil) -> Nil {
       let assert Ok(config) = pog.url_config(name, url)
       // Every test spins up its own pool that is never stopped (pog exposes
       // no shutdown call); a small pool keeps the whole suite's connection
-      // count well under Postgres's default max_connections.
+      // count well under the test database's max_connections=400
+      // (db/scripts/test_core.sh raises it above Postgres's default).
       let assert Ok(_) = pog.start(pog.pool_size(config, 2))
       let conn = pog.named_connection(name)
       case
@@ -53,7 +54,7 @@ pub fn with_test_db(run: fn(pog.Connection) -> Nil) -> Nil {
 fn setup_test_schema(conn: pog.Connection) -> Nil {
   exec(
     conn,
-    "TRUNCATE sea.hazard, sea.gdacs_event, sea.event_member, sea.event, sea.earthquake_revision, sea.earthquake, sea.alert, sea.source",
+    "TRUNCATE sea.cap_item, sea.cap_message, sea.cap_feed, sea.cap_authority, sea.hazard, sea.gdacs_event, sea.event_member, sea.event, sea.earthquake_revision, sea.earthquake, sea.alert, sea.source CASCADE",
   )
   let assert Ok(Nil) = source_writer.sync(conn)
   exec(
@@ -73,7 +74,7 @@ fn setup_test_schema(conn: pog.Connection) -> Nil {
 fn teardown_test_schema(conn: pog.Connection) -> Nil {
   exec(
     conn,
-    "TRUNCATE sea.hazard, sea.gdacs_event, sea.event_member, sea.event, sea.earthquake_revision, sea.earthquake, sea.alert, sea.source",
+    "TRUNCATE sea.cap_item, sea.cap_message, sea.cap_feed, sea.cap_authority, sea.hazard, sea.gdacs_event, sea.event_member, sea.event, sea.earthquake_revision, sea.earthquake, sea.alert, sea.source CASCADE",
   )
   exec(
     conn,

@@ -1,3 +1,4 @@
+import gleam/dynamic/decode
 import gleam/json
 import gleam/list
 import gleam/option.{type Option}
@@ -58,6 +59,25 @@ pub const all: List(Source) = [noaa, usgs, emsc, gdacs]
 
 pub fn lookup(id: String) -> Result(Source, Nil) {
   list.find(all, fn(source) { source.id == id })
+}
+
+pub fn row_decoder() -> decode.Decoder(Source) {
+  use id <- decode.field(0, decode.string)
+  use name <- decode.field(1, decode.string)
+  use homepage <- decode.field(2, decode.optional(decode.string))
+  use license <- decode.field(3, decode.string)
+  use attribution_text <- decode.field(4, decode.string)
+  use redistributable <- decode.field(5, decode.bool)
+  use priority <- decode.field(6, decode.int)
+  decode.success(Source(
+    id:,
+    name:,
+    homepage:,
+    license:,
+    attribution_text:,
+    redistributable:,
+    priority:,
+  ))
 }
 
 pub fn to_json(source: Source) -> json.Json {

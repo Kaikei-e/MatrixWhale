@@ -53,7 +53,7 @@ const keyset_sql = "WITH filtered AS (
    WHERE hazard_type <> 'earthquake'
      AND ($4::text[] IS NULL OR cap_severity = ANY($4))
   UNION ALL
-  SELECT 'alert'::text AS kind, 'alert:' || id AS key, first_seen_at
+  SELECT 'alert'::text AS kind, 'alert:' || source || ':' || source_id AS key, first_seen_at
     FROM sea.alert
    WHERE ($5::text[] IS NULL OR severity = ANY($5))
 )
@@ -153,7 +153,7 @@ fn fetch_items(
     parsed
     |> list.filter_map(fn(pair) {
       case pair.1 {
-        AlertKey(id) -> Ok(id)
+        AlertKey(source, source_id) -> Ok(source <> ":" <> source_id)
         _ -> Error(Nil)
       }
     })
@@ -177,7 +177,10 @@ fn fetch_items(
         )
       }),
       list.map(alerts, fn(row) {
-        #(timeline.alert_key(row.id), timeline.from_alert(row))
+        #(
+          timeline.alert_key(row.source, row.source_id),
+          timeline.from_alert(row),
+        )
       }),
     ])
     |> dict.from_list

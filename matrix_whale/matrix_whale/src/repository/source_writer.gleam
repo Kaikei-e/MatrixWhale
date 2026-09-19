@@ -11,6 +11,16 @@ pub fn sync(conn: pog.Connection) -> Result(Nil, String) {
   source.all |> list.try_each(fn(s) { upsert(s, conn) })
 }
 
+pub fn list_all(conn: pog.Connection) -> Result(List(Source), String) {
+  pog.query(
+    "SELECT id, name, homepage, license, attribution_text, redistributable, priority FROM sea.source ORDER BY priority DESC, id ASC",
+  )
+  |> pog.returning(source.row_decoder())
+  |> pog.execute(conn)
+  |> result.map(fn(x) { x.rows })
+  |> result.map_error(fn(x) { "Database error: " <> string.inspect(x) })
+}
+
 const upsert_sql = "
   INSERT INTO sea.source (id, name, homepage, license, attribution_text, redistributable, priority)
   VALUES ($1, $2, $3, $4, $5, $6, $7)

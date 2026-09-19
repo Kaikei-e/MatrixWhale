@@ -1,7 +1,7 @@
 import gleam/int
 import gleam/list
 import gleeunit/should
-import intake/pipeline.{Written}
+import intake/pipeline.{Written, WrittenExcept}
 import intake/record.{Incoming, Key}
 import intake/seen_set
 
@@ -43,6 +43,32 @@ pub fn failed_write_does_not_mark_seen_test() {
 
   seen_set.unseen(set, [record.seen_key(Key("usgs", "a"), 1)], 0)
   |> should.equal([record.seen_key(Key("usgs", "a"), 1)])
+}
+
+pub fn written_except_does_not_mark_failed_keys_seen_test() {
+  let set = seen_set.new("pipeline_test_written_except", 10_000)
+
+  let assert Ok(outcome) =
+    pipeline.run([incoming("a", 1), incoming("b", 1)], set, 0, fn(_survivors) {
+      Ok(
+        WrittenExcept(
+          result: Nil,
+          new: 1,
+          updated: 0,
+          unchanged: 0,
+          stale: 0,
+          failed_keys: [Key("usgs", "b")],
+        ),
+      )
+    })
+
+  outcome.new |> should.equal(1)
+  // "a" was written and marked seen
+  seen_set.unseen(set, [record.seen_key(Key("usgs", "a"), 1)], 0)
+  |> should.equal([])
+  // "b" failed inside writer and was excluded from marking seen
+  seen_set.unseen(set, [record.seen_key(Key("usgs", "b"), 1)], 0)
+  |> should.equal([record.seen_key(Key("usgs", "b"), 1)])
 }
 
 pub fn large_batches_are_split_into_chunks_and_counts_aggregate_test() {

@@ -2,6 +2,7 @@ import adapter/context.{type Context}
 import gleam/erlang/process
 import gleam/string_tree
 import logs/reciever/usgs_adapter
+import message/reciever/cap_reciever
 import message/reciever/emsc_reciever
 import message/reciever/gdacs_reciever
 import message/reciever/noaa_reciever
@@ -47,6 +48,13 @@ fn reciever_router(request: Request, ctx: Context) -> Response {
       gdacs_reciever.gdacs_geometry_pending_handler(req, ctx)
     ["api", "v1", "gdacs_data", "geometry"] ->
       gdacs_reciever.gdacs_geometry_handler(req, ctx)
+    ["api", "v1", "cap_data", "registry"] ->
+      cap_reciever.registry_handler(req, ctx)
+    ["api", "v1", "cap_data", "feeds"] -> cap_reciever.feeds_handler(req, ctx)
+    ["api", "v1", "cap_data", "index"] -> cap_reciever.index_handler(req, ctx)
+    ["api", "v1", "cap_data", "pending"] ->
+      cap_reciever.pending_handler(req, ctx)
+    ["api", "v1", "cap_data", "alerts"] -> cap_reciever.alerts_handler(req, ctx)
     _ -> wisp.response(404)
   }
 }

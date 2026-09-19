@@ -6,10 +6,12 @@ import adapter/reciever
 import adapter/streamer
 import dot_env/env
 import gleam/erlang/process
+import gleam/time/duration
 import gleam/time/timestamp
 import intake/seen_set
 import pog
 import repeatedly
+import repository/alert_writer
 import repository/earthquake_reader
 import repository/initialize_db
 import repository/source_writer
@@ -42,6 +44,13 @@ pub fn main() {
   let assert Ok(earthquake_hub) = earthquake_hub.start()
   let assert Ok(hazard_hub) = hazard_hub.start()
 
+  sweep_and_clean_alerts(db, hub.data)
+  let _ =
+    repeatedly.call(60_000, Nil, fn(_, _) {
+      sweep_and_clean_alerts(db, hub.data)
+      Nil
+    })
+
   let ctx =
     context.Context(
       secret: secret,
@@ -58,6 +67,27 @@ pub fn main() {
 
   // Keep the main process alive
   process.sleep_forever()
+}
+
+fn sweep_and_clean_alerts(
+  db: pog.Connection,
+  hub: process.Subject(alert_hub.HubMsg),
+) -> Nil {
+  let now = timestamp.system_time()
+  case alert_writer.expire_due(now, db) {
+    Ok(rows) -> {
+      alert_hub.publish(
+        hub,
+        alert_writer.AlertDiff(new: [], updated: [], ended: rows),
+      )
+    }
+    Error(error) -> wisp.log_error("Alert expiry sweep failed: " <> error)
+  }
+  let cutoff = timestamp.subtract(now, duration.hours(24 * 7))
+  case alert_writer.cleanup(cutoff, db) {
+    Ok(Nil) -> Nil
+    Error(error) -> wisp.log_error("Alert retention cleanup failed: " <> error)
+  }
 }
 
 fn seen_ttl_ms() -> Int {

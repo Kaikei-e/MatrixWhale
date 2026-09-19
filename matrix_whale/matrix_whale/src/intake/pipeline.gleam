@@ -13,6 +13,14 @@ pub const chunk_size = 250
 /// What a writer produced from the records it was actually given.
 pub type Written(w) {
   Written(result: w, new: Int, updated: Int, unchanged: Int, stale: Int)
+  WrittenExcept(
+    result: w,
+    new: Int,
+    updated: Int,
+    unchanged: Int,
+    stale: Int,
+    failed_keys: List(record.Key),
+  )
 }
 
 /// What a full pipeline run produced, including records dropped before
@@ -36,12 +44,15 @@ type Progress(w) {
 }
 
 /// Filters `records` through the seen-set, then hands the survivors to
-/// `write` in chunks of at most `chunk_size` - one transaction per chunk -
-/// marking each chunk's keys seen only once its own write succeeds. A
-/// failing chunk stops the run and returns `Error` without touching later
-/// chunks, but earlier chunks stay committed and marked seen, so an adapter
-/// retry of the same batch sees them as repeats rather than writing them
-/// twice.
+/// `write` in chunks of at most `chunk_size`, marking each chunk's keys seen
+/// only once its own write succeeds. A writer may use one transaction per
+/// chunk or one transaction per record. Writers returning `WrittenExcept`
+/// provide `failed_keys`, which are excluded from being marked seen so they
+/// remain pending and are retried on subsequent runs, while successfully
+/// written keys in the chunk are marked seen. A failing chunk returning
+/// `Error` stops the run without touching later chunks, but earlier chunks
+/// stay committed and marked seen, so an adapter retry of the same batch sees
+/// them as repeats rather than writing them twice.
 pub fn run(
   records: List(Incoming(a)),
   seen: SeenSet,
@@ -71,7 +82,18 @@ pub fn run(
     list.try_fold(chunks, empty_progress(), fn(progress, chunk) {
       write(list.map(chunk, fn(pair) { pair.1 }))
       |> result.map(fn(written) {
-        seen_set.mark(seen, list.map(chunk, fn(pair) { pair.0 }), now_ms)
+        let keys_to_mark = case written {
+          Written(..) -> list.map(chunk, fn(pair) { pair.0 })
+          WrittenExcept(failed_keys:, ..) -> {
+            let failed_set = set.from_list(failed_keys)
+            chunk
+            |> list.filter(fn(pair) {
+              !set.contains(failed_set, { pair.1 }.key)
+            })
+            |> list.map(fn(pair) { pair.0 })
+          }
+        }
+        seen_set.mark(seen, keys_to_mark, now_ms)
         append_written(progress, written)
       })
     }),
@@ -92,11 +114,15 @@ fn empty_progress() -> Progress(w) {
 }
 
 fn append_written(progress: Progress(w), written: Written(w)) -> Progress(w) {
-  Progress(
-    results: [written.result, ..progress.results],
-    new: progress.new + written.new,
-    updated: progress.updated + written.updated,
-    unchanged: progress.unchanged + written.unchanged,
-    stale: progress.stale + written.stale,
-  )
+  case written {
+    Written(result:, new:, updated:, unchanged:, stale:)
+    | WrittenExcept(result:, new:, updated:, unchanged:, stale:, ..) ->
+      Progress(
+        results: [result, ..progress.results],
+        new: progress.new + new,
+        updated: progress.updated + updated,
+        unchanged: progress.unchanged + unchanged,
+        stale: progress.stale + stale,
+      )
+  }
 }

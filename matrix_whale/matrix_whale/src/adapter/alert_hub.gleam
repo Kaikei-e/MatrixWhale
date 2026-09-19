@@ -1,4 +1,4 @@
-import domain/alert.{type AlertRow}
+import domain/alert
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject}
 import gleam/json
@@ -21,6 +21,7 @@ const call_timeout_ms = 5000
 pub type SSEMessage {
   Emit(event: String, id: Int, data: String)
   Heartbeat(last_id: Int)
+  Resync(last_id: Int)
 }
 
 pub type PipelineStats {
@@ -105,12 +106,19 @@ type State {
 /// event ring buffer, and the pipeline stats surfaced at
 /// `/api/v1/pipeline/status`.
 pub fn start() -> actor.StartResult(Subject(HubMsg)) {
+  let #(sec, nsec) =
+    timestamp.to_unix_seconds_and_nanoseconds(timestamp.system_time())
+  let boot_ms = sec * 1000 + nsec / 1_000_000
+  start_with_boot_id(boot_ms)
+}
+
+fn start_with_boot_id(boot_id: Int) -> actor.StartResult(Subject(HubMsg)) {
   actor.new_with_initialiser(1000, fn(subject) {
     let _ =
       repeatedly.call(heartbeat_interval_ms, Nil, fn(_state, _count) {
         process.send(subject, Tick)
       })
-    actor.initialised(initial_state())
+    actor.initialised(initial_state(boot_id))
     |> actor.returning(subject)
     |> Ok
   })
@@ -195,11 +203,11 @@ pub fn source_stats_to_json(stats: Dict(String, SourceStats)) -> json.Json {
   |> json.object
 }
 
-fn initial_state() -> State {
+fn initial_state(next_event_id: Int) -> State {
   State(
     subscribers: dict.new(),
     next_subscriber_id: 1,
-    next_event_id: 1,
+    next_event_id: next_event_id,
     ring: [],
     stats: PipelineStats(
       last_fetch_at: option.None,
@@ -236,6 +244,13 @@ fn empty_source_stats() -> SourceStats {
   )
 }
 
+/// Returns True when the client needs a full resync rather than ring replay.
+/// Resync when since falls before the ring (gap) or after the highest known
+/// event id (stale id from a previous server run).
+pub fn needs_resync(since: Int, oldest: Int, next_event_id: Int) -> Bool {
+  since < oldest - 1 || since > next_event_id - 1
+}
+
 fn handle_message(state: State, message: HubMsg) -> actor.Next(State, HubMsg) {
   case message {
     Subscribe(subject, since_id, reply_to) -> {
@@ -245,13 +260,22 @@ fn handle_message(state: State, message: HubMsg) -> actor.Next(State, HubMsg) {
       // Only a reconnecting client (Last-Event-ID) gets a replay; a fresh
       // client has just fetched the snapshot and must not re-see old events.
       case since_id {
-        option.Some(since) ->
-          state.ring
-          |> list.reverse
-          |> list.filter(fn(entry) { entry.id > since })
-          |> list.each(fn(entry) {
-            process.send(subject, Emit(entry.event, entry.id, entry.data))
-          })
+        option.Some(since) -> {
+          let oldest_entry_id = case list.last(state.ring) {
+            Ok(entry) -> entry.id
+            Error(Nil) -> state.next_event_id
+          }
+          case needs_resync(since, oldest_entry_id, state.next_event_id) {
+            True -> process.send(subject, Resync(state.next_event_id - 1))
+            False ->
+              state.ring
+              |> list.reverse
+              |> list.filter(fn(entry) { entry.id > since })
+              |> list.each(fn(entry) {
+                process.send(subject, Emit(entry.event, entry.id, entry.data))
+              })
+          }
+        }
         option.None -> Nil
       }
       process.send(subject, Heartbeat(state.next_event_id - 1))
@@ -384,38 +408,28 @@ fn handle_message(state: State, message: HubMsg) -> actor.Next(State, HubMsg) {
 }
 
 fn append_diff(state: State, diff: AlertDiff) -> #(State, List(RingEntry)) {
-  let #(state, new_entries) =
-    list.fold(diff.new, #(state, []), fn(acc, row) {
-      add_entry(acc, "alert.new", row)
-    })
-  let #(state, updated_entries) =
-    list.fold(diff.updated, #(state, []), fn(acc, row) {
-      add_entry(acc, "alert.update", row)
-    })
-  let #(state, ended_entries) =
-    list.fold(diff.ended, #(state, []), fn(acc, row) {
-      add_entry(acc, "alert.ended", row)
-    })
-  #(state, list.flatten([new_entries, updated_entries, ended_entries]))
-}
+  let new_items = list.map(diff.new, fn(r) { #("alert.new", r) })
+  let updated_items = list.map(diff.updated, fn(r) { #("alert.update", r) })
+  let ended_items = list.map(diff.ended, fn(r) { #("alert.ended", r) })
+  let all_items = list.flatten([new_items, updated_items, ended_items])
 
-fn add_entry(
-  acc: #(State, List(RingEntry)),
-  event: String,
-  row: AlertRow,
-) -> #(State, List(RingEntry)) {
-  let #(state, entries) = acc
-  let id = state.next_event_id
-  let entry =
-    RingEntry(id: id, event: event, data: json.to_string(alert.to_json(row)))
-  let ring = [entry, ..state.ring] |> list.take(ring_capacity)
+  let #(next_id, entries_rev) =
+    list.fold(all_items, #(state.next_event_id, []), fn(acc, item) {
+      let #(id, entries) = acc
+      let #(event_name, row) = item
+      let entry =
+        RingEntry(
+          id: id,
+          event: event_name,
+          data: json.to_string(alert.to_json(row)),
+        )
+      #(id + 1, [entry, ..entries])
+    })
 
-  #(
-    State(..state, next_event_id: id + 1, ring: ring),
-    list.append(entries, [
-      entry,
-    ]),
-  )
+  let entries = list.reverse(entries_rev)
+  let ring = list.append(entries_rev, state.ring) |> list.take(ring_capacity)
+
+  #(State(..state, next_event_id: next_id, ring: ring), entries)
 }
 
 fn now_rfc3339() -> String {

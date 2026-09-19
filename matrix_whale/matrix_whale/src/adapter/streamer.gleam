@@ -1,8 +1,9 @@
-import adapter/alert_hub.{type HubMsg, type SSEMessage, Emit, Heartbeat}
+import adapter/alert_hub.{type HubMsg, type SSEMessage, Emit, Heartbeat, Resync}
 import adapter/context.{type Context}
 import adapter/earthquake_hub
 import adapter/hazard_hub
 import domain/alert
+import domain/cap_feed_view
 import domain/earthquake
 import domain/event
 import domain/hazard
@@ -27,8 +28,10 @@ import gleam/time/calendar
 import gleam/time/timestamp
 import mist
 import repository/alert_reader
+import repository/cap_feed_reader
 import repository/earthquake_reader
 import repository/hazard_reader
+import repository/source_writer
 import repository/timeline_reader
 import wisp
 
@@ -72,10 +75,12 @@ fn router(
 ) -> Response(mist.ResponseData) {
   case request.path_segments(req) {
     ["api", "v1", "streamer", "health"] -> health_response()
-    ["api", "v1", "alerts", "active"] -> active_response(ctx)
+    ["api", "v1", "alerts", "active"] -> active_response(req, ctx)
+    ["api", "v1", "alerts", "detail"] -> alert_detail_response(req, ctx)
     ["api", "v1", "alerts", "stream"] -> stream_response(req, ctx)
     ["api", "v1", "alerts", "search"] -> search_response(req, ctx)
     ["api", "v1", "alerts", "history"] -> history_response(req, ctx)
+    ["api", "v1", "cap", "feeds"] -> cap_feeds_response(req, ctx)
     ["api", "v1", "earthquakes", "recent"] -> earthquakes_response(req, ctx)
     ["api", "v1", "earthquakes", "stream"] ->
       case req.method {
@@ -84,7 +89,7 @@ fn router(
           response.new(405) |> response.set_body(mist.Bytes(bytes_tree.new()))
       }
     ["api", "v1", "pipeline", "status"] -> pipeline_status_response(ctx)
-    ["api", "v1", "sources"] -> sources_response()
+    ["api", "v1", "sources"] -> sources_response(ctx)
     ["api", "v1", "hazards", "recent"] -> hazards_response(req, ctx)
     ["api", "v1", "hazards", "stream"] ->
       case req.method {
@@ -280,10 +285,73 @@ pub fn if_none_match_matches(value: String, etag: String) -> Bool {
   })
 }
 
-fn active_response(ctx: Context) -> Response(mist.ResponseData) {
-  case alert_reader.list_active(ctx.db) {
-    Ok(rows) -> json_response(200, json.array(rows, alert.to_json))
-    Error(err) -> error_response(err)
+pub fn active_response(
+  req: Request(connection),
+  ctx: Context,
+) -> Response(mist.ResponseData) {
+  let query = request.get_query(req) |> result.unwrap([])
+  let min_severity_param =
+    query |> list.key_find("min_severity") |> result.unwrap("")
+  case parse_alert_min_severity(min_severity_param) {
+    Error(error) ->
+      json_response(400, json.object([#("error", json.string(error))]))
+    Ok(severities) -> {
+      let sources =
+        query |> list.key_find("sources") |> result.unwrap("") |> comma_list
+      let countries =
+        query |> list.key_find("countries") |> result.unwrap("") |> comma_list
+      case alert_reader.list_active(sources, countries, severities, ctx.db) {
+        Ok(rows) -> etag_json_response(req, json.array(rows, alert.to_json))
+        Error(err) -> error_response(err)
+      }
+    }
+  }
+}
+
+fn parse_alert_min_severity(value: String) -> Result(List(String), String) {
+  case string.lowercase(string.trim(value)) {
+    "" -> Ok([])
+    "minor" -> Ok(["Minor", "Moderate", "Severe", "Extreme"])
+    "moderate" -> Ok(["Moderate", "Severe", "Extreme"])
+    "severe" -> Ok(["Severe", "Extreme"])
+    "extreme" -> Ok(["Extreme"])
+    _ -> Error("min_severity must be minor, moderate, severe, or extreme")
+  }
+}
+
+pub fn alert_detail_response(
+  req: Request(connection),
+  ctx: Context,
+) -> Response(mist.ResponseData) {
+  let query = request.get_query(req) |> result.unwrap([])
+  case list.key_find(query, "id") {
+    Error(_) ->
+      json_response(
+        404,
+        json.object([#("error", json.string("alert not found"))]),
+      )
+    Ok(raw_id) ->
+      case string.split_once(raw_id, ":") {
+        Error(Nil) ->
+          json_response(
+            404,
+            json.object([#("error", json.string("alert not found"))]),
+          )
+        Ok(#(source, source_id)) ->
+          case alert_reader.detail(source, source_id, ctx.db) {
+            Error(error) -> error_response(error)
+            Ok(option.None) ->
+              json_response(
+                404,
+                json.object([#("error", json.string("alert not found"))]),
+              )
+            Ok(option.Some(#(row, infos, cap_url, feed_url))) ->
+              etag_json_response(
+                req,
+                alert.to_detail_json(row, infos, cap_url, feed_url),
+              )
+          }
+      }
   }
 }
 
@@ -353,13 +421,34 @@ fn pipeline_status_response(ctx: Context) -> Response(mist.ResponseData) {
   }
 }
 
-fn sources_response() -> Response(mist.ResponseData) {
-  json_response(
-    200,
-    json.object([
-      #("sources", json.array(source.all, source.to_json)),
-    ]),
-  )
+fn sources_response(ctx: Context) -> Response(mist.ResponseData) {
+  case source_writer.list_all(ctx.db) {
+    Ok(sources) ->
+      json_response(
+        200,
+        json.object([
+          #("sources", json.array(sources, source.to_json)),
+        ]),
+      )
+    Error(err) -> error_response(err)
+  }
+}
+
+fn cap_feeds_response(
+  req: Request(mist.Connection),
+  ctx: Context,
+) -> Response(mist.ResponseData) {
+  case req.method {
+    http.Get -> {
+      let now = timestamp.system_time()
+      case cap_feed_reader.view(now, ctx.db) {
+        Ok(feeds_view) ->
+          etag_json_response(req, cap_feed_view.to_json(feeds_view))
+        Error(err) -> error_response(err)
+      }
+    }
+    _ -> response.new(405) |> response.set_body(mist.Bytes(bytes_tree.new()))
+  }
 }
 
 fn hazards_response(
@@ -548,6 +637,10 @@ fn stream_response(
         Heartbeat(last_id) ->
           mist.event(string_tree.from_string("{}"))
           |> mist.event_name("heartbeat")
+          |> mist.event_id(int.to_string(last_id))
+        Resync(last_id) ->
+          mist.event(string_tree.from_string("{\"reason\":\"event_gap\"}"))
+          |> mist.event_name("resync")
           |> mist.event_id(int.to_string(last_id))
       }
 

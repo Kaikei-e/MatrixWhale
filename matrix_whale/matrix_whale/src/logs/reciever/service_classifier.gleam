@@ -5,6 +5,7 @@ pub type Source {
   Usgs
   Emsc
   Gdacs
+  Cap
   Unknown
 }
 
@@ -25,6 +26,8 @@ fn classify_name(name: String) -> Source {
     "emsc_adapter" -> Emsc
     "gdacs" -> Gdacs
     "gdacs_adapter" -> Gdacs
+    "cap" -> Cap
+    "cap_adapter" -> Cap
     _ -> Unknown
   }
 }
@@ -35,6 +38,7 @@ pub fn source_name(source: Source) -> String {
     Usgs -> "usgs"
     Emsc -> "emsc"
     Gdacs -> "gdacs"
+    Cap -> "cap"
     Unknown -> "unknown"
   }
 }

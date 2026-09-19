@@ -127,15 +127,23 @@ pub fn key_round_trip_for_each_kind_test() {
   |> should.equal(Ok(timeline.HazardKey("gdacs", "EQ-1565193")))
 
   let noaa_id = "urn:oid:2.49.0.1.840.0.abc"
-  timeline.alert_key(noaa_id) |> should.equal("alert:" <> noaa_id)
-  timeline.parse_key("alert:" <> noaa_id)
-  |> should.equal(Ok(timeline.AlertKey(noaa_id)))
+  timeline.alert_key("noaa", noaa_id) |> should.equal("alert:noaa:" <> noaa_id)
+  timeline.parse_key("alert:noaa:" <> noaa_id)
+  |> should.equal(Ok(timeline.AlertKey("noaa", noaa_id)))
+
+  let cap_source = "cap-2.49.0.0.276.0"
+  let cap_id = "opendata@dwd.de,2.49.0.0.276.0.DWD.PVW"
+  timeline.alert_key(cap_source, cap_id)
+  |> should.equal("alert:" <> cap_source <> ":" <> cap_id)
+  timeline.parse_key("alert:" <> cap_source <> ":" <> cap_id)
+  |> should.equal(Ok(timeline.AlertKey(cap_source, cap_id)))
 }
 
 pub fn parse_key_rejects_malformed_values_test() {
   timeline.parse_key("earthquake:not-an-int")
   |> should.be_error
   timeline.parse_key("hazard:only-one-part") |> should.be_error
+  timeline.parse_key("alert:only-one-part") |> should.be_error
   timeline.parse_key("nokind") |> should.be_error
 }
 

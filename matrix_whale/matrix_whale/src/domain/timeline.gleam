@@ -172,7 +172,7 @@ fn to_noaa_string(severity: Severity) -> String {
 pub type Key {
   EarthquakeKey(id: Int)
   HazardKey(source: String, source_id: String)
-  AlertKey(id: String)
+  AlertKey(source: String, source_id: String)
 }
 
 pub fn earthquake_key(id: Int) -> String {
@@ -183,13 +183,13 @@ pub fn hazard_key(source: String, source_id: String) -> String {
   "hazard:" <> source <> ":" <> source_id
 }
 
-pub fn alert_key(id: String) -> String {
-  "alert:" <> id
+pub fn alert_key(source: String, source_id: String) -> String {
+  "alert:" <> source <> ":" <> source_id
 }
 
 /// Splits on the first `:` for the kind, then applies the per-kind colon
-/// rule: an alert id is the whole remainder (NOAA ids are URNs containing
-/// `:`), a hazard key splits its remainder on its own first `:` into
+/// rule: an alert key splits on its first `:` after `alert:` into
+/// `source`/`source_id`, a hazard key splits its remainder on its own first `:` into
 /// `source`/`source_id`, and an earthquake key's remainder is its integer id.
 pub fn parse_key(value: String) -> Result(Key, String) {
   case string.split_once(value, ":") {
@@ -203,7 +203,11 @@ pub fn parse_key(value: String) -> Result(Key, String) {
         Ok(#(source, source_id)) -> Ok(HazardKey(source, source_id))
         Error(_) -> Error("invalid hazard key: " <> value)
       }
-    Ok(#("alert", rest)) -> Ok(AlertKey(rest))
+    Ok(#("alert", rest)) ->
+      case string.split_once(rest, ":") {
+        Ok(#(source, source_id)) -> Ok(AlertKey(source, source_id))
+        Error(_) -> Error("invalid alert key: " <> value)
+      }
     _ -> Error("invalid key: " <> value)
   }
 }
@@ -363,7 +367,7 @@ pub fn from_hazard(row: Hazard) -> TimelineItem {
 pub fn from_alert(row: AlertRow) -> TimelineItem {
   TimelineItem(
     kind: Alert,
-    key: alert_key(row.id),
+    key: alert_key(row.source, row.source_id),
     seen_at: row.first_seen_at,
     severity: severity_for_alert(row.severity),
     ended: option.is_some(row.ended_at),
