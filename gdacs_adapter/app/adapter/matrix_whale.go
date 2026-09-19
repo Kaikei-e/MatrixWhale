@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"matrixwhale/adapters/common/core"
+	"matrixwhale/adapters/common/metrics"
 )
 
 const maxResponseBodySize = 1 << 20
@@ -20,7 +21,7 @@ type MatrixWhaleAdapter struct {
 }
 
 func NewMatrixWhaleAdapter(client *core.Client) *MatrixWhaleAdapter {
-	return &MatrixWhaleAdapter{client: client, http: &http.Client{Timeout: 30 * time.Second}}
+	return &MatrixWhaleAdapter{client: client, http: &http.Client{Timeout: 30 * time.Second, Transport: metrics.Transport("core", nil)}}
 }
 
 func (a *MatrixWhaleAdapter) SendEvents(ctx context.Context, meta core.PollMeta, features []json.RawMessage) error {

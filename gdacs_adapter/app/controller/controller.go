@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"matrixwhale/adapters/common/core"
+	"matrixwhale/adapters/common/metrics"
 	"matrixwhale/adapters/common/poll"
 
 	"gdacs_adapter/adapter"
@@ -106,7 +107,7 @@ type (
 func Run(ctx context.Context) {
 	cfg := loadConfig()
 	limiter := adapter.NewLimiter(cfg.minRequestInterval)
-	httpClient := &http.Client{Timeout: 60 * time.Second}
+	httpClient := &http.Client{Timeout: 60 * time.Second, Transport: metrics.Transport("upstream", nil)}
 	mw := adapter.NewMatrixWhaleAdapter(core.NewClientFromEnv())
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	run(ctx, cfg, limiter, httpClient, adapter.FetchEventPage, adapter.FetchGeometry, mw.SendEvents, mw.PendingGeometry, mw.SendGeometry, wait, rng, time.Now)

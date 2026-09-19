@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"matrixwhale/adapters/common/core"
+	"matrixwhale/adapters/common/metrics"
 	"matrixwhale/adapters/common/poll"
 )
 
@@ -52,7 +53,7 @@ type MatrixWhaleClient struct {
 
 func NewMatrixWhaleClient(coreClient *core.Client, httpClient *http.Client) *MatrixWhaleClient {
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
+		httpClient = &http.Client{Timeout: 30 * time.Second, Transport: metrics.Transport("core", nil)}
 	}
 	return &MatrixWhaleClient{
 		coreClient: coreClient,

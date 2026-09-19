@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"matrixwhale/adapters/common/core"
+	"matrixwhale/adapters/common/metrics"
 	"matrixwhale/adapters/common/useragent"
 
 	"cap_adapter/adapter"
@@ -109,11 +110,12 @@ type Controller struct {
 func Run(ctx context.Context) {
 	cfg := LoadConfig()
 	coreClient := core.NewClientFromEnv()
-	httpClient := &http.Client{Timeout: DefaultRequestTimeout}
-	mwClient := adapter.NewMatrixWhaleClient(coreClient, httpClient)
+	coreHTTPClient := &http.Client{Timeout: DefaultRequestTimeout, Transport: metrics.Transport("core", nil)}
+	mwClient := adapter.NewMatrixWhaleClient(coreClient, coreHTTPClient)
+	upstreamHTTPClient := &http.Client{Timeout: DefaultRequestTimeout, Transport: metrics.Transport("upstream", nil)}
 	limiter := adapter.NewHostLimiter(cfg.HostMinInterval, cfg.MaxParallelHosts)
 
-	c := NewController(cfg, mwClient, httpClient, limiter, time.Now)
+	c := NewController(cfg, mwClient, upstreamHTTPClient, limiter, time.Now)
 	c.Execute(ctx)
 }
 
@@ -125,7 +127,7 @@ func NewController(
 	now func() time.Time,
 ) *Controller {
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: DefaultRequestTimeout}
+		httpClient = &http.Client{Timeout: DefaultRequestTimeout, Transport: metrics.Transport("upstream", nil)}
 	}
 	if now == nil {
 		now = time.Now

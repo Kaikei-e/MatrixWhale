@@ -15,8 +15,14 @@ import (
 
 	"github.com/coder/websocket"
 
+	"matrixwhale/adapters/common/metrics"
 	"matrixwhale/adapters/common/useragent"
 )
+
+var defaultHTTPClient = &http.Client{
+	Timeout:   60 * time.Second,
+	Transport: metrics.Transport("upstream", nil),
+}
 
 const (
 	DefaultWebSocketURL = "wss://www.seismicportal.eu/standing_order/websocket"
@@ -105,7 +111,7 @@ func FetchBackfillPage(ctx context.Context, fdsnURL string, q FDSNQuery) (FetchR
 	req.Header.Set("User-Agent", userAgent())
 	req.Header.Set("Accept", "application/json")
 
-	res, err := (&http.Client{Timeout: 60 * time.Second}).Do(req)
+	res, err := defaultHTTPClient.Do(req)
 	if err != nil {
 		return FetchResult{}, err
 	}
@@ -156,6 +162,9 @@ func Subscribe(ctx context.Context, wsURL string, out chan<- LiveMessage) error 
 	}
 	defer conn.CloseNow()
 
+	metrics.SetWebsocketConnected(true)
+	defer metrics.SetWebsocketConnected(false)
+
 	pingCtx, stopPing := context.WithCancel(ctx)
 	defer stopPing()
 	go pingLoop(pingCtx, conn)
@@ -168,6 +177,7 @@ func Subscribe(ctx context.Context, wsURL string, out chan<- LiveMessage) error 
 			}
 			return fmt.Errorf("read EMSC websocket: %w", err)
 		}
+		metrics.RecordWebsocketMessage()
 		message, parseErr := parseLiveMessage(data)
 		if parseErr != nil {
 			slog.Warn("dropping unparseable EMSC message", "error", parseErr)

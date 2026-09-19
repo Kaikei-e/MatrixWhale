@@ -13,6 +13,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"matrixwhale/adapters/common/metrics"
 )
 
 const (
@@ -36,11 +38,20 @@ func NewClientFromEnv() *Client {
 	if base == "" {
 		base = DefaultBaseURL
 	}
-	return NewClient(base, &http.Client{Timeout: 60 * time.Second})
+	return NewClient(base, &http.Client{
+		Timeout:   60 * time.Second,
+		Transport: metrics.Transport("core", nil),
+	})
 }
 
 // NewClient builds a Client against an explicit base URL and *http.Client.
 func NewClient(baseURL string, httpClient *http.Client) *Client {
+	if httpClient == nil {
+		httpClient = &http.Client{
+			Timeout:   60 * time.Second,
+			Transport: metrics.Transport("core", nil),
+		}
+	}
 	return &Client{baseURL: strings.TrimRight(baseURL, "/"), http: httpClient}
 }
 

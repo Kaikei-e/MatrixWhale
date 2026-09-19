@@ -9,8 +9,14 @@ import (
 	"sync"
 	"time"
 
+	"matrixwhale/adapters/common/metrics"
 	"matrixwhale/adapters/common/useragent"
 )
+
+var defaultHTTPClient = &http.Client{
+	Timeout:   60 * time.Second,
+	Transport: metrics.Transport("upstream", nil),
+}
 
 const NoaaURL = "https://api.weather.gov"
 
@@ -50,8 +56,7 @@ func NoaaAlertsAdapter(prevETag, prevLastModified string) (PollResult, error) {
 		req.Header.Set("If-Modified-Since", prevLastModified)
 	}
 
-	cl := http.Client{Timeout: 60 * time.Second}
-	res, err := cl.Do(req)
+	res, err := defaultHTTPClient.Do(req)
 	if err != nil {
 		return PollResult{}, err
 	}

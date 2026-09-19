@@ -9,8 +9,14 @@ import (
 	"net/http"
 	"time"
 
+	"matrixwhale/adapters/common/metrics"
 	"matrixwhale/adapters/common/useragent"
 )
+
+var defaultHTTPClient = &http.Client{
+	Timeout:   60 * time.Second,
+	Transport: metrics.Transport("upstream", nil),
+}
 
 const (
 	USGSAllDayURL       = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson"
@@ -47,7 +53,7 @@ func FetchFeed(ctx context.Context, feedURL, previousLastModified string) (PollR
 	if previousLastModified != "" {
 		req.Header.Set("If-Modified-Since", previousLastModified)
 	}
-	res, err := (&http.Client{Timeout: 60 * time.Second}).Do(req)
+	res, err := defaultHTTPClient.Do(req)
 	if err != nil {
 		return PollResult{}, err
 	}
