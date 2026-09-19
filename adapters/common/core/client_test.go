@@ -111,3 +111,51 @@ func TestValidateAckAcceptsBalancedCounts(t *testing.T) {
 		t.Fatalf("ValidateAck rejected a valid ack: %v", err)
 	}
 }
+
+func TestPollMetaJSONOptionalFields(t *testing.T) {
+	emptyMeta := PollMeta{
+		FetchedAt:    "2026-09-19T00:00:00Z",
+		HTTPStatus:   200,
+		FeatureCount: 0,
+		Bytes:        0,
+		FeedURL:      "https://example.com/feed",
+	}
+	emptyBytes, err := json.Marshal(emptyMeta)
+	if err != nil {
+		t.Fatalf("marshal empty meta: %v", err)
+	}
+	var emptyMap map[string]any
+	if err := json.Unmarshal(emptyBytes, &emptyMap); err != nil {
+		t.Fatalf("unmarshal empty meta: %v", err)
+	}
+	if _, ok := emptyMap["error"]; ok {
+		t.Errorf("expected error to be omitted when empty, got %v", emptyMap["error"])
+	}
+	if _, ok := emptyMap["format"]; ok {
+		t.Errorf("expected format to be omitted when empty, got %v", emptyMap["format"])
+	}
+
+	setMeta := PollMeta{
+		FetchedAt:    "2026-09-19T00:00:00Z",
+		HTTPStatus:   500,
+		FeatureCount: 0,
+		Bytes:        123,
+		FeedURL:      "https://example.com/feed",
+		Error:        "connection reset",
+		Format:       "atom",
+	}
+	setBytes, err := json.Marshal(setMeta)
+	if err != nil {
+		t.Fatalf("marshal set meta: %v", err)
+	}
+	var setMap map[string]any
+	if err := json.Unmarshal(setBytes, &setMap); err != nil {
+		t.Fatalf("unmarshal set meta: %v", err)
+	}
+	if val, ok := setMap["error"]; !ok || val != "connection reset" {
+		t.Errorf("expected error to be 'connection reset', got %v (present: %v)", val, ok)
+	}
+	if val, ok := setMap["format"]; !ok || val != "atom" {
+		t.Errorf("expected format to be 'atom', got %v (present: %v)", val, ok)
+	}
+}

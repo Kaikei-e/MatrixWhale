@@ -56,6 +56,8 @@ type PollMeta struct {
 	Bytes        int    `json:"bytes"`
 	FeedURL      string `json:"feed_url"`
 	Backfill     bool   `json:"backfill"`
+	Error        string `json:"error,omitempty"`
+	Format       string `json:"format,omitempty"`
 }
 
 type outboundEnvelope struct {
