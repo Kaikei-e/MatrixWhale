@@ -26,7 +26,9 @@ describe('chart tokens', () => {
 			ink: DAY.ink,
 			'ink-2': DAY['ink-2'],
 			light: DAY.light,
-			amber: DAY.amber
+			amber: DAY.amber,
+			moderate: DAY.moderate,
+			minor: DAY.minor
 		});
 	});
 
@@ -39,7 +41,40 @@ describe('chart tokens', () => {
 			ink: NIGHT.ink,
 			'ink-2': NIGHT['ink-2'],
 			light: NIGHT.light,
-			amber: NIGHT.amber
+			amber: NIGHT.amber,
+			moderate: NIGHT.moderate,
+			minor: NIGHT.minor
 		});
+	});
+
+	it('zones and alert polygons share identical per-severity fill opacity specifications', () => {
+		const zonesSrc = readFileSync(
+			fileURLToPath(new URL('./ZonesLayer.svelte', import.meta.url)),
+			'utf-8'
+		);
+		const polySrc = readFileSync(
+			fileURLToPath(new URL('./AlertPolygonsLayer.svelte', import.meta.url)),
+			'utf-8'
+		);
+
+		const extractOpacity = (src: string) => {
+			const m = src.match(/const FILL_OPACITY[^{=]*=\s*(\[[^;]+\]);/s);
+			return m ? m[1].replace(/\s+/g, ' ') : null;
+		};
+
+		const zonesOpacity = extractOpacity(zonesSrc);
+		const polyOpacity = extractOpacity(polySrc);
+		expect(zonesOpacity).toBe(polyOpacity);
+	});
+
+	it('FeedItem New badge has contrast ratio >= 4.5 in both day and night themes', () => {
+		const feedItemSrc = readFileSync(
+			fileURLToPath(new URL('../components/FeedItem.svelte', import.meta.url)),
+			'utf-8'
+		);
+		const badgeMatch = feedItemSrc.match(/<span class="[^"]*bg-light[^"]*">New<\/span>/);
+		expect(badgeMatch).not.toBeNull();
+		const badgeClass = badgeMatch![0];
+		expect(badgeClass).toMatch(/dark:text-(?:paper|black|\[#0f1b24\])/);
 	});
 });

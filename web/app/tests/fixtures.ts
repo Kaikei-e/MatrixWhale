@@ -2,16 +2,25 @@ import type { Page } from '@playwright/test';
 
 export const ALERTS = [
 	{
-		id: 'urn:oid:test.1',
+		id: 'noaa:https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.1',
+		source: 'noaa',
+		source_id: 'https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.1',
+		source_name: 'National Weather Service',
+		attribution: 'NOAA / National Weather Service',
+		countries: ['USA'],
+		sender: 'w-nws.webmaster@noaa.gov',
+		sender_name: 'NWS Norman OK',
+		message_type: 'Alert',
 		event: 'Tornado Warning',
+		category: ['Met'],
 		severity: 'Extreme',
 		urgency: 'Immediate',
 		certainty: 'Observed',
-		message_type: 'Alert',
 		headline: 'Tornado Warning issued',
+		language: 'en-US',
+		web: 'https://alerts.weather.gov',
 		area_desc: 'Oklahoma County, OK',
-		ugc: ['OKZ140'],
-		same: [],
+		geocodes: [{ name: 'UGC', value: 'OKZ140' }],
 		geometry: {
 			type: 'Polygon',
 			coordinates: [
@@ -30,19 +39,30 @@ export const ALERTS = [
 		ends: null,
 		first_seen_at: '2026-09-17T10:00:05Z',
 		last_seen_at: '2026-09-17T10:00:05Z',
-		ended_at: null
+		ended_at: null,
+		end_reason: null,
+		superseded_by: null
 	},
 	{
-		id: 'urn:oid:test.2',
+		id: 'noaa:https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.2',
+		source: 'noaa',
+		source_id: 'https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.2',
+		source_name: 'National Weather Service',
+		attribution: 'NOAA / National Weather Service',
+		countries: ['USA'],
+		sender: 'w-nws.webmaster@noaa.gov',
+		sender_name: 'NWS Norman OK',
+		message_type: 'Alert',
 		event: 'Flash Flood Warning',
+		category: ['Met'],
 		severity: 'Severe',
 		urgency: 'Expected',
 		certainty: 'Likely',
-		message_type: 'Alert',
 		headline: null,
+		language: 'en-US',
+		web: null,
 		area_desc: 'Oklahoma County, OK',
-		ugc: ['OKC143'],
-		same: [],
+		geocodes: [{ name: 'UGC', value: 'OKC143' }],
 		geometry: null,
 		sent: '2026-09-17T09:30:00Z',
 		effective: '2026-09-17T09:30:00Z',
@@ -50,27 +70,84 @@ export const ALERTS = [
 		ends: null,
 		first_seen_at: '2026-09-17T09:30:05Z',
 		last_seen_at: '2026-09-17T09:30:05Z',
-		ended_at: null
+		ended_at: null,
+		end_reason: null,
+		superseded_by: null
 	},
 	{
-		id: 'urn:oid:test.3',
+		id: 'cap-2.49.0.0.250.0:contact@meteo.fr,2.49.0.0.250.0.MF.20260917',
+		source: 'cap-2.49.0.0.250.0',
+		source_id: 'contact@meteo.fr,2.49.0.0.250.0.MF.20260917',
+		source_name: 'Météo-France',
+		attribution: 'Météo-France (France), via the WMO Register of Alerting Authorities',
+		countries: ['FRA'],
+		sender: 'contact@meteo.fr',
+		sender_name: 'Météo-France Toulouse',
+		message_type: 'Alert',
 		event: 'Frost Advisory',
+		category: ['Met'],
 		severity: 'Minor',
 		urgency: 'Expected',
 		certainty: 'Likely',
-		message_type: 'Alert',
 		headline: null,
-		area_desc: 'Canadian County, OK',
-		ugc: [],
-		same: [],
-		geometry: null,
+		language: 'fr-FR',
+		web: 'https://meteofrance.com',
+		area_desc: 'Paris',
+		geocodes: [],
+		geometry: { type: 'MultiPolygon', coordinates: [] },
 		sent: '2026-09-17T08:00:00Z',
 		effective: '2026-09-17T08:00:00Z',
 		expires: '2026-09-17T14:00:00Z',
 		ends: null,
 		first_seen_at: '2026-09-17T08:00:05Z',
 		last_seen_at: '2026-09-17T08:00:05Z',
-		ended_at: null
+		ended_at: null,
+		end_reason: null,
+		superseded_by: null
+	},
+	{
+		id: 'cap-2.49.0.0.276.0:opendata@dwd.de,2.49.0.0.276.0.DWD.PVW.20260917',
+		source: 'cap-2.49.0.0.276.0',
+		source_id: 'opendata@dwd.de,2.49.0.0.276.0.DWD.PVW.20260917',
+		source_name: 'Deutscher Wetterdienst',
+		attribution: 'Deutscher Wetterdienst (Germany), via the WMO Register of Alerting Authorities',
+		countries: ['DEU'],
+		sender: 'opendata@dwd.de',
+		sender_name: 'DWD Zentrale Offenbach',
+		message_type: 'Alert',
+		event: 'Wind Warning',
+		category: ['Met'],
+		severity: 'Minor',
+		urgency: 'Expected',
+		certainty: 'Likely',
+		headline: 'Wind gust advisory',
+		language: 'de-DE',
+		web: 'https://www.dwd.de',
+		area_desc: 'Kreis Borken',
+		geocodes: [],
+		geometry: {
+			type: 'MultiPolygon',
+			coordinates: [
+				[
+					[
+						[6.8, 51.8],
+						[7.0, 51.8],
+						[7.0, 52.0],
+						[6.8, 52.0],
+						[6.8, 51.8]
+					]
+				]
+			]
+		},
+		sent: '2026-09-17T07:30:00Z',
+		effective: '2026-09-17T07:30:00Z',
+		expires: '2026-09-17T13:00:00Z',
+		ends: null,
+		first_seen_at: '2026-09-17T07:30:05Z',
+		last_seen_at: '2026-09-17T07:30:05Z',
+		ended_at: null,
+		end_reason: null,
+		superseded_by: null
 	}
 ];
 
@@ -282,8 +359,188 @@ export const HAZARDS = [
 	}
 ];
 
+export const CAP_FEEDS = [
+	{
+		url: 'https://warnungen.dwd.de/api/cap/v1/feed',
+		health: 'ok',
+		authority: {
+			oid: '2.49.0.0.276.0',
+			source: 'cap-2.49.0.0.276.0',
+			name: 'Deutscher Wetterdienst',
+			country_name: 'Germany',
+			country_iso3: 'DEU'
+		},
+		authority_oids: ['2.49.0.0.276.0'],
+		language: 'de-DE',
+		subscribed: true,
+		exclusion_reason: null,
+		format: 'atom',
+		last_polled_at: '2026-09-17T10:00:00Z',
+		last_success_at: '2026-09-17T10:00:00Z',
+		last_http_status: 200,
+		last_error: null,
+		consecutive_failures: 0,
+		item_count: 12,
+		newest_item_at: '2026-09-17T09:45:00Z',
+		active_alerts: 5,
+		failed_items: 0
+	},
+	{
+		url: 'https://vigilance.meteofrance.fr/cap/feed.atom',
+		health: 'failing',
+		authority: {
+			oid: '2.49.0.0.250.0',
+			source: 'cap-2.49.0.0.250.0',
+			name: 'Météo-France',
+			country_name: 'France',
+			country_iso3: 'FRA'
+		},
+		authority_oids: ['2.49.0.0.250.0'],
+		language: 'fr-FR',
+		subscribed: true,
+		exclusion_reason: null,
+		format: 'atom',
+		last_polled_at: '2026-09-17T10:05:00Z',
+		last_success_at: '2026-09-16T12:00:00Z',
+		last_http_status: 502,
+		last_error: 'HTTP 502 Bad Gateway',
+		consecutive_failures: 4,
+		item_count: 0,
+		newest_item_at: null,
+		active_alerts: 0,
+		failed_items: 0
+	},
+	{
+		url: 'https://metoffice.gov.uk/cap/rss',
+		health: 'degraded',
+		authority: {
+			oid: '2.49.0.0.826.0',
+			source: 'cap-2.49.0.0.826.0',
+			name: 'Met Office',
+			country_name: 'United Kingdom',
+			country_iso3: 'GBR'
+		},
+		authority_oids: ['2.49.0.0.826.0'],
+		language: 'en-GB',
+		subscribed: true,
+		exclusion_reason: null,
+		format: 'rss',
+		last_polled_at: '2026-09-17T10:02:00Z',
+		last_success_at: '2026-09-17T10:02:00Z',
+		last_http_status: 200,
+		last_error: 'Connection timeout after 30s',
+		consecutive_failures: 1,
+		item_count: 3,
+		newest_item_at: '2026-09-17T09:30:00Z',
+		active_alerts: 2,
+		failed_items: 1
+	},
+	{
+		url: 'https://inmet.gov.br/cap/feed',
+		health: 'excluded',
+		authority: {
+			oid: '2.49.0.0.076.0',
+			source: 'cap-2.49.0.0.076.0',
+			name: 'INMET',
+			country_name: 'Brazil',
+			country_iso3: 'BRA'
+		},
+		authority_oids: ['2.49.0.0.076.0'],
+		language: 'pt-BR',
+		subscribed: false,
+		exclusion_reason: 'Excluded by operator config: TLS certificate expired',
+		format: 'atom',
+		last_polled_at: null,
+		last_success_at: null,
+		last_http_status: null,
+		last_error: null,
+		consecutive_failures: 0,
+		item_count: null,
+		newest_item_at: null,
+		active_alerts: 0,
+		failed_items: 0
+	},
+	{
+		url: 'https://protezionecivile.gov.it/cap.atom',
+		health: 'pending',
+		authority: {
+			oid: '2.49.0.0.380.0',
+			source: 'cap-2.49.0.0.380.0',
+			name: 'Dipartimento Protezione Civile',
+			country_name: 'Italy',
+			country_iso3: 'ITA'
+		},
+		authority_oids: ['2.49.0.0.380.0'],
+		language: 'it-IT',
+		subscribed: true,
+		exclusion_reason: null,
+		format: 'atom',
+		last_polled_at: null,
+		last_success_at: null,
+		last_http_status: null,
+		last_error: null,
+		consecutive_failures: 0,
+		item_count: null,
+		newest_item_at: null,
+		active_alerts: 0,
+		failed_items: 0
+	}
+];
+
+export const ALERT_DETAILS: Record<
+	string,
+	{ alert: unknown; infos: unknown[]; cap_url: string | null; feed_url: string | null }
+> = {
+	'noaa:https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.1': {
+		alert: {
+			...ALERTS[0],
+			description: 'A tornado was reported near Oklahoma City moving east at 35 mph.',
+			instruction: 'Take cover immediately in a basement or storm shelter.',
+			contact: 'NWS Norman OK',
+			parameter: []
+		},
+		infos: [],
+		cap_url: 'https://alerts.weather.gov/cap/urn:oid:2.49.0.1.840.0.1.cap',
+		feed_url: 'https://alerts.weather.gov/cap/feed.atom'
+	},
+	'cap-2.49.0.0.276.0:opendata@dwd.de,2.49.0.0.276.0.DWD.PVW.20260917': {
+		alert: {
+			...ALERTS[3],
+			description: 'Es treten Windböen mit Geschwindigkeiten bis 60 km/h auf.',
+			instruction: 'Achten Sie auf herabfallende Äste.',
+			contact: 'DWD Zentrale Offenbach',
+			parameter: []
+		},
+		infos: [],
+		cap_url: 'https://warnungen.dwd.de/cap/urn:oid:2.49.0.0.276.0.dwd.cap.20260917',
+		feed_url: 'https://warnungen.dwd.de/api/cap/v1/feed'
+	}
+};
+
 export async function mockBackend(page: Page): Promise<void> {
-	await page.route('**/api/v1/alerts/active', (route) => route.fulfill({ json: ALERTS }));
+	await page.route('**/api/v1/alerts/active*', (route) => route.fulfill({ json: ALERTS }));
+	await page.route('**/api/v1/alerts/detail**', (route) => {
+		const url = new URL(route.request().url());
+		const id = url.searchParams.get('id');
+		if (id && ALERT_DETAILS[id]) {
+			return route.fulfill({ json: ALERT_DETAILS[id] });
+		}
+		const alert = (id ? ALERTS.find((a) => a.id === id) : null) ?? ALERTS[0];
+		return route.fulfill({
+			json: {
+				alert: {
+					...alert,
+					description: `Detailed description for ${alert.headline || alert.event}.`,
+					instruction: 'Follow local authority safety guidance.',
+					contact: alert.sender,
+					parameter: []
+				},
+				infos: [],
+				cap_url: `https://example.org/cap/${encodeURIComponent(id ?? 'unknown')}`,
+				feed_url: 'https://example.org/cap/feed'
+			}
+		});
+	});
 	await page.route('**/api/v1/alerts/stream', (route) =>
 		route.fulfill({
 			contentType: 'text/event-stream',
@@ -294,6 +551,24 @@ export async function mockBackend(page: Page): Promise<void> {
 		route.fulfill({ json: PIPELINE_STATUS })
 	);
 	await page.route('**/api/v1/alerts/history**', (route) => route.fulfill({ json: [] }));
+	await page.route('**/api/v1/cap/feeds', (route) =>
+		route.fulfill({
+			json: {
+				generated_at: '2026-09-17T10:10:00Z',
+				registry_fetched_at: '2026-09-17T10:00:00Z',
+				counts: {
+					ok: 1,
+					empty: 0,
+					stale: 0,
+					degraded: 1,
+					failing: 1,
+					pending: 1,
+					excluded: 1
+				},
+				feeds: CAP_FEEDS
+			}
+		})
+	);
 	await page.route('**/api/v1/earthquakes/recent**', (route) =>
 		route.fulfill({ json: { earthquakes: EARTHQUAKES } })
 	);

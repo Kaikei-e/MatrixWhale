@@ -1,6 +1,7 @@
 import type { AlertLevel } from '$lib/hazards/types';
 import type { Severity } from '$lib/alerts/types';
 import type { Theme } from '$lib/theme.svelte';
+import { tokensFor } from '$lib/chart/tokens';
 
 /** Compact row-meta time: "now", "15m", "2h", "3d" — never longer than 3 chars. */
 export function formatShortRelativeTime(iso: string, now: number = Date.now()): string {
@@ -28,10 +29,21 @@ export function earthquakeSeverity(magnitude: number | null): AlertLevel {
 	return 'red';
 }
 
-export function alertSeverityLevel(severity: Severity): AlertLevel {
-	if (severity === 'Extreme' || severity === 'Severe') return 'red';
-	if (severity === 'Moderate') return 'orange';
-	return 'green';
+export function alertSeverityDotColor(severity: Severity, theme: Theme): string {
+	const tokens = tokensFor(theme);
+	switch (severity) {
+		case 'Extreme':
+			return tokens.light;
+		case 'Severe':
+			return tokens.amber;
+		case 'Moderate':
+			return tokens.moderate;
+		case 'Minor':
+			return tokens.minor;
+		case 'Unknown':
+		default:
+			return tokens['ink-2'];
+	}
 }
 
 export function levelLetter(level: AlertLevel): string {

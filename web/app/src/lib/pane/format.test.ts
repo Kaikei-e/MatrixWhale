@@ -4,7 +4,7 @@ import {
 	formatBadgeCount,
 	magnitudeLabel,
 	earthquakeSeverity,
-	alertSeverityLevel,
+	alertSeverityDotColor,
 	levelLetter,
 	levelDotColor
 } from './format';
@@ -69,13 +69,19 @@ describe('earthquakeSeverity', () => {
 	});
 });
 
-describe('alertSeverityLevel', () => {
-	it('maps NWS severities onto the three-tier scale', () => {
-		expect(alertSeverityLevel('Extreme')).toBe('red');
-		expect(alertSeverityLevel('Severe')).toBe('red');
-		expect(alertSeverityLevel('Moderate')).toBe('orange');
-		expect(alertSeverityLevel('Minor')).toBe('green');
-		expect(alertSeverityLevel('Unknown')).toBe('green');
+describe('alertSeverityDotColor', () => {
+	it('maps all 5 severities to the tokens for day and night themes', () => {
+		expect(alertSeverityDotColor('Extreme', 'day')).toBe('#b8338f');
+		expect(alertSeverityDotColor('Severe', 'day')).toBe('#b45309');
+		expect(alertSeverityDotColor('Moderate', 'day')).toBe('#0369a1');
+		expect(alertSeverityDotColor('Minor', 'day')).toBe('#166534');
+		expect(alertSeverityDotColor('Unknown', 'day')).toBe('#4a5c68');
+
+		expect(alertSeverityDotColor('Extreme', 'night')).toBe('#d46bb8');
+		expect(alertSeverityDotColor('Severe', 'night')).toBe('#fbbf24');
+		expect(alertSeverityDotColor('Moderate', 'night')).toBe('#38bdf8');
+		expect(alertSeverityDotColor('Minor', 'night')).toBe('#4ade80');
+		expect(alertSeverityDotColor('Unknown', 'night')).toBe('#93a6b1');
 	});
 });
 

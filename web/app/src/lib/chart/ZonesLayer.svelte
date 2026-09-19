@@ -1,11 +1,7 @@
 <script lang="ts">
 	import type * as maplibregl from 'maplibre-gl';
-	import { SvelteMap } from 'svelte/reactivity';
 	import { GeoJSONSource, FillLayer, LineLayer, FeatureState } from 'svelte-maplibre-gl';
 	import { alertStore } from '$lib/alerts/store.svelte';
-	import { bucketFor, bucketRank, type BlinkBucket } from '$lib/alerts/blinkBucket';
-	import { NWS_EVENT_COLORS, DEFAULT_NWS_COLOR } from '$lib/alerts/nwsEventStyle';
-	import type { Severity } from '$lib/alerts/types';
 	import { DAY, NIGHT } from './tokens';
 	import {
 		FORECAST_ZONES,
@@ -31,6 +27,27 @@
 		NIGHT.light,
 		DAY.light
 	];
+	const AMBER: maplibregl.ExpressionSpecification = [
+		'match',
+		['global-state', 'theme'],
+		'night',
+		NIGHT.amber,
+		DAY.amber
+	];
+	const MODERATE: maplibregl.ExpressionSpecification = [
+		'match',
+		['global-state', 'theme'],
+		'night',
+		NIGHT.moderate,
+		DAY.moderate
+	];
+	const MINOR: maplibregl.ExpressionSpecification = [
+		'match',
+		['global-state', 'theme'],
+		'night',
+		NIGHT.minor,
+		DAY.minor
+	];
 	const INK2: maplibregl.ExpressionSpecification = [
 		'match',
 		['global-state', 'theme'],
@@ -38,16 +55,28 @@
 		NIGHT['ink-2'],
 		DAY['ink-2']
 	];
+
+	const SEVERITY_COLOR: maplibregl.ExpressionSpecification = [
+		'match',
+		['feature-state', 'severity'],
+		'Extreme',
+		LIGHT,
+		'Severe',
+		AMBER,
+		'Moderate',
+		MODERATE,
+		'Minor',
+		MINOR,
+		INK2
+	];
+
 	const ALERT_COLOR: maplibregl.ExpressionSpecification = [
 		'case',
 		['boolean', ['global-state', 'nws'], false],
-		['coalesce', ['feature-state', 'nwsColor'], LIGHT],
-		LIGHT
+		['coalesce', ['feature-state', 'nwsColor'], SEVERITY_COLOR],
+		SEVERITY_COLOR
 	];
 
-	// `line-dasharray` only supports zoom/feature expressions in the MapLibre
-	// style spec, not feature-state — so Minor/Unknown zones render as a solid
-	// ink-2 line on the map. The Legend still shows the dashed/dotted glyph.
 	const FILL_OPACITY: maplibregl.ExpressionSpecification = [
 		'match',
 		['feature-state', 'severity'],
@@ -55,17 +84,13 @@
 		0.55,
 		'Severe',
 		0.3,
+		'Moderate',
+		0.2,
+		'Minor',
+		0.1,
 		0
 	];
-	const LINE_COLOR: maplibregl.ExpressionSpecification = [
-		'match',
-		['feature-state', 'severity'],
-		'Minor',
-		INK2,
-		'Unknown',
-		INK2,
-		ALERT_COLOR
-	];
+	const LINE_COLOR: maplibregl.ExpressionSpecification = ALERT_COLOR;
 	const LINE_WIDTH: maplibregl.ExpressionSpecification = [
 		'match',
 		['feature-state', 'severity'],
@@ -82,40 +107,19 @@
 		0
 	];
 
-	interface ZoneEntry {
-		ugc: string;
-		severity: Severity;
-		blinkBucket: BlinkBucket;
-		nwsColor: string;
-	}
+	import { createZoneStateCache } from './zoneCache';
 
-	const zoneEntries = $derived.by((): ZoneEntry[] => {
-		const extras = new SvelteMap<string, { blinkBucket: BlinkBucket; nwsColor: string }>();
-		for (const alert of alertStore.sorted) {
-			const bucket = bucketFor(
-				alertStore.blink.get(alert.id),
-				alert.severity,
-				alertStore.stopAll,
-				alertStore.reducedMotion
-			);
-			const color = NWS_EVENT_COLORS[alert.event] ?? DEFAULT_NWS_COLOR;
-			for (const ugc of alert.ugc) {
-				const existing = extras.get(ugc);
-				if (!existing) {
-					extras.set(ugc, { blinkBucket: bucket, nwsColor: color });
-				} else if (bucketRank(bucket) < bucketRank(existing.blinkBucket)) {
-					extras.set(ugc, { blinkBucket: bucket, nwsColor: existing.nwsColor });
-				}
-			}
-		}
+	const getZoneEntries = createZoneStateCache();
 
-		return [...alertStore.zoneSeverity.entries()].map(([ugc, severity]) => ({
-			ugc,
-			severity,
-			blinkBucket: extras.get(ugc)?.blinkBucket ?? 'none',
-			nwsColor: extras.get(ugc)?.nwsColor ?? DEFAULT_NWS_COLOR
-		}));
-	});
+	const zoneEntries = $derived.by(() =>
+		getZoneEntries(
+			alertStore.filtered,
+			alertStore.zoneSeverity,
+			alertStore.blink,
+			alertStore.stopAll,
+			alertStore.reducedMotion
+		)
+	);
 
 	const forecastZones = $derived(zoneEntries.filter((zone) => FORECAST_UGC.test(zone.ugc)));
 	const countyZones = $derived(zoneEntries.filter((zone) => COUNTY_UGC.test(zone.ugc)));
@@ -147,14 +151,7 @@
 		<LineLayer id="{src.id}-line" paint={{ 'line-color': LINE_COLOR, 'line-width': LINE_WIDTH }} />
 		{#if sourceInstances[src.id]}
 			{#each src.zones as zone (zone.ugc)}
-				<FeatureState
-					id={zone.ugc}
-					state={{
-						severity: zone.severity,
-						blinkBucket: zone.blinkBucket,
-						nwsColor: zone.nwsColor
-					}}
-				/>
+				<FeatureState id={zone.ugc} state={zone.state} />
 			{/each}
 		{/if}
 	</GeoJSONSource>

@@ -251,7 +251,7 @@
 		class="h-full w-full"
 	>
 		<ZonesLayer />
-		<AlertPolygonsLayer />
+		<AlertPolygonsLayer onselect={selectAlert} />
 		<PulseLayer phase={engine.phase} />
 		<!-- Earthquakes draw first so alert centroid rings, the primary product,
 		     stay on top of earthquake circles. -->

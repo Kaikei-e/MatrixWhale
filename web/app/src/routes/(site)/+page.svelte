@@ -14,24 +14,32 @@
 	const REPO_URL = 'https://github.com/Kaikei-e/MatrixWhale';
 	const ALERT_POINTS_SOURCE = 'landing-alert-points';
 	const LIGHT_STAGGER_MS = 40;
+	const MAX_STAGGER_MS = 2000;
 
 	let map = $state<maplibregl.Map | undefined>();
 	let liveError = $state(false);
 	let activeAlertCount = $state<number | undefined>();
+	let staggerTimers: Array<ReturnType<typeof setTimeout>> = [];
 
-	async function lightActiveAlerts(currentMap: maplibregl.Map): Promise<void> {
+	async function lightActiveAlerts(
+		currentMap: maplibregl.Map,
+		signal?: AbortSignal
+	): Promise<void> {
 		try {
 			const [alertsResponse, centroidsResponse] = await Promise.all([
-				fetch('/api/v1/alerts/active'),
-				fetch(ZONE_CENTROIDS)
+				fetch('/api/v1/alerts/active?sources=noaa', { signal }),
+				fetch(ZONE_CENTROIDS, { signal })
 			]);
 			if (!alertsResponse.ok) throw new Error(`alerts request failed: ${alertsResponse.status}`);
+			if (signal?.aborted) return;
 
 			const alerts = (await alertsResponse.json()) as Alert[];
+			if (signal?.aborted) return;
 			activeAlertCount = alerts.length;
 			const centroids = centroidsResponse.ok
 				? ((await centroidsResponse.json()) as Record<string, [number, number]>)
 				: {};
+			if (signal?.aborted) return;
 
 			const bySentAsc = [...alerts].sort((a, b) => (a.sent ?? '').localeCompare(b.sent ?? ''));
 
@@ -46,7 +54,7 @@
 					properties: {}
 				});
 			}
-			if (features.length === 0) return;
+			if (features.length === 0 || signal?.aborted) return;
 
 			currentMap.addSource(ALERT_POINTS_SOURCE, {
 				type: 'geojson',
@@ -69,26 +77,40 @@
 				}
 			});
 
+			for (const timer of staggerTimers) clearTimeout(timer);
+			staggerTimers = [];
+
 			features.forEach((feature, index) => {
-				setTimeout(() => {
+				const delay = Math.min(index * LIGHT_STAGGER_MS, MAX_STAGGER_MS);
+				const timer = setTimeout(() => {
+					if (signal?.aborted) return;
 					currentMap.setFeatureState(
 						{ source: ALERT_POINTS_SOURCE, id: feature.id },
 						{ lit: true }
 					);
-				}, index * LIGHT_STAGGER_MS);
+				}, delay);
+				staggerTimers.push(timer);
 			});
 		} catch {
-			liveError = true;
+			if (!signal?.aborted) {
+				liveError = true;
+			}
 		}
 	}
 
 	$effect(() => {
 		if (!browser || !map) return;
 		const currentMap = map;
-		const onLoad = () => void lightActiveAlerts(currentMap);
+		const controller = new AbortController();
+		const onLoad = () => void lightActiveAlerts(currentMap, controller.signal);
 		if (currentMap.loaded()) onLoad();
 		else currentMap.on('load', onLoad);
-		return () => currentMap.off('load', onLoad);
+		return () => {
+			controller.abort();
+			currentMap.off('load', onLoad);
+			for (const timer of staggerTimers) clearTimeout(timer);
+			staggerTimers = [];
+		};
 	});
 </script>
 
@@ -109,15 +131,15 @@
 	<div class="pointer-events-none absolute inset-0 flex items-center p-6">
 		<div class="border-ink bg-paper/90 pointer-events-auto max-w-sm border p-5">
 			<h1 class="text-2xl font-semibold">MatrixWhale</h1>
-			<p class="text-ink-2 mt-1 text-sm">NOAA/NWS weather alerts, charted live.</p>
+			<p class="text-ink-2 mt-1 text-sm">Global weather and hazard alerts, charted live.</p>
 			<p class="tabular text-ink-2 mt-3 text-xs">
-				Mercator · Data: NWS api.weather.gov · Natural Earth
+				Mercator · Data: NOAA api.weather.gov · WMO RAA national CAP feeds · Natural Earth
 			</p>
 			{#if liveError}
 				<p class="text-ink-2 mt-3 text-sm">Live data unavailable.</p>
 			{:else if activeAlertCount !== undefined}
 				<p class="tabular text-ink-2 text-xs">
-					{activeAlertCount} active {activeAlertCount === 1 ? 'alert' : 'alerts'}
+					{activeAlertCount} active US NWS {activeAlertCount === 1 ? 'alert' : 'alerts'}
 				</p>
 			{/if}
 			<div class="mt-4 flex gap-3 text-sm">
@@ -135,9 +157,9 @@
 <section class="mx-auto max-w-3xl px-6 py-10">
 	<h2 class="text-ink-2 text-xs tracking-wide uppercase">How data flows</h2>
 	<ol class="tabular mt-3 list-inside list-decimal text-sm">
-		<li>NOAA api.weather.gov</li>
+		<li>NOAA and WMO CAP alerting feeds</li>
 		<li>Plecto proxy</li>
-		<li>Go adapter</li>
+		<li>Go adapters</li>
 		<li>Gleam core</li>
 		<li>PostgreSQL</li>
 		<li>SSE</li>
@@ -151,7 +173,8 @@
 		<div>
 			<h3 class="font-medium">Watch</h3>
 			<p class="text-ink-2 mt-1">
-				Open the chart to see active NWS alerts light up on a live nautical-style map.
+				Open the chart to see active weather and hazard alerts light up on a live nautical-style
+				map.
 			</p>
 		</div>
 		<div>
@@ -172,6 +195,6 @@
 	<p>
 		<a href={REPO_URL} class="hover:underline">{REPO_URL.replace('https://', '')}</a> · Apache-2.0
 	</p>
-	<p class="mt-1">Data: NWS (public domain) · Natural Earth (public domain)</p>
+	<p class="mt-1">Data: NOAA · WMO Register of Alerting Authorities · Natural Earth</p>
 	<p class="mt-1">Use official sources for life-safety decisions.</p>
 </footer>

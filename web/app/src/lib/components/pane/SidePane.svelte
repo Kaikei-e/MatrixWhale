@@ -15,7 +15,9 @@
 		type HazardType
 	} from '$lib/hazards/types';
 	import { alertStore } from '$lib/alerts/store.svelte';
-	import type { Alert } from '$lib/alerts/types';
+	import { SEVERITIES, type Alert } from '$lib/alerts/types';
+	import { getCountryName } from '$lib/alerts/countries';
+	import { summarizeAlertSources } from '$lib/alerts/attribution';
 	import { formatLocalDateTime } from '$lib/alerts/timeFormat';
 	import { timelineStore } from '$lib/timeline/store.svelte';
 	import type {
@@ -37,8 +39,9 @@
 		formatShortRelativeTime,
 		magnitudeLabel,
 		earthquakeSeverity,
-		alertSeverityLevel
+		alertSeverityDotColor
 	} from '$lib/pane/format';
+	import { themeState } from '$lib/theme.svelte';
 	import { ScrollMemory } from '$lib/pane/scroll';
 	import TabBar from './TabBar.svelte';
 	import FilterChip from './FilterChip.svelte';
@@ -112,17 +115,51 @@
 	const selectedHazard = $derived(
 		selectedHazardId !== null ? (hazardStore.hazards.get(selectedHazardId) ?? null) : null
 	);
+
+	let lastSelectedAlert = $state.raw<Alert | null>(null);
+
+	$effect(() => {
+		if (selectedAlertId === null) {
+			lastSelectedAlert = null;
+			return;
+		}
+		const live = alertStore.activeAlerts.get(selectedAlertId);
+		if (live) {
+			lastSelectedAlert = live;
+		}
+	});
+
+	$effect(() => {
+		return alertStore.subscribeRaw((event) => {
+			if (event.type === 'ended' && event.record.id === selectedAlertId) {
+				lastSelectedAlert = event.record;
+			}
+		});
+	});
+
 	const selectedAlert = $derived(
-		selectedAlertId !== null ? (alertStore.activeAlerts.get(selectedAlertId) ?? null) : null
+		selectedAlertId !== null
+			? (alertStore.activeAlerts.get(selectedAlertId) ??
+					(lastSelectedAlert?.id === selectedAlertId ? lastSelectedAlert : null))
+			: null
 	);
 
 	const counts = $derived<Record<PaneTab, number>>({
 		timeline: timelineStore.items.length + timelineStore.pending.length,
 		earthquakes: earthquakeStore.sorted.length,
 		hazards: hazardStore.sorted.length,
-		alerts: alertStore.sorted.length,
-		feed: alertStore.sorted.length
+		alerts: alertStore.filtered.length,
+		feed: alertStore.filtered.length
 	});
+
+	const alertSourcesSummary = $derived(summarizeAlertSources(alertStore.filtered, 3));
+
+	function alertCountryAuthority(alert: Alert): string {
+		const countryNames = alert.countries.map((c) => getCountryName(c)).filter(Boolean);
+		const country = countryNames.length > 0 ? countryNames.join(', ') : '';
+		if (country && alert.source_name) return `${country} · ${alert.source_name}`;
+		return country || alert.source_name || alert.source;
+	}
 
 	// EMSC's CC BY 4.0 license requires attribution whenever its events are on
 	// screen, not only when one is selected, so this covers the whole loaded set.
@@ -249,6 +286,7 @@
 		onCloseHazard();
 	}
 	function closeAlert(): void {
+		lastSelectedAlert = null;
 		pendingFocus[activeTab] =
 			activeTab === 'timeline' && selectedAlertId !== null
 				? `alert:${selectedAlertId}`
@@ -261,7 +299,9 @@
 		earthquakeListEl.scrollTop = scrollMemory.recall('earthquakes');
 		const focusId = pendingFocus.earthquakes;
 		if (focusId) {
-			earthquakeListEl.querySelector<HTMLElement>(`[data-row-id="${focusId}"]`)?.focus();
+			earthquakeListEl
+				.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(focusId)}"]`)
+				?.focus();
 			pendingFocus.earthquakes = null;
 		}
 	});
@@ -271,7 +311,7 @@
 		hazardListEl.scrollTop = scrollMemory.recall('hazards');
 		const focusId = pendingFocus.hazards;
 		if (focusId) {
-			hazardListEl.querySelector<HTMLElement>(`[data-row-id="${focusId}"]`)?.focus();
+			hazardListEl.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(focusId)}"]`)?.focus();
 			pendingFocus.hazards = null;
 		}
 	});
@@ -281,7 +321,7 @@
 		alertListEl.scrollTop = scrollMemory.recall('alerts');
 		const focusId = pendingFocus.alerts;
 		if (focusId) {
-			alertListEl.querySelector<HTMLElement>(`[data-row-id="${focusId}"]`)?.focus();
+			alertListEl.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(focusId)}"]`)?.focus();
 			pendingFocus.alerts = null;
 		}
 	});
@@ -336,7 +376,7 @@
 		timelineListEl.scrollTop = scrollMemory.recall('timeline');
 		const focusId = pendingFocus.timeline;
 		if (focusId) {
-			timelineListEl.querySelector<HTMLElement>(`[data-row-id="${focusId}"]`)?.focus();
+			timelineListEl.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(focusId)}"]`)?.focus();
 			pendingFocus.timeline = null;
 		}
 	});
@@ -474,7 +514,7 @@
 {/snippet}
 
 {#snippet alertDetail(alert: Alert)}
-	<DetailHeader title={alert.event} onback={closeAlert} />
+	<DetailHeader title={alert.headline || alert.event} onback={closeAlert} />
 	<div class="min-h-0 flex-1 overflow-y-auto">
 		<DetailPanel
 			{alert}
@@ -754,11 +794,44 @@
 				{#if selectedAlert}
 					{@render alertDetail(selectedAlert)}
 				{:else}
-					<div
-						class="border-ink-2/30 flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2"
-					>
-						<h2 class="text-ink text-sm font-semibold">Alerts</h2>
-						<SseStatusDot connected={alertStore.connected} variant="feed" class="text-xs" />
+					<div class="border-ink-2/30 shrink-0 border-b px-3 py-2">
+						<div class="flex items-center justify-between gap-2">
+							<h2 class="text-ink text-sm font-semibold">Alerts</h2>
+							<SseStatusDot connected={alertStore.connected} variant="feed" class="text-xs" />
+						</div>
+						<div class="mt-2 flex flex-col gap-1.5" aria-label="Alert filters">
+							<div class="flex flex-wrap items-center gap-1.5" aria-label="Severity filters">
+								<span
+									class="text-ink-2 w-16 shrink-0 text-[11px] font-medium tracking-wide uppercase"
+									>Severity</span
+								>
+								{#each SEVERITIES as severity (severity)}
+									<FilterChip
+										label={severity}
+										pressed={alertStore.severityFilter.has(severity)}
+										onclick={() => alertStore.toggleSeverity(severity)}
+									/>
+								{/each}
+							</div>
+							<div class="flex items-center gap-1.5" aria-label="Country filter">
+								<label
+									for="alert-country-select"
+									class="text-ink-2 w-16 shrink-0 text-[11px] font-medium tracking-wide uppercase"
+									>Country</label
+								>
+								<select
+									id="alert-country-select"
+									bind:value={alertStore.countryFilter}
+									class="border-ink-2/30 bg-paper text-ink max-w-[240px] truncate border px-2 py-1 text-xs"
+									aria-label="Filter by country"
+								>
+									<option value="all">All countries</option>
+									{#each alertStore.activeCountries as country (country.iso3)}
+										<option value={country.iso3}>{country.name} ({country.count})</option>
+									{/each}
+								</select>
+							</div>
+						</div>
 					</div>
 					{#if alertStore.snapshotError}
 						<div
@@ -778,21 +851,38 @@
 							scrollMemory.remember('alerts', (event.currentTarget as HTMLElement).scrollTop)}
 						class="min-h-0 flex-1 overflow-y-auto"
 					>
-						{#each alertStore.sorted as alert (alert.id)}
+						{#each alertStore.filtered as alert (alert.id)}
 							<ListRow
 								testid="alert-feed-item"
 								rowId={alert.id}
-								title={alert.event}
+								title={alert.headline || alert.event}
 								meta={alert.sent ? formatShortRelativeTime(alert.sent, now) : '—'}
-								subtitle={alert.severity}
-								secondary={alert.area_desc}
-								level={alertSeverityLevel(alert.severity)}
+								subtitle={alertCountryAuthority(alert)}
+								kindColor={alertSeverityDotColor(alert.severity, themeState.current)}
+								kindLabel={alert.severity}
 								onclick={() => openAlert(alert.id)}
 							/>
 						{:else}
-							<li class="text-ink-2 px-3 py-4 text-sm">No active NWS alerts</li>
+							<li class="text-ink-2 px-3 py-4 text-sm">No active alerts match these filters.</li>
 						{/each}
 					</ul>
+				{/if}
+				{#if alertSourcesSummary.totalUnique > 0}
+					<footer
+						data-testid="alert-attribution"
+						class="border-ink-2/30 text-ink-2 flex shrink-0 flex-col gap-0.5 border-t px-3 py-2 text-xs"
+					>
+						<div class="flex flex-wrap items-center gap-1">
+							<span>Sources:</span>
+							{#each alertSourcesSummary.visible as source, i (source.name)}
+								{#if i > 0}<span>·</span>{/if}
+								<span>{source.name}</span>
+							{/each}
+							{#if alertSourcesSummary.hiddenCount > 0}
+								<span>+{alertSourcesSummary.hiddenCount} more</span>
+							{/if}
+						</div>
+					</footer>
 				{/if}
 			</div>
 		{/if}

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { alertStore } from '$lib/alerts/store.svelte';
-	import { SEVERITIES } from '$lib/alerts/types';
+	import { SEVERITIES, type Severity } from '$lib/alerts/types';
 	import FeedItem from './FeedItem.svelte';
 	import SseStatusDot from './SseStatusDot.svelte';
 
@@ -11,18 +11,34 @@
 	}
 
 	let { selectedId, onselect, class: className }: Props = $props();
+
+	let now = $state(Date.now());
+
+	const countsBySeverity = $derived.by(() => {
+		const counts = { Extreme: 0, Severe: 0, Moderate: 0, Minor: 0, Unknown: 0 } as Record<
+			Severity,
+			number
+		>;
+		for (const alert of alertStore.filtered) counts[alert.severity]++;
+		return counts;
+	});
+
+	$effect(() => {
+		const timer = setInterval(() => (now = Date.now()), 30000);
+		return () => clearInterval(timer);
+	});
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col {className ?? ''}">
 	<div class="border-ink-2/30 border-b px-3 py-2">
 		<div class="flex items-baseline justify-between">
 			<h2 class="text-sm font-semibold">Active alerts</h2>
-			<span class="text-ink-2 tabular text-xs">{alertStore.sorted.length} total</span>
+			<span class="text-ink-2 tabular text-xs">{alertStore.filtered.length} total</span>
 		</div>
 		<div class="text-ink-2 tabular mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
 			{#each SEVERITIES as severity (severity)}
-				{#if alertStore.countsBySeverity[severity] > 0}
-					<span>{severity} {alertStore.countsBySeverity[severity]}</span>
+				{#if countsBySeverity[severity] > 0}
+					<span>{severity} {countsBySeverity[severity]}</span>
 				{/if}
 			{/each}
 		</div>
@@ -43,12 +59,17 @@
 	{/if}
 
 	<ul class="min-h-0 flex-1 overflow-y-auto">
-		{#each alertStore.sorted as alert (alert.id)}
+		{#each alertStore.filtered as alert (alert.id)}
 			<li>
-				<FeedItem {alert} selected={alert.id === selectedId} onselect={() => onselect(alert.id)} />
+				<FeedItem
+					{alert}
+					{now}
+					selected={alert.id === selectedId}
+					onselect={() => onselect(alert.id)}
+				/>
 			</li>
 		{:else}
-			<li class="text-ink-2 px-3 py-4 text-sm">No active NWS alerts</li>
+			<li class="text-ink-2 px-3 py-4 text-sm">No active alerts match these filters.</li>
 		{/each}
 	</ul>
 </div>

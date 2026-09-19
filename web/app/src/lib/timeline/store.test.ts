@@ -4,7 +4,7 @@ import { itemFromRecord } from './severity';
 import type { TimelineItem, TimelinePage } from './types';
 import type { Earthquake } from '$lib/earthquakes/types';
 import type { Hazard } from '$lib/hazards/types';
-import type { Alert } from '$lib/alerts/types';
+import type { Alert, RawAlertEvent } from '$lib/alerts/types';
 
 class FakeRawSource<E> {
 	#listeners = new Set<(event: E) => void>();
@@ -105,23 +105,36 @@ function makeAlert(overrides: Partial<Alert> = {}): Alert {
 	const now = new Date().toISOString();
 	return {
 		id: 'urn:oid:test.1',
+		source: 'noaa',
+		source_id: 'test.1',
+		source_name: 'National Weather Service',
+		attribution: 'NWS',
+		countries: ['USA'],
+		sender: null,
+		sender_name: null,
+		message_type: null,
 		event: 'Tornado Warning',
+		category: [],
 		severity: 'Extreme',
 		urgency: 'Immediate',
 		certainty: 'Observed',
-		message_type: null,
 		headline: null,
+		language: null,
+		web: null,
 		area_desc: 'Test Area',
-		ugc: [],
-		same: [],
+		geocodes: [],
 		geometry: null,
 		sent: now,
 		effective: null,
+		onset: null,
 		expires: null,
 		ends: null,
+		active_until: now,
 		first_seen_at: now,
 		last_seen_at: now,
 		ended_at: null,
+		end_reason: null,
+		superseded_by: null,
 		...overrides
 	};
 }
@@ -143,7 +156,7 @@ describe('TimelineStore', () => {
 		{ type: 'new' | 'update'; record: Earthquake } | { type: 'resync' }
 	>;
 	let hazardSource: FakeRawSource<{ type: 'new' | 'update'; record: Hazard } | { type: 'resync' }>;
-	let alertSource: FakeRawSource<{ type: 'new' | 'update' | 'ended'; record: Alert }>;
+	let alertSource: FakeRawSource<RawAlertEvent>;
 	let fetchMock: ReturnType<typeof vi.fn>;
 
 	beforeEach(() => {
@@ -352,6 +365,22 @@ describe('TimelineStore', () => {
 		const revised = itemFromRecord('earthquake', makeEarthquake({ id: 1, magnitude: 6.5 }));
 		fetchMock.mockResolvedValueOnce(jsonResponse(page([revised])));
 		earthquakeSource.emit({ type: 'resync' });
+		await settle();
+
+		expect(store.items).toHaveLength(1);
+		expect(store.items[0]).toEqual(revised);
+		store.disconnect();
+	});
+
+	it('a resync on the alert stream refetches page 1 and upserts by key', async () => {
+		const original = itemFromRecord('alert', makeAlert({ id: 'a1', severity: 'Extreme' }));
+		fetchMock.mockResolvedValueOnce(jsonResponse(page([original])));
+		const store = makeStore();
+		await store.connect('/api/v1/timeline');
+
+		const revised = itemFromRecord('alert', makeAlert({ id: 'a1', severity: 'Severe' }));
+		fetchMock.mockResolvedValueOnce(jsonResponse(page([revised])));
+		alertSource.emit({ type: 'resync' });
 		await settle();
 
 		expect(store.items).toHaveLength(1);

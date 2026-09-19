@@ -119,15 +119,24 @@ function alertItem(id: string, seenAt: string, overrides: Record<string, unknown
 		ended: false,
 		alert: {
 			id,
+			source: 'noaa',
+			source_id: id,
+			source_name: 'National Weather Service',
+			attribution: 'NOAA / National Weather Service',
+			countries: ['USA'],
+			sender: 'w-nws.webmaster@noaa.gov',
+			sender_name: 'NWS Norman OK',
+			message_type: 'Alert',
 			event: 'Tornado Warning',
+			category: ['Met'],
 			severity: 'Extreme',
 			urgency: 'Immediate',
 			certainty: 'Observed',
-			message_type: 'Alert',
 			headline: null,
+			language: 'en-US',
+			web: null,
 			area_desc: 'Test County, OK',
-			ugc: [],
-			same: [],
+			geocodes: [],
 			geometry: null,
 			sent: seenAt,
 			effective: seenAt,
@@ -136,6 +145,8 @@ function alertItem(id: string, seenAt: string, overrides: Record<string, unknown
 			first_seen_at: seenAt,
 			last_seen_at: seenAt,
 			ended_at: null,
+			end_reason: null,
+			superseded_by: null,
 			...overrides
 		}
 	};
@@ -193,7 +204,8 @@ test('the Timeline tab is first and lists rows newest first with the right prima
 	await expect(rows).toHaveCount(7);
 	await expect(rows.nth(0)).toContainText('M6.1 · Test Trench');
 	await expect(rows.nth(1)).toContainText('Flood · River Overflow Test');
-	await expect(rows.nth(2)).toContainText('Flash Flood Warning · Test County, OK');
+	await expect(rows.nth(2)).toContainText('Flash Flood Warning');
+	await expect(rows.nth(2)).toContainText('United States · National Weather Service');
 	await expect(rows.nth(2).getByTestId('timeline-badge-ended')).toBeVisible();
 });
 
@@ -324,4 +336,16 @@ test('toggling a kind filter chip refetches with the kinds= param', async ({ pag
 	);
 	await sidePanel.getByTestId('timeline-filter-kind-earthquake').click();
 	await request;
+});
+
+test('Timeline alert rows include severity as text for accessibility', async ({ page }) => {
+	await mockBackend(page);
+	await mockTimeline(page);
+	await page.goto('/globe');
+
+	const sidePanel = page.getByTestId('side-panel');
+	await sidePanel.getByRole('tab', { name: /Timeline/ }).click();
+	const rows = sidePanel.getByTestId('timeline-item');
+	// Index 3 is alert item with Extreme severity
+	await expect(rows.nth(3)).toContainText('Extreme');
 });

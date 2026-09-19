@@ -2,18 +2,8 @@
 	import type * as maplibregl from 'maplibre-gl';
 	import { GeoJSONSource, CircleLayer, FeatureState, Popup } from 'svelte-maplibre-gl';
 	import { alertStore } from '$lib/alerts/store.svelte';
-	import {
-		bucketFor,
-		RHYTHMS,
-		RHYTHM_KEYS,
-		PULSE_OPACITY,
-		type BlinkBucket,
-		type Rhythm
-	} from '$lib/alerts/blinkBucket';
+	import { RHYTHMS, RHYTHM_KEYS, PULSE_OPACITY, type Rhythm } from '$lib/alerts/blinkBucket';
 	import type { BlinkPhase } from '$lib/alerts/blinkEngine.svelte';
-	import { NWS_EVENT_COLORS, DEFAULT_NWS_COLOR } from '$lib/alerts/nwsEventStyle';
-	import { alertCentroid } from './alertPoints';
-	import type { Severity } from '$lib/alerts/types';
 	import { DAY, NIGHT } from './tokens';
 
 	interface Props {
@@ -37,7 +27,7 @@
 	];
 	const MARKER_COLOR: maplibregl.ExpressionSpecification = [
 		'case',
-		['boolean', ['global-state', 'nws'], false],
+		['all', ['boolean', ['global-state', 'nws'], false], ['==', ['get', 'source'], 'noaa']],
 		['coalesce', ['feature-state', 'nwsColor'], LIGHT],
 		LIGHT
 	];
@@ -50,16 +40,6 @@
 		2,
 		1.5
 	];
-	// Severity as a number so clusterProperties can aggregate it with 'max'; style
-	// expressions have no access to feature-state (severity is only set there), so
-	// clusters key off this plain point property instead.
-	const SEVERITY_RANK: Record<Severity, number> = {
-		Extreme: 4,
-		Severe: 3,
-		Moderate: 2,
-		Minor: 1,
-		Unknown: 0
-	};
 	const UNCLUSTERED_FILTER: maplibregl.FilterSpecification = ['!', ['has', 'point_count']];
 	const CLUSTERED_FILTER: maplibregl.FilterSpecification = ['has', 'point_count'];
 	const CLUSTER_STROKE_WIDTH: maplibregl.ExpressionSpecification = [
@@ -105,52 +85,21 @@
 		group: pulseWidthFor(RHYTHMS.group.buckets)
 	};
 	const NO_TRANSITION = { duration: 0 };
+	import { createMarkerPointCache, createMarkerStateCache } from './markerCache';
 
-	interface MarkerEntry {
-		alertId: string;
-		severity: Severity;
-		blinkBucket: BlinkBucket;
-		nwsColor: string;
-		lon: number;
-		lat: number;
-	}
+	const getMarkerCollection = createMarkerPointCache();
+	const getMarkerStateEntries = createMarkerStateCache();
 
-	// One ring per alert at its centroid; the zones themselves are painted by
-	// ZonesLayer, so a per-zone ring would only duplicate that coverage.
-	const entries = $derived.by((): MarkerEntry[] => {
-		const result: MarkerEntry[] = [];
-		for (const alert of alertStore.sorted) {
-			const point = alertCentroid(alert, centroids);
-			if (!point) continue;
-			result.push({
-				alertId: alert.id,
-				severity: alert.severity,
-				blinkBucket: bucketFor(
-					alertStore.blink.get(alert.id),
-					alert.severity,
-					alertStore.stopAll,
-					alertStore.reducedMotion
-				),
-				nwsColor: NWS_EVENT_COLORS[alert.event] ?? DEFAULT_NWS_COLOR,
-				lon: point[0],
-				lat: point[1]
-			});
-		}
-		return result;
-	});
-
-	const points = $derived({
-		type: 'FeatureCollection' as const,
-		features: entries.map((entry) => ({
-			type: 'Feature' as const,
-			properties: {
-				id: entry.alertId,
-				severity: entry.severity,
-				severityRank: SEVERITY_RANK[entry.severity]
-			},
-			geometry: { type: 'Point' as const, coordinates: [entry.lon, entry.lat] }
-		}))
-	});
+	const points = $derived.by(() => getMarkerCollection(alertStore.filtered, centroids));
+	const stateEntries = $derived.by(() =>
+		getMarkerStateEntries(
+			alertStore.filtered,
+			centroids,
+			alertStore.blink,
+			alertStore.stopAll,
+			alertStore.reducedMotion
+		)
+	);
 
 	let hoveredCluster = $state<{ lon: number; lat: number; count: number } | undefined>(undefined);
 
@@ -257,15 +206,8 @@
 		onmouseleave={handleMouseLeave}
 	/>
 	{#if source}
-		{#each entries as entry (entry.alertId)}
-			<FeatureState
-				id={entry.alertId}
-				state={{
-					severity: entry.severity,
-					blinkBucket: entry.blinkBucket,
-					nwsColor: entry.nwsColor
-				}}
-			/>
+		{#each stateEntries as entry (entry.id)}
+			<FeatureState id={entry.id} state={entry.state} />
 		{/each}
 	{/if}
 </GeoJSONSource>

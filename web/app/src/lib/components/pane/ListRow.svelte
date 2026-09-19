@@ -18,6 +18,7 @@
 		secondary?: string;
 		level?: AlertLevel;
 		kindColor?: string;
+		kindLabel?: string;
 		updated?: boolean;
 		ended?: boolean;
 		onclick: () => void;
@@ -33,6 +34,7 @@
 		secondary,
 		level,
 		kindColor,
+		kindLabel,
 		updated,
 		ended,
 		onclick
@@ -64,6 +66,9 @@
 					style:background-color={kindColor}
 					aria-hidden="true"
 				></span>
+			{/if}
+			{#if kindLabel}
+				<span class="sr-only">{kindLabel}</span>
 			{/if}
 			<span class="text-ink min-w-0 flex-1 truncate text-[15px] font-medium">{title}</span>
 			{#if meta}

@@ -3,6 +3,8 @@
 @import '@fontsource-variable/public-sans/wght.css';
 @import '@fontsource-variable/public-sans/wght-italic.css';
 
+@custom-variant dark (&:where([data-theme=night], [data-theme=night] *));
+
 @layer base {
 	body {
 		@apply bg-paper text-ink font-sans;

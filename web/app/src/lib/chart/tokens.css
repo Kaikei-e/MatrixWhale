@@ -6,6 +6,8 @@
 	--ink-2: #4a5c68;
 	--light: #b8338f;
 	--amber: #b45309;
+	--moderate: #0369a1;
+	--minor: #166534;
 }
 
 [data-theme='night'] {
@@ -16,6 +18,8 @@
 	--ink-2: #93a6b1;
 	--light: #d46bb8;
 	--amber: #fbbf24;
+	--moderate: #38bdf8;
+	--minor: #4ade80;
 }
 
 @theme inline {
@@ -26,5 +30,7 @@
 	--color-ink-2: var(--ink-2);
 	--color-light: var(--light);
 	--color-amber: var(--amber);
+	--color-moderate: var(--moderate);
+	--color-minor: var(--minor);
 	--font-sans: 'Public Sans Variable', sans-serif;
 }

@@ -1,6 +1,5 @@
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import {
-	SEVERITIES,
 	type Alert,
 	type BlinkMode,
 	type BlinkState,
@@ -8,16 +7,33 @@ import {
 	type Severity
 } from './types';
 import { sortByNwsPriority } from './priority';
+import { computeZoneSeverity } from './geocodes';
+import { activeCountriesWithCounts, type CountryOption } from './countries';
+import { filterAlerts } from './filter';
 import { loadAcknowledged, saveAcknowledged, loadFlag, saveFlag } from './storage';
 
 const ARRIVAL_MS = 5000;
 const UPDATE_MS = 1000;
 const ENDED_MS = 1000;
 const HEARTBEAT_TIMEOUT_MS = 60000;
+const SNAPSHOT_TIMEOUT_MS = 10000;
 
 export function nextBlinkAfterArrival(severity: Severity, acknowledged: boolean): BlinkMode {
 	if (acknowledged) return 'static';
 	return severity === 'Extreme' || severity === 'Severe' ? 'persistent' : 'static';
+}
+
+function parseAlertRecord(data: unknown): Alert | null {
+	if (!data || typeof data !== 'object') return null;
+	if ('id' in data) {
+		return data as Alert;
+	}
+	return null;
+}
+
+interface BufferedEvent {
+	type: 'new' | 'update' | 'ended';
+	alert: Alert;
 }
 
 export class AlertStore {
@@ -28,6 +44,9 @@ export class AlertStore {
 	connected: 'connecting' | 'open' | 'closed' = $state('closed');
 	snapshotError: string | null = $state(null);
 
+	severityFilter = new SvelteSet<Severity>(['Extreme', 'Severe', 'Moderate']);
+	countryFilter = $state<string>('all');
+
 	#stopAll = $state(loadFlag('alerts.stopAll', false));
 	#useNwsColors = $state(loadFlag('alerts.useNwsColors', false));
 
@@ -36,6 +55,8 @@ export class AlertStore {
 	#alertTimers = new SvelteMap<string, ReturnType<typeof setTimeout>>();
 	#watchdog: ReturnType<typeof setTimeout> | undefined;
 	#rawListeners = new SvelteSet<(event: RawAlertEvent) => void>();
+	#streamBuffer: Array<BufferedEvent> | null = null;
+	#snapshotAbortController: AbortController | undefined;
 
 	get stopAll(): boolean {
 		return this.#stopAll;
@@ -55,6 +76,24 @@ export class AlertStore {
 		saveFlag('alerts.useNwsColors', value);
 	}
 
+	toggleSeverity(severity: Severity): void {
+		if (this.severityFilter.has(severity)) {
+			this.severityFilter.delete(severity);
+		} else {
+			this.severityFilter.add(severity);
+		}
+		this.#checkCountryReset();
+	}
+
+	#checkCountryReset(): void {
+		if (
+			this.countryFilter !== 'all' &&
+			!this.activeCountries.some((c) => c.iso3 === this.countryFilter)
+		) {
+			this.countryFilter = 'all';
+		}
+	}
+
 	countsBySeverity = $derived.by(() => {
 		const counts = { Extreme: 0, Severe: 0, Moderate: 0, Minor: 0, Unknown: 0 } as Record<
 			Severity,
@@ -64,17 +103,13 @@ export class AlertStore {
 		return counts;
 	});
 
-	zoneSeverity = $derived.by(() => {
-		const result = new SvelteMap<string, Severity>();
-		for (const alert of this.activeAlerts.values()) {
-			for (const ugc of alert.ugc) {
-				const current = result.get(ugc);
-				if (!current || SEVERITIES.indexOf(alert.severity) < SEVERITIES.indexOf(current)) {
-					result.set(ugc, alert.severity);
-				}
-			}
-		}
-		return result;
+	zoneSeverity = $derived.by(() => computeZoneSeverity(this.filtered));
+
+	activeCountries = $derived.by((): CountryOption[] => {
+		const matching = [...this.activeAlerts.values()].filter((alert) =>
+			this.severityFilter.has(alert.severity)
+		);
+		return activeCountriesWithCounts(matching);
 	});
 
 	hasAnyBlinking = $derived.by(() => {
@@ -89,15 +124,23 @@ export class AlertStore {
 
 	sorted = $derived.by(() => sortByNwsPriority([...this.activeAlerts.values()]));
 
+	filtered = $derived.by(() => filterAlerts(this.sorted, this.severityFilter, this.countryFilter));
+
 	async connect(snapshotUrl: string, streamUrl: string): Promise<void> {
 		if (this.#es) return;
 		this.#snapshotUrl = snapshotUrl;
 		this.connected = 'connecting';
+		this.#streamBuffer = [];
 		this.#openStream(streamUrl);
 		await this.#loadSnapshot(snapshotUrl);
 	}
 
 	disconnect(): void {
+		if (this.#snapshotAbortController) {
+			this.#snapshotAbortController.abort();
+			this.#snapshotAbortController = undefined;
+		}
+		this.#streamBuffer = null;
 		this.#es?.close();
 		this.#es = undefined;
 		if (this.#watchdog) clearTimeout(this.#watchdog);
@@ -110,6 +153,7 @@ export class AlertStore {
 	acknowledge(id: string): void {
 		this.acknowledged.add(id);
 		saveAcknowledged(new SvelteSet(this.acknowledged));
+		if (this.blink.get(id)?.mode === 'fading') return;
 		this.#clearAlertTimer(id);
 		if (this.activeAlerts.has(id)) this.blink.set(id, { mode: 'static', until: null });
 	}
@@ -129,13 +173,26 @@ export class AlertStore {
 	}
 
 	async #loadSnapshot(url: string): Promise<void> {
+		if (this.#snapshotAbortController) {
+			this.#snapshotAbortController.abort();
+		}
+		const ac = new AbortController();
+		this.#snapshotAbortController = ac;
+		const buffer = this.#streamBuffer ?? [];
+		this.#streamBuffer = buffer;
+
 		try {
-			const response = await fetch(url);
+			const timeoutSignal = AbortSignal.timeout(SNAPSHOT_TIMEOUT_MS);
+			const signal = AbortSignal.any([ac.signal, timeoutSignal]);
+			const response = await fetch(url, { signal });
 			if (!response.ok) throw new Error(`snapshot request failed with status ${response.status}`);
 			const alerts = (await response.json()) as Alert[];
+			if (ac.signal.aborted) return;
 
 			this.activeAlerts.clear();
 			this.blink.clear();
+			for (const timer of this.#alertTimers.values()) clearTimeout(timer);
+			this.#alertTimers.clear();
 			for (const alert of alerts) {
 				this.activeAlerts.set(alert.id, alert);
 				this.blink.set(alert.id, {
@@ -144,8 +201,28 @@ export class AlertStore {
 				});
 			}
 			this.snapshotError = null;
+			this.#checkCountryReset();
 		} catch (error) {
+			if (ac.signal.aborted) return;
 			this.snapshotError = error instanceof Error ? error.message : 'snapshot request failed';
+		} finally {
+			if (this.#snapshotAbortController === ac) {
+				this.#snapshotAbortController = undefined;
+				this.#streamBuffer = null;
+				for (const item of buffer) {
+					const existing = this.activeAlerts.get(item.alert.id);
+					if (existing && Date.parse(item.alert.last_seen_at) < Date.parse(existing.last_seen_at)) {
+						continue;
+					}
+					if (item.type === 'new') {
+						this.#applyNew(item.alert);
+					} else if (item.type === 'update') {
+						this.#applyUpdate(item.alert);
+					} else if (item.type === 'ended') {
+						this.#applyEnded(item.alert);
+					}
+				}
+			}
 		}
 	}
 
@@ -154,10 +231,16 @@ export class AlertStore {
 		es.addEventListener('alert.new', this.#handleNew);
 		es.addEventListener('alert.update', this.#handleUpdate);
 		es.addEventListener('alert.ended', this.#handleEnded);
+		es.addEventListener('resync', this.#handleResync);
 		es.addEventListener('heartbeat', this.#handleHeartbeat);
 		es.onerror = this.#handleError;
 		this.#es = es;
 	}
+
+	#handleResync = (): void => {
+		this.#emitRaw({ type: 'resync' });
+		if (this.#snapshotUrl) void this.#loadSnapshot(this.#snapshotUrl);
+	};
 
 	#clearAlertTimer(id: string): void {
 		const timer = this.#alertTimers.get(id);
@@ -165,46 +248,109 @@ export class AlertStore {
 		this.#alertTimers.delete(id);
 	}
 
-	#handleNew = (event: MessageEvent<string>): void => {
-		const alert = JSON.parse(event.data) as Alert;
-		this.#emitRaw({ type: 'new', record: alert });
+	#applyNew(alert: Alert): void {
 		this.activeAlerts.set(alert.id, alert);
 		this.blink.set(alert.id, { mode: 'arrival', until: performance.now() + ARRIVAL_MS });
 		this.#clearAlertTimer(alert.id);
 		const timer = setTimeout(() => {
+			if (!this.activeAlerts.has(alert.id)) {
+				this.#alertTimers.delete(alert.id);
+				return;
+			}
 			const mode = nextBlinkAfterArrival(alert.severity, this.acknowledged.has(alert.id));
 			this.blink.set(alert.id, { mode, until: null });
 			this.#alertTimers.delete(alert.id);
 		}, ARRIVAL_MS);
 		this.#alertTimers.set(alert.id, timer);
-	};
+		this.#checkCountryReset();
+	}
 
-	#handleUpdate = (event: MessageEvent<string>): void => {
-		const alert = JSON.parse(event.data) as Alert;
-		this.#emitRaw({ type: 'update', record: alert });
+	#applyUpdate(alert: Alert): void {
 		this.activeAlerts.set(alert.id, alert);
 		this.blink.set(alert.id, { mode: 'update', until: performance.now() + UPDATE_MS });
 		this.#clearAlertTimer(alert.id);
 		const timer = setTimeout(() => {
+			if (!this.activeAlerts.has(alert.id)) {
+				this.#alertTimers.delete(alert.id);
+				return;
+			}
 			const mode = nextBlinkAfterArrival(alert.severity, this.acknowledged.has(alert.id));
 			this.blink.set(alert.id, { mode, until: null });
 			this.#alertTimers.delete(alert.id);
 		}, UPDATE_MS);
 		this.#alertTimers.set(alert.id, timer);
-	};
+		this.#checkCountryReset();
+	}
 
-	#handleEnded = (event: MessageEvent<string>): void => {
-		const alert = JSON.parse(event.data) as Alert;
-		this.#emitRaw({ type: 'ended', record: alert });
+	#applyEnded(alert: Alert): void {
+		if (!this.activeAlerts.has(alert.id)) return;
 		this.activeAlerts.set(alert.id, alert);
 		this.blink.set(alert.id, { mode: 'fading', until: performance.now() + ENDED_MS });
 		this.#clearAlertTimer(alert.id);
 		const timer = setTimeout(() => {
+			if (!this.activeAlerts.has(alert.id)) {
+				this.#alertTimers.delete(alert.id);
+				return;
+			}
 			this.activeAlerts.delete(alert.id);
 			this.blink.delete(alert.id);
 			this.#alertTimers.delete(alert.id);
+			this.#checkCountryReset();
 		}, ENDED_MS);
 		this.#alertTimers.set(alert.id, timer);
+	}
+
+	#handleNew = (event: MessageEvent<string>): void => {
+		let raw: unknown;
+		try {
+			raw = JSON.parse(event.data);
+		} catch {
+			return;
+		}
+		const alert = parseAlertRecord(raw);
+		if (!alert) return;
+		this.#emitRaw({ type: 'new', record: alert });
+		if (this.#streamBuffer) {
+			this.#streamBuffer.push({ type: 'new', alert });
+		} else {
+			this.#applyNew(alert);
+		}
+	};
+
+	#handleUpdate = (event: MessageEvent<string>): void => {
+		let raw: unknown;
+		try {
+			raw = JSON.parse(event.data);
+		} catch {
+			return;
+		}
+		const alert = parseAlertRecord(raw);
+		if (!alert) return;
+		this.#emitRaw({ type: 'update', record: alert });
+		if (this.#streamBuffer) {
+			this.#streamBuffer.push({ type: 'update', alert });
+		} else {
+			this.#applyUpdate(alert);
+		}
+	};
+
+	#handleEnded = (event: MessageEvent<string>): void => {
+		let raw: unknown;
+		try {
+			raw = JSON.parse(event.data);
+		} catch {
+			return;
+		}
+		const alert = parseAlertRecord(raw);
+		if (!alert) return;
+		if (this.#streamBuffer) {
+			this.#emitRaw({ type: 'ended', record: alert });
+			this.#streamBuffer.push({ type: 'ended', alert });
+		} else {
+			if (!this.activeAlerts.has(alert.id)) return;
+			this.#emitRaw({ type: 'ended', record: alert });
+			this.#applyEnded(alert);
+		}
 	};
 
 	#handleHeartbeat = (): void => {

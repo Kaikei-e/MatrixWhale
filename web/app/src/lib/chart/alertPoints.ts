@@ -1,4 +1,5 @@
 import type { Alert } from '$lib/alerts/types';
+import { extractUgc } from '$lib/alerts/geocodes';
 
 type LonLat = [number, number];
 
@@ -24,7 +25,7 @@ export function alertPoints(alert: Alert, centroids: Record<string, LonLat>): Lo
 		return alert.geometry.coordinates.map((polygon) => ringBboxCentroid(polygon[0]));
 	}
 
-	return alert.ugc
+	return extractUgc(alert)
 		.map((ugc) => centroids[ugc])
 		.filter((point): point is LonLat => point !== undefined);
 }

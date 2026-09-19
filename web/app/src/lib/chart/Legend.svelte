@@ -2,6 +2,7 @@
 	import { alertStore } from '$lib/alerts/store.svelte';
 	import { NWS_EVENT_COLORS, DEFAULT_NWS_COLOR } from '$lib/alerts/nwsEventStyle';
 	import { NWS_PRIORITY, UNKNOWN_PRIORITY } from '$lib/alerts/priority';
+	import { summarizeAlertSources } from '$lib/alerts/attribution';
 
 	interface Props {
 		class?: string;
@@ -23,6 +24,7 @@
 	const nwsEventSummary = $derived.by(() => {
 		const counts: Record<string, number> = {};
 		for (const alert of alertStore.activeAlerts.values()) {
+			if (alert.source !== 'noaa') continue;
 			counts[alert.event] = (counts[alert.event] ?? 0) + 1;
 		}
 		return Object.entries(counts)
@@ -40,6 +42,7 @@
 
 	const visibleNwsEvents = $derived(nwsEventSummary.slice(0, MAX_NWS_ROWS));
 	const hiddenNwsEventCount = $derived(Math.max(0, nwsEventSummary.length - MAX_NWS_ROWS));
+	const alertSourceSummary = $derived(summarizeAlertSources(alertStore.filtered, 3));
 </script>
 
 <div
@@ -55,18 +58,58 @@
 			<span class="text-ink-2">{row.desc}</span>
 		</div>
 	{/each}
-	<div class="mt-1 flex items-center gap-2">
-		<span class="legend-line legend-line-dashed" aria-hidden="true"></span>
-		<span class="w-14 shrink-0">Minor</span>
-		<span class="text-ink-2">dashed line</span>
+	<div
+		class="border-ink-2/30 mt-1 flex flex-col gap-1 border-t pt-1.5"
+		data-testid="severity-swatches"
+	>
+		<span class="font-semibold">Severity</span>
+		<div class="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+			<div class="flex items-center gap-1">
+				<span class="legend-swatch" style="background-color: var(--light)" aria-hidden="true"
+				></span>
+				<span class="text-ink-2">Extreme</span>
+			</div>
+			<div class="flex items-center gap-1">
+				<span class="legend-swatch" style="background-color: var(--amber)" aria-hidden="true"
+				></span>
+				<span class="text-ink-2">Severe</span>
+			</div>
+			<div class="flex items-center gap-1">
+				<span class="legend-swatch" style="background-color: var(--moderate)" aria-hidden="true"
+				></span>
+				<span class="text-ink-2">Moderate</span>
+			</div>
+			<div class="flex items-center gap-1">
+				<span class="legend-swatch" style="background-color: var(--minor)" aria-hidden="true"
+				></span>
+				<span class="text-ink-2">Minor</span>
+			</div>
+			<div class="flex items-center gap-1">
+				<span class="legend-swatch" style="background-color: var(--ink-2)" aria-hidden="true"
+				></span>
+				<span class="text-ink-2">Unknown</span>
+			</div>
+		</div>
 	</div>
-	<div class="flex items-center gap-2">
-		<span class="legend-line legend-line-dotted" aria-hidden="true"></span>
-		<span class="w-14 shrink-0">Unknown</span>
-		<span class="text-ink-2">dotted line</span>
-	</div>
+	{#if alertSourceSummary.totalUnique > 0}
+		<div class="border-ink-2/30 mt-1 flex flex-col gap-1 border-t pt-1.5">
+			<span class="font-semibold">Sources</span>
+			{#each alertSourceSummary.visible as source (source.name)}
+				<div class="flex items-center justify-between gap-2">
+					<span class="text-ink-2 truncate">{source.name}</span>
+					<span class="tabular text-ink-2 shrink-0">{source.count}</span>
+				</div>
+			{/each}
+			{#if alertSourceSummary.hiddenCount > 0}
+				<span class="text-ink-2">+{alertSourceSummary.hiddenCount} more</span>
+			{/if}
+		</div>
+	{/if}
 	{#if alertStore.useNwsColors && nwsEventSummary.length > 0}
-		<div class="border-ink-2/30 mt-1 flex flex-col gap-1.5 border-t pt-1.5">
+		<div
+			data-testid="nws-colors-summary"
+			class="border-ink-2/30 mt-1 flex flex-col gap-1.5 border-t pt-1.5"
+		>
 			<span class="font-semibold">NWS colors</span>
 			{#each visibleNwsEvents as row (row.event)}
 				<div class="flex items-center gap-2">
@@ -102,21 +145,6 @@
 		height: 0.5rem;
 		border-radius: 9999px;
 		flex-shrink: 0;
-	}
-
-	.legend-line {
-		width: 1.25rem;
-		height: 0;
-		border-top: 1.5px solid var(--ink-2);
-		flex-shrink: 0;
-	}
-
-	.legend-line-dashed {
-		border-top-style: dashed;
-	}
-
-	.legend-line-dotted {
-		border-top-style: dotted;
 	}
 
 	@media (prefers-reduced-motion: no-preference) {

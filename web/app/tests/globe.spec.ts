@@ -20,13 +20,26 @@ test('renders the legend, feed order, alert detail, and the stop-blink toggle', 
 	// The legacy feed list lives under the "Feed" tab now that the pane is tabbed.
 	await sidePanel.getByRole('tab', { name: 'Feed' }).click();
 	const feedItems = sidePanel.getByTestId('feed-item');
-	await expect(feedItems).toHaveCount(3);
+
+	// Default alert filters show Extreme and Severe only
+	await expect(feedItems).toHaveCount(2);
+	await expect(feedItems.nth(0)).toContainText('Tornado Warning');
+	await expect(feedItems.nth(1)).toContainText('Flash Flood Warning');
+
+	// Enable Minor and Unknown chips on the Alerts tab to show all 4 alerts
+	await sidePanel.getByRole('tab', { name: /Alerts/ }).click();
+	await sidePanel.getByRole('button', { name: 'Minor' }).click();
+	await sidePanel.getByRole('button', { name: 'Unknown' }).click();
+	await sidePanel.getByRole('tab', { name: 'Feed' }).click();
+
+	await expect(feedItems).toHaveCount(4);
 	await expect(feedItems.nth(0)).toContainText('Tornado Warning');
 	await expect(feedItems.nth(1)).toContainText('Flash Flood Warning');
 	await expect(feedItems.nth(2)).toContainText('Frost Advisory');
+	await expect(feedItems.nth(3)).toContainText('Wind gust advisory');
 
 	await feedItems.nth(0).click();
-	await expect(sidePanel.getByRole('heading', { name: 'Tornado Warning' })).toBeVisible();
+	await expect(sidePanel.getByRole('heading', { name: /Tornado Warning/ })).toBeVisible();
 
 	await expect(legend).not.toHaveAttribute('data-motion', 'static');
 	await page.getByRole('button', { name: 'Stop blinking' }).click();
@@ -149,4 +162,33 @@ test('focuses an earthquake event by id from the query string', async ({ page })
 
 	const sidePanel = page.getByTestId('side-panel');
 	await expect(sidePanel.getByRole('heading', { name: 'Valparaiso, Chile' })).toBeVisible();
+});
+
+test('legend: NWS colors summary counts only NOAA alerts and stale dashed/dotted rows are removed', async ({
+	page
+}) => {
+	await mockBackend(page);
+	await page.goto('/globe');
+
+	const legend = page.getByTestId('legend');
+	await expect(legend).toBeVisible();
+
+	// Stale rows are removed
+	await expect(legend.getByText('dashed line')).not.toBeVisible();
+	await expect(legend.getByText('dotted line')).not.toBeVisible();
+
+	// Toggle NWS colors on
+	await page.evaluate(() => localStorage.setItem('alerts.useNwsColors', 'true'));
+	await page.reload();
+
+	const nwsSummary = legend.getByTestId('nws-colors-summary');
+	await expect(nwsSummary).toBeVisible();
+
+	// NOAA alerts are present in NWS colors summary
+	await expect(nwsSummary.getByText('Tornado Warning')).toBeVisible();
+	await expect(nwsSummary.getByText('Flash Flood Warning')).toBeVisible();
+
+	// Non-NOAA alerts (Frost Advisory, Wind Warning) are NOT in NWS colors summary
+	await expect(nwsSummary.getByText('Wind Warning')).not.toBeVisible();
+	await expect(nwsSummary.getByText('Frost Advisory')).not.toBeVisible();
 });

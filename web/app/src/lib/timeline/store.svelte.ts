@@ -147,6 +147,10 @@ export class TimelineStore {
 			this.#applyRaw(event.type, itemFromRecord('hazard', event.record));
 		});
 		this.#unsubAlert = this.alertSource.subscribeRaw((event) => {
+			if (event.type === 'resync') {
+				void this.refetchHead();
+				return;
+			}
 			const item = itemFromRecord('alert', event.record);
 			if (event.type === 'ended') item.ended = true;
 			this.#applyRaw(event.type, item);

@@ -3,7 +3,9 @@
 	import { timelineStore } from '$lib/timeline/store.svelte';
 	import type { TimelineItem, TimelineKind } from '$lib/timeline/types';
 	import { HAZARD_TYPE_LABELS } from '$lib/hazards/types';
-	import { alertSeverityLevel, formatShortRelativeTime, magnitudeLabel } from '$lib/pane/format';
+	import { alertSeverityDotColor, formatShortRelativeTime, magnitudeLabel } from '$lib/pane/format';
+	import { getCountryName } from '$lib/alerts/countries';
+	import { themeState } from '$lib/theme.svelte';
 	import FilterChip from './FilterChip.svelte';
 	import ListRow from './ListRow.svelte';
 
@@ -44,12 +46,21 @@
 		if (item.kind === 'hazard') {
 			return `${HAZARD_TYPE_LABELS[item.hazard.hazard_type]} · ${item.hazard.title}`;
 		}
-		return `${item.alert.event} · ${item.alert.area_desc}`;
+		return item.alert.headline || item.alert.event;
 	}
 
 	function secondaryText(item: TimelineItem): string {
 		if (item.kind === 'hazard') return capitalize(item.hazard.alert_level);
-		if (item.kind === 'alert') return item.alert.severity;
+		if (item.kind === 'alert') {
+			const countryNames = item.alert.countries
+				? item.alert.countries.map((c) => getCountryName(c)).filter(Boolean)
+				: [];
+			const country = countryNames.length > 0 ? countryNames.join(', ') : '';
+			if (country && item.alert.source_name) {
+				return `${country} · ${item.alert.source_name}`;
+			}
+			return country || item.alert.source_name || item.alert.severity;
+		}
 		return capitalize(item.severity);
 	}
 
@@ -210,12 +221,13 @@
 					title={primaryText(item)}
 					time={{ iso: item.seen_at, label: formatShortRelativeTime(item.seen_at, now) }}
 					secondary={secondaryText(item)}
-					level={item.kind === 'hazard'
-						? item.hazard.alert_level
+					level={item.kind === 'hazard' ? item.hazard.alert_level : undefined}
+					kindColor={item.kind === 'earthquake'
+						? 'var(--amber)'
 						: item.kind === 'alert'
-							? alertSeverityLevel(item.alert.severity)
+							? alertSeverityDotColor(item.alert.severity, themeState.current)
 							: undefined}
-					kindColor={item.kind === 'earthquake' ? 'var(--amber)' : undefined}
+					kindLabel={item.kind === 'alert' ? item.alert.severity : undefined}
 					updated={timelineStore.updatedKeys.has(item.key)}
 					ended={item.ended}
 					onclick={() => select(item)}

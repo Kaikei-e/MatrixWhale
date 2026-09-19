@@ -31,23 +31,36 @@ class FakeEventSource {
 function makeAlert(overrides: Partial<Alert>): Alert {
 	return {
 		id: 'a1',
+		source: 'noaa',
+		source_id: 'a1',
+		source_name: 'National Weather Service',
+		attribution: 'NWS',
+		countries: ['USA'],
+		sender: 'test',
+		sender_name: 'test',
+		message_type: null,
 		event: 'Tornado Warning',
+		category: ['Met'],
 		severity: 'Extreme',
 		urgency: 'Immediate',
 		certainty: 'Observed',
-		message_type: null,
 		headline: null,
+		language: 'en-US',
+		web: null,
 		area_desc: 'Test Area',
-		ugc: [],
-		same: [],
+		geocodes: [],
 		geometry: null,
 		sent: '2026-09-17T00:00:00Z',
 		effective: null,
+		onset: null,
 		expires: null,
 		ends: null,
+		active_until: '2026-09-18T00:00:00Z',
 		first_seen_at: '2026-09-17T00:00:00Z',
 		last_seen_at: '2026-09-17T00:00:00Z',
 		ended_at: null,
+		end_reason: null,
+		superseded_by: null,
 		...overrides
 	};
 }
@@ -89,12 +102,57 @@ describe('AlertStore derived state', () => {
 		});
 	});
 
-	it('zoneSeverity keeps the highest severity per UGC', () => {
+	it('zoneSeverity keeps the highest severity per UGC from geocodes', () => {
 		const store = new AlertStore();
-		store.activeAlerts.set('a1', makeAlert({ id: 'a1', severity: 'Minor', ugc: ['OKC143'] }));
-		store.activeAlerts.set('a2', makeAlert({ id: 'a2', severity: 'Extreme', ugc: ['OKC143'] }));
+		store.activeAlerts.set(
+			'a1',
+			makeAlert({
+				id: 'a1',
+				severity: 'Minor',
+				geocodes: [{ name: 'UGC', value: 'OKC143' }]
+			})
+		);
+		store.activeAlerts.set(
+			'a2',
+			makeAlert({
+				id: 'a2',
+				severity: 'Extreme',
+				geocodes: [{ name: 'UGC', value: 'OKC143' }]
+			})
+		);
 
 		expect(store.zoneSeverity.get('OKC143')).toBe('Extreme');
+	});
+
+	it('filters alerts by default severities and country', () => {
+		const store = new AlertStore();
+		store.activeAlerts.set('a1', makeAlert({ id: 'a1', severity: 'Extreme', countries: ['USA'] }));
+		store.activeAlerts.set(
+			'a2',
+			makeAlert({ id: 'a2', event: 'Frost Advisory', severity: 'Minor', countries: ['USA'] })
+		);
+		store.activeAlerts.set(
+			'a3',
+			makeAlert({
+				id: 'a3',
+				source: 'cap-dwd',
+				event: 'Wind Warning',
+				severity: 'Moderate',
+				countries: ['DEU']
+			})
+		);
+
+		// Default severity filter is Extreme, Severe, Moderate; country is 'all'
+		expect(store.filtered.map((a) => a.id)).toEqual(['a1', 'a3']);
+
+		// Select country DEU
+		store.countryFilter = 'DEU';
+		expect(store.filtered.map((a) => a.id)).toEqual(['a3']);
+
+		// Toggle Minor on
+		store.toggleSeverity('Minor');
+		store.countryFilter = 'all';
+		expect(store.filtered.map((a) => a.id)).toEqual(['a1', 'a3', 'a2']);
 	});
 
 	it('hasAnyBlinking is false when stopAll is set', () => {
@@ -152,12 +210,16 @@ describe('AlertStore.subscribeRaw', () => {
 		await store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
 		const stream = FakeEventSource.instances[0];
 
-		const received: Array<{ type: string; id: string }> = [];
+		const received: Array<{ type: string; id?: string }> = [];
 		const unsubscribe = store.subscribeRaw((event) => {
-			received.push({ type: event.type, id: event.record.id });
+			received.push({
+				type: event.type,
+				id: event.type === 'resync' ? undefined : event.record.id
+			});
 		});
 
 		const alert = makeAlert({ id: 'raw-1', severity: 'Minor' });
+		store.activeAlerts.set(alert.id, alert);
 		store.acknowledge('raw-1');
 		stream.emit('alert.new', alert);
 		stream.emit('alert.update', alert);
@@ -169,6 +231,302 @@ describe('AlertStore.subscribeRaw', () => {
 			{ type: 'ended', id: 'raw-1' }
 		]);
 		unsubscribe();
+		store.disconnect();
+	});
+
+	it('ignores ended event for alerts that are not active', async () => {
+		const store = new AlertStore();
+		await store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+		const stream = FakeEventSource.instances[0];
+
+		const inactiveAlert = makeAlert({ id: 'inactive-1', severity: 'Extreme' });
+		stream.emit('alert.ended', inactiveAlert);
+
+		expect(store.activeAlerts.has('inactive-1')).toBe(false);
+		expect(store.blink.has('inactive-1')).toBe(false);
+		store.disconnect();
+	});
+
+	it('handles resync by refetching snapshot while preserving events in flight', async () => {
+		const first = makeAlert({ id: 'snap-1', severity: 'Extreme' });
+		const second = makeAlert({ id: 'snap-2', severity: 'Severe' });
+
+		let resolveSecondFetch: (value: Response) => void;
+		const secondFetchPromise = new Promise<Response>((resolve) => {
+			resolveSecondFetch = resolve;
+		});
+
+		const mockFetch = vi
+			.fn()
+			.mockResolvedValueOnce(new Response(JSON.stringify([first, second])))
+			.mockImplementationOnce(() => secondFetchPromise);
+
+		vi.stubGlobal('fetch', mockFetch);
+
+		const store = new AlertStore();
+		await store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+		const stream = FakeEventSource.instances[0];
+
+		expect(store.activeAlerts.size).toBe(2);
+
+		// Trigger resync
+		stream.emit('resync', {});
+
+		// While second fetch is in flight, an ended event arrives for snap-2
+		stream.emit('alert.ended', { ...second, ended_at: '2026-09-18T00:00:00Z' });
+
+		// Complete the second fetch (which returns [first, second])
+		resolveSecondFetch!(new Response(JSON.stringify([first, second])));
+		for (let i = 0; i < 10; i++) await Promise.resolve();
+
+		// snap-2 had ended while snapshot was in flight, so it should be in fading state and deleted after timeout
+		expect(store.blink.get('snap-2')?.mode).toBe('fading');
+
+		store.disconnect();
+	});
+
+	it('resets countryFilter to "all" when the selected country disappears', () => {
+		const store = new AlertStore();
+		store.activeAlerts.set('a1', makeAlert({ id: 'a1', countries: ['FRA'], severity: 'Extreme' }));
+		store.activeAlerts.set('a2', makeAlert({ id: 'a2', countries: ['DEU'], severity: 'Minor' }));
+
+		store.countryFilter = 'FRA';
+		expect(store.countryFilter).toBe('FRA');
+
+		// Toggle off Extreme: FRA alerts are no longer in activeCountries matching severity filter
+		store.toggleSeverity('Extreme');
+		expect(store.countryFilter).toBe('all');
+	});
+
+	it('zoneSeverity reflects the filtered alerts rather than all active alerts', () => {
+		const store = new AlertStore();
+		store.activeAlerts.set(
+			'a1',
+			makeAlert({
+				id: 'a1',
+				severity: 'Minor',
+				countries: ['USA'],
+				geocodes: [{ name: 'UGC', value: 'OKZ140' }]
+			})
+		);
+		store.activeAlerts.set(
+			'a2',
+			makeAlert({
+				id: 'a2',
+				severity: 'Extreme',
+				countries: ['FRA'],
+				geocodes: [{ name: 'UGC', value: 'FRZ001' }]
+			})
+		);
+		store.activeAlerts.set(
+			'a3',
+			makeAlert({
+				id: 'a3',
+				severity: 'Extreme',
+				countries: ['DEU'],
+				geocodes: [{ name: 'UGC', value: 'DEZ002' }]
+			})
+		);
+
+		// Default severity filter is Extreme, Severe, Moderate.
+		// a1 is Minor, so not in filtered. a2 (FRZ001) and a3 (DEZ002) are in filtered.
+		expect(store.zoneSeverity.has('OKZ140')).toBe(false);
+		expect(store.zoneSeverity.get('FRZ001')).toBe('Extreme');
+		expect(store.zoneSeverity.get('DEZ002')).toBe('Extreme');
+
+		// Filter by country: FRA only
+		store.countryFilter = 'FRA';
+		expect(store.zoneSeverity.has('FRZ001')).toBe(true);
+		expect(store.zoneSeverity.has('DEZ002')).toBe(false);
+
+		// Reset to all and enable Minor: a1 now matches
+		store.countryFilter = 'all';
+		store.toggleSeverity('Minor');
+		expect(store.zoneSeverity.get('OKZ140')).toBe('Minor');
+	});
+
+	it('opens the stream first and buffers events that arrive before snapshot finishes', async () => {
+		let resolveSnapshot: (res: Response) => void;
+		const snapshotPromise = new Promise<Response>((resolve) => {
+			resolveSnapshot = resolve;
+		});
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockImplementation(() => snapshotPromise)
+		);
+
+		const store = new AlertStore();
+		const connectPromise = store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+
+		expect(FakeEventSource.instances.length).toBe(1);
+		const stream = FakeEventSource.instances[0];
+
+		const bufferedAlert = makeAlert({
+			id: 'race-1',
+			severity: 'Extreme',
+			last_seen_at: '2026-09-17T12:00:00Z'
+		});
+		stream.emit('alert.new', bufferedAlert);
+
+		expect(store.activeAlerts.has('race-1')).toBe(false);
+
+		const snapshotAlert = makeAlert({
+			id: 'snap-1',
+			severity: 'Severe',
+			last_seen_at: '2026-09-17T11:00:00Z'
+		});
+		resolveSnapshot!(new Response(JSON.stringify([snapshotAlert])));
+		await connectPromise;
+
+		expect(store.activeAlerts.has('snap-1')).toBe(true);
+		expect(store.activeAlerts.has('race-1')).toBe(true);
+		store.disconnect();
+	});
+
+	it('bails out of connect and closes EventSource if disconnect runs while snapshot is in flight', async () => {
+		let resolveSnapshot: (res: Response) => void;
+		const snapshotPromise = new Promise<Response>((resolve) => {
+			resolveSnapshot = resolve;
+		});
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockImplementation(() => snapshotPromise)
+		);
+
+		const store = new AlertStore();
+		const connectPromise = store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+
+		expect(FakeEventSource.instances.length).toBe(1);
+		const stream = FakeEventSource.instances[0];
+		expect(stream.closed).toBe(false);
+
+		store.disconnect();
+		expect(stream.closed).toBe(true);
+		expect(store.connected).toBe('closed');
+
+		resolveSnapshot!(new Response(JSON.stringify([makeAlert({ id: 'abandoned-1' })])));
+		await connectPromise;
+
+		expect(store.activeAlerts.size).toBe(0);
+		expect(store.connected).toBe('closed');
+
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue(new Response(JSON.stringify([makeAlert({ id: 'reconnect-1' })])))
+		);
+		await store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+		expect(FakeEventSource.instances.length).toBe(2);
+		expect(store.activeAlerts.has('reconnect-1')).toBe(true);
+		store.disconnect();
+	});
+
+	it('skips buffered records whose last_seen_at is older than the snapshot row', async () => {
+		let resolveSnapshot: (res: Response) => void;
+		const snapshotPromise = new Promise<Response>((resolve) => {
+			resolveSnapshot = resolve;
+		});
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockImplementation(() => snapshotPromise)
+		);
+
+		const store = new AlertStore();
+		const connectPromise = store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+		const stream = FakeEventSource.instances[0];
+
+		const olderEvent = makeAlert({
+			id: 'alert-1',
+			headline: 'Old Headline',
+			last_seen_at: '2026-09-17T10:00:00Z'
+		});
+		stream.emit('alert.update', olderEvent);
+
+		const newerSnapshot = makeAlert({
+			id: 'alert-1',
+			headline: 'New Snapshot Headline',
+			last_seen_at: '2026-09-17T11:00:00Z'
+		});
+		resolveSnapshot!(new Response(JSON.stringify([newerSnapshot])));
+		await connectPromise;
+
+		expect(store.activeAlerts.get('alert-1')?.headline).toBe('New Snapshot Headline');
+		store.disconnect();
+	});
+
+	it('successful snapshot clears previous alertTimers and guards timer callbacks', async () => {
+		vi.useFakeTimers();
+		try {
+			const store = new AlertStore();
+			const alert1 = makeAlert({ id: 'timer-1', severity: 'Extreme' });
+			store.activeAlerts.set('timer-1', alert1);
+			store.blink.set('timer-1', { mode: 'arrival', until: 5000 });
+
+			vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([]))));
+			await store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+
+			vi.advanceTimersByTime(10000);
+
+			expect(store.blink.has('timer-1')).toBe(false);
+			store.disconnect();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('countryFilter actually resets to "all" and does not snap back when new alerts arrive', () => {
+		const store = new AlertStore();
+		store.activeAlerts.set('a1', makeAlert({ id: 'a1', countries: ['FRA'], severity: 'Extreme' }));
+		store.countryFilter = 'FRA';
+		expect(store.countryFilter).toBe('FRA');
+
+		store.toggleSeverity('Extreme');
+		expect(store.countryFilter).toBe('all');
+
+		const moderateFra = makeAlert({ id: 'a2', countries: ['FRA'], severity: 'Moderate' });
+		store.activeAlerts.set('a2', moderateFra);
+		store.toggleSeverity('Moderate');
+		expect(store.countryFilter).toBe('all');
+	});
+
+	it('acknowledge does not clear removal timer or change blink when alert is fading after ended', async () => {
+		vi.useFakeTimers();
+		try {
+			const store = new AlertStore();
+			await store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+			const stream = FakeEventSource.instances[0];
+
+			const alert = makeAlert({ id: 'fading-1', severity: 'Extreme' });
+			store.activeAlerts.set(alert.id, alert);
+
+			stream.emit('alert.ended', { ...alert, ended_at: '2026-09-18T00:00:00Z' });
+			expect(store.blink.get('fading-1')?.mode).toBe('fading');
+
+			store.acknowledge('fading-1');
+			expect(store.blink.get('fading-1')?.mode).toBe('fading');
+
+			vi.advanceTimersByTime(1100);
+
+			expect(store.activeAlerts.has('fading-1')).toBe(false);
+			expect(store.blink.has('fading-1')).toBe(false);
+
+			store.disconnect();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('does not catch errors thrown inside listeners or apply code in SSE handlers', async () => {
+		const store = new AlertStore();
+		await store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+		const stream = FakeEventSource.instances[0];
+
+		store.subscribeRaw(() => {
+			throw new Error('listener failure');
+		});
+
+		const alert = makeAlert({ id: 'throw-1' });
+		expect(() => stream.emit('alert.new', alert)).toThrow('listener failure');
+
 		store.disconnect();
 	});
 });

@@ -5,23 +5,36 @@ import type { Alert } from '$lib/alerts/types';
 function zoneAlert(id: string, ugc: string[]): Alert {
 	return {
 		id,
+		source: 'noaa',
+		source_id: id,
+		source_name: 'National Weather Service',
+		attribution: 'NWS',
+		countries: ['USA'],
+		sender: null,
+		sender_name: null,
+		message_type: null,
 		event: 'Small Craft Advisory',
+		category: [],
 		severity: 'Minor',
 		urgency: 'Expected',
 		certainty: 'Likely',
-		message_type: null,
 		headline: null,
+		language: null,
+		web: null,
 		area_desc: 'Test Area',
-		ugc,
-		same: [],
+		geocodes: ugc.map((value) => ({ name: 'UGC', value })),
 		geometry: null,
 		sent: null,
 		effective: null,
+		onset: null,
 		expires: null,
 		ends: null,
+		active_until: '2026-09-17T00:00:00Z',
 		first_seen_at: '2026-09-17T00:00:00Z',
 		last_seen_at: '2026-09-17T00:00:00Z',
-		ended_at: null
+		ended_at: null,
+		end_reason: null,
+		superseded_by: null
 	};
 }
 

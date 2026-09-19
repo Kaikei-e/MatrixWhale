@@ -17,6 +17,9 @@
 		<a href={resolve('/home')} aria-current={page.url.pathname === '/home' ? 'page' : undefined}
 			>Console</a
 		>
+		<a href={resolve('/feeds')} aria-current={page.url.pathname === '/feeds' ? 'page' : undefined}
+			>Feeds</a
+		>
 	</div>
 	<div class="flex items-center gap-3">
 		<SseStatusDot />

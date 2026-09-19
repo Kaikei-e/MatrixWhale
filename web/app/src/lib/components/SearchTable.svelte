@@ -59,8 +59,9 @@
 				{#each results as alert (alert.id)}
 					<tr class="border-ink-2/10 border-b">
 						<td class="py-1"
-							><a href="{resolve('/globe')}?focus={alert.id}" class="hover:underline"
-								>{alert.event}</a
+							><a
+								href="{resolve('/globe')}?focus={encodeURIComponent(alert.id)}"
+								class="hover:underline">{alert.event}</a
 							></td
 						>
 						<td class="py-1">{alert.severity}</td>

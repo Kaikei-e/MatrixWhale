@@ -114,13 +114,61 @@ export const NWS_PRIORITY: Record<string, number> = {
 
 export const UNKNOWN_PRIORITY = 999;
 
-export function sortByNwsPriority<T extends { event: string; sent: string | null }>(
-	alerts: T[]
-): T[] {
-	return [...alerts].sort((a, b) => {
-		const priorityA = NWS_PRIORITY[a.event] ?? UNKNOWN_PRIORITY;
-		const priorityB = NWS_PRIORITY[b.event] ?? UNKNOWN_PRIORITY;
-		if (priorityA !== priorityB) return priorityA - priorityB;
-		return (b.sent ?? '').localeCompare(a.sent ?? '');
-	});
+export const SEVERITY_RANK: Record<string, number> = {
+	extreme: 4,
+	severe: 3,
+	moderate: 2,
+	minor: 1,
+	unknown: 0
+};
+
+export function severityRank(severity: string | null | undefined): number {
+	if (!severity) return 0;
+	return SEVERITY_RANK[severity.toLowerCase()] ?? 0;
+}
+
+export const URGENCY_RANK: Record<string, number> = {
+	immediate: 4,
+	expected: 3,
+	future: 2,
+	past: 1,
+	unknown: 0
+};
+
+export function urgencyRank(urgency: string | null | undefined): number {
+	if (!urgency) return 0;
+	return URGENCY_RANK[urgency.toLowerCase()] ?? 0;
+}
+
+export interface SortableAlert {
+	source?: string;
+	event: string;
+	severity?: string;
+	urgency?: string;
+	sent: string | null;
+	first_seen_at?: string;
+	id?: string;
+}
+
+export function compareAlerts<T extends SortableAlert>(a: T, b: T): number {
+	const sevDiff = severityRank(b.severity) - severityRank(a.severity);
+	if (sevDiff !== 0) return sevDiff;
+
+	const priorityA =
+		a.source === 'noaa' ? (NWS_PRIORITY[a.event] ?? UNKNOWN_PRIORITY) : UNKNOWN_PRIORITY;
+	const priorityB =
+		b.source === 'noaa' ? (NWS_PRIORITY[b.event] ?? UNKNOWN_PRIORITY) : UNKNOWN_PRIORITY;
+	if (priorityA !== priorityB) return priorityA - priorityB;
+
+	const urgDiff = urgencyRank(b.urgency) - urgencyRank(a.urgency);
+	if (urgDiff !== 0) return urgDiff;
+
+	const sentDiff = (b.sent ?? '').localeCompare(a.sent ?? '');
+	if (sentDiff !== 0) return sentDiff;
+
+	return (a.id ?? '').localeCompare(b.id ?? '');
+}
+
+export function sortByNwsPriority<T extends SortableAlert>(alerts: T[]): T[] {
+	return [...alerts].sort(compareAlerts);
 }

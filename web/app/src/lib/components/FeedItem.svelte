@@ -7,9 +7,10 @@
 		alert: Alert;
 		selected: boolean;
 		onselect: () => void;
+		now?: number;
 	}
 
-	let { alert, selected, onselect }: Props = $props();
+	let { alert, selected, onselect, now = Date.now() }: Props = $props();
 
 	const SEVERITY_COLOR: Record<Severity, string> = {
 		Extreme: 'text-light',
@@ -18,13 +19,6 @@
 		Minor: 'text-ink-2',
 		Unknown: 'text-ink-2'
 	};
-
-	let now = $state(Date.now());
-
-	$effect(() => {
-		const timer = setInterval(() => (now = Date.now()), 30000);
-		return () => clearInterval(timer);
-	});
 
 	const isNew = $derived(alertStore.blink.get(alert.id)?.mode === 'arrival');
 
@@ -50,9 +44,9 @@
 		: ''}"
 >
 	<span class="flex items-center justify-between gap-2">
-		<span class="font-medium">{alert.event}</span>
+		<span class="font-medium">{alert.headline || alert.event}</span>
 		{#if isNew}
-			<span class="bg-light shrink-0 px-1 text-xs text-white">New</span>
+			<span class="bg-light dark:text-paper shrink-0 px-1 text-xs text-white">New</span>
 		{/if}
 	</span>
 	<span class="flex items-center justify-between gap-2 text-xs">
