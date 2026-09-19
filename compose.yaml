@@ -159,6 +159,29 @@ services:
       matrix_network:
         ipv4_address: 10.254.100.44
 
+  cap_adapter:
+    build:
+      context: .
+      dockerfile: cap_adapter/Dockerfile
+    environment:
+      MATRIX_WHALE_URL: http://matrix_whale:6000/api/v1
+      CAP_CONTACT_EMAIL: ${CAP_CONTACT_EMAIL:-}
+      CAP_RAA_URL: https://alertingauthority.wmo.int/rss.xml
+      CAP_POLL_INTERVAL: 5m
+      CAP_REGISTRY_INTERVAL: 24h
+      CAP_HOST_MIN_INTERVAL: 2s
+      CAP_MAX_PARALLEL_HOSTS: 8
+    tty: true
+    restart: always
+    volumes:
+      - ./cap_adapter/app:/app
+    depends_on:
+      - matrix_whale
+    networks:
+      matrix_network:
+        ipv4_address: 10.254.100.45
+
+
   db:
     build:
       context: ./db

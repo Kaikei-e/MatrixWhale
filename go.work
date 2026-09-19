@@ -2,8 +2,10 @@ go 1.26.0
 
 use (
 	./adapters/common
+	./cap_adapter/app
 	./emsc_adapter/app
 	./gdacs_adapter/app
 	./noaa_adapter/app
 	./usgs_adapter/app
 )
+

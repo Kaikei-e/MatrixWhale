@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        adapter: [adapters/common, emsc_adapter/app, noaa_adapter/app, usgs_adapter/app]
+        adapter: [adapters/common, cap_adapter/app, emsc_adapter/app, noaa_adapter/app, usgs_adapter/app]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
