@@ -1,7 +1,6 @@
 import domain/earthquake.{type MagnitudeFilter, AllMagnitudes, Minimum}
 import domain/event.{type Event, type EventView}
 import gleam/dynamic/decode
-import gleam/list
 import gleam/result
 import gleam/string
 import pog
@@ -19,7 +18,7 @@ pub fn recent(
   conn: pog.Connection,
 ) -> Result(List(EventView), String) {
   use rows <- result.try(select_events(hours, minmag, type_, conn))
-  rows |> list.try_map(fn(row) { event_writer.to_view(row, conn) })
+  event_writer.to_views(rows, conn)
 }
 
 fn select_events(
@@ -54,8 +53,13 @@ pub fn by_ids(
   ids: List(Int),
   conn: pog.Connection,
 ) -> Result(List(EventView), String) {
-  use rows <- result.try(select_events_by_ids(ids, conn))
-  rows |> list.try_map(fn(row) { event_writer.to_view(row, conn) })
+  case ids {
+    [] -> Ok([])
+    _ -> {
+      use rows <- result.try(select_events_by_ids(ids, conn))
+      event_writer.to_views(rows, conn)
+    }
+  }
 }
 
 fn select_events_by_ids(

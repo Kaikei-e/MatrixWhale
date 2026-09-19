@@ -1,5 +1,6 @@
 import domain/earthquake.{type Earthquake}
 import domain/event.{type EventView, EventView}
+import gleam/dict
 import gleam/dynamic/decode
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -91,6 +92,146 @@ pub fn to_view(
     members: projected.members,
     sources: projected.sources,
   ))
+}
+
+/// Hydrates a batch of already-fetched event rows into `EventView`s,
+/// reading member links and earthquake rows in 2 queries instead of N+M queries,
+/// preserving existing `to_view` projection semantics, member metadata, and ordering.
+pub fn to_views(
+  event_rows: List(event.Event),
+  conn: pog.Connection,
+) -> Result(List(EventView), String) {
+  case event_rows {
+    [] -> Ok([])
+    _ -> {
+      let event_ids = list.map(event_rows, fn(e) { e.id })
+      use member_links <- result.try(select_batch_member_links(event_ids, conn))
+      use member_inputs <- result.try(hydrate_member_inputs(member_links, conn))
+      let grouped =
+        list.fold(member_inputs, dict.new(), fn(acc, item) {
+          let #(event_id, member_input) = item
+          dict.upsert(acc, event_id, fn(existing) {
+            case existing {
+              Some(members) -> [member_input, ..members]
+              None -> [member_input]
+            }
+          })
+        })
+      list.try_map(event_rows, fn(event_row) {
+        let members = case dict.get(grouped, event_row.id) {
+          Ok(m) -> list.reverse(m)
+          Error(Nil) -> []
+        }
+        let projected = projection.project(members)
+        Ok(EventView(
+          event: event_row,
+          preferred: projected.preferred,
+          members: projected.members,
+          sources: projected.sources,
+        ))
+      })
+    }
+  }
+}
+
+type BatchMemberLink {
+  BatchMemberLink(
+    event_id: Int,
+    source: String,
+    source_id: String,
+    matched_by: String,
+    misfit: Option(Float),
+  )
+}
+
+fn select_batch_member_links(
+  event_ids: List(Int),
+  conn: pog.Connection,
+) -> Result(List(BatchMemberLink), String) {
+  pog.query(
+    "SELECT event_id, source, source_id, matched_by, misfit FROM sea.event_member WHERE event_id = ANY($1)",
+  )
+  |> pog.parameter(pog.array(pog.int, event_ids))
+  |> pog.returning({
+    use event_id <- decode.field(0, decode.int)
+    use source <- decode.field(1, decode.string)
+    use source_id <- decode.field(2, decode.string)
+    use matched_by <- decode.field(3, decode.string)
+    use misfit <- decode.field(4, decode.optional(decode.float))
+    decode.success(BatchMemberLink(
+      event_id:,
+      source:,
+      source_id:,
+      matched_by:,
+      misfit:,
+    ))
+  })
+  |> pog.execute(conn)
+  |> result.map(fn(x) { x.rows })
+  |> result.map_error(err)
+}
+
+fn hydrate_member_inputs(
+  member_links: List(BatchMemberLink),
+  conn: pog.Connection,
+) -> Result(List(#(Int, projection.MemberInput)), String) {
+  case member_links {
+    [] -> Ok([])
+    _ -> {
+      let pairs =
+        member_links
+        |> list.map(fn(link) { #(link.source, link.source_id) })
+        |> list.unique
+      let #(sources, source_ids) = list.unzip(pairs)
+      use eq_rows <- result.try(select_batch_earthquakes(
+        sources,
+        source_ids,
+        conn,
+      ))
+      let eq_map =
+        list.fold(eq_rows, dict.new(), fn(acc, eq) {
+          dict.insert(acc, #(eq.source, eq.source_id), eq)
+        })
+      list.try_map(member_links, fn(link) {
+        case dict.get(eq_map, #(link.source, link.source_id)) {
+          Ok(eq) ->
+            Ok(#(
+              link.event_id,
+              projection.MemberInput(
+                earthquake: eq,
+                matched_by: link.matched_by,
+                misfit: link.misfit,
+              ),
+            ))
+          Error(Nil) ->
+            Error(
+              "event member earthquake row missing for "
+              <> link.source
+              <> ":"
+              <> link.source_id,
+            )
+        }
+      })
+    }
+  }
+}
+
+fn select_batch_earthquakes(
+  sources: List(String),
+  source_ids: List(String),
+  conn: pog.Connection,
+) -> Result(List(Earthquake), String) {
+  pog.query(
+    "SELECT "
+    <> earthquake.columns
+    <> " FROM sea.earthquake WHERE (source, source_id) IN (SELECT * FROM unnest($1::text[], $2::text[]))",
+  )
+  |> pog.parameter(pog.array(pog.text, sources))
+  |> pog.parameter(pog.array(pog.text, source_ids))
+  |> pog.returning(earthquake.row_decoder())
+  |> pog.execute(conn)
+  |> result.map(fn(x) { x.rows })
+  |> result.map_error(err)
 }
 
 fn to_candidate(row: Earthquake) -> matcher.Candidate {

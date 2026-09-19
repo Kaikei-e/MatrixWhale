@@ -20,6 +20,7 @@ import message/reciever/models/earthquake_feature
 import mist
 import repository/earthquake_reader
 import repository/earthquake_writer
+import repository/event_writer
 import support/test_db
 import wisp/simulate
 
@@ -178,6 +179,125 @@ pub fn retention_removes_old_events_integration_test() {
       "SELECT count(*) FROM sea.event WHERE preferred_source_id='recent'",
     )
     |> should.equal(1)
+  })
+}
+
+pub fn batch_hydration_matches_per_event_to_view_integration_test() {
+  test_db.with_test_db(fn(conn) {
+    let now = test_db.now_ms()
+
+    // 1. Empty coverage: empty list avoids queries and returns Ok([])
+    event_writer.to_views([], conn) |> should.equal(Ok([]))
+    earthquake_reader.by_ids([], conn) |> should.equal(Ok([]))
+
+    // 2. Set up multi-source, preferred, and deleted member scenarios:
+    // Event 1: USGS "us1" at `now`
+    let assert Ok(_) =
+      earthquake_writer.write_batch(
+        [usgs_incoming("us1", now, now, 10.0, 20.0, 5.0)],
+        now,
+        conn,
+      )
+
+    // Event 1 attachment: EMSC "e1" (20s later, close enough to merge into Event 1)
+    let close_time = now + 20_000
+    let assert Ok(_) =
+      earthquake_writer.write_batch(
+        [emsc_incoming("e1", close_time, close_time, 10.09, 20.0, 4.8)],
+        close_time,
+        conn,
+      )
+
+    // Event 2: EMSC "e2" (10 minutes away, separate event)
+    let far_time = now + 600_000
+    let assert Ok(_) =
+      earthquake_writer.write_batch(
+        [emsc_incoming("e2", far_time, far_time, 10.0, 20.0, 5.0)],
+        far_time,
+        conn,
+      )
+
+    // Event 3: USGS "us3" (20 minutes away, separate event)
+    let farther_time = now + 1_200_000
+    let assert Ok(_) =
+      earthquake_writer.write_batch(
+        [usgs_incoming("us3", farther_time, farther_time, 30.0, 40.0, 6.0)],
+        farther_time,
+        conn,
+      )
+
+    // Mark EMSC member "e1" on Event 1 as deleted
+    let delete_time = now + 30_000
+    let assert Ok(_) =
+      earthquake_writer.write_batch(
+        [
+          earthquake_incoming(
+            "emsc",
+            "e1",
+            delete_time,
+            earthquake_feature.IncomingEarthquake(
+              ..emsc_feature("e1", close_time, delete_time, 10.09, 20.0, 4.8),
+              status: Some("deleted"),
+            ),
+          ),
+        ],
+        delete_time,
+        conn,
+      )
+
+    // Retrieve events via recent
+    let assert Ok(recent_views) =
+      earthquake_reader.recent(
+        24,
+        earthquake.AllMagnitudes,
+        earthquake_reader.AllTypes,
+        conn,
+      )
+    list.length(recent_views) |> should.equal(3)
+
+    let event_rows = list.map(recent_views, fn(v) { v.event })
+    let event_ids = list.map(event_rows, fn(e) { e.id })
+
+    // 3. Batch hydration comparison against per-event to_view
+    let assert Ok(per_event_views) =
+      list.try_map(event_rows, fn(ev) { event_writer.to_view(ev, conn) })
+    let assert Ok(batch_views) = event_writer.to_views(event_rows, conn)
+
+    // Strict equivalence between batch hydration and per-event to_view
+    batch_views |> should.equal(per_event_views)
+    recent_views |> should.equal(per_event_views)
+
+    // Batch hydration retains its caller's event ordering.
+    event_writer.to_views(list.reverse(event_rows), conn)
+    |> should.equal(Ok(list.reverse(per_event_views)))
+
+    // by_ids has no SQL ordering contract; compare each view by event ID.
+    let assert Ok(by_ids_views) = earthquake_reader.by_ids(event_ids, conn)
+    list.length(by_ids_views) |> should.equal(list.length(per_event_views))
+    list.each(per_event_views, fn(expected) {
+      list.find(by_ids_views, fn(actual) {
+        actual.event.id == expected.event.id
+      })
+      |> should.equal(Ok(expected))
+    })
+
+    // 5. Multi-source, deleted vs preferred member semantics validation
+    let assert Ok(merged_view) =
+      list.find(batch_views, fn(v) { list.length(v.members) == 2 })
+    // USGS has higher priority than EMSC, so preferred_source is USGS
+    merged_view.preferred.source |> should.equal("usgs")
+    merged_view.event.preferred_source |> should.equal("usgs")
+    merged_view.sources |> should.equal(["usgs", "emsc"])
+
+    let assert Ok(emsc_m) =
+      list.find(merged_view.members, fn(m) { m.source == "emsc" })
+    emsc_m.status |> should.equal(Some("deleted"))
+    emsc_m.matched_by |> should.equal("misfit")
+
+    let assert Ok(usgs_m) =
+      list.find(merged_view.members, fn(m) { m.source == "usgs" })
+    usgs_m.status |> should.not_equal(Some("deleted"))
+    usgs_m.matched_by |> should.equal("origin")
   })
 }
 
