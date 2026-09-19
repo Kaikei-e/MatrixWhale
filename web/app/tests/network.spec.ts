@@ -1,5 +1,41 @@
 import { expect, test } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import { mockBackend } from './fixtures';
+
+test('starts snapshots while the map module is still downloading', async ({ page }) => {
+	await mockBackend(page);
+	const manifest = JSON.parse(
+		await readFile(
+			new URL('../.svelte-kit/output/client/.vite/manifest.json', import.meta.url),
+			'utf8'
+		)
+	);
+	const mapModule = manifest['src/lib/chart/GlobeMap.svelte'].file;
+	let releaseMap!: () => void;
+	const mapDownload = new Promise<void>((resolve) => {
+		releaseMap = resolve;
+	});
+	let mapRequested = false;
+	const snapshots = new Set<string>();
+	page.on('request', (request) => {
+		const path = new URL(request.url()).pathname;
+		if (path.endsWith('/recent') || path.endsWith('/active')) snapshots.add(path);
+	});
+	await page.route(`**/${mapModule}`, async (route) => {
+		mapRequested = true;
+		await mapDownload;
+		await route.continue();
+	});
+	try {
+		await page.goto('/globe', { waitUntil: 'domcontentloaded' });
+		await expect.poll(() => mapRequested).toBe(true);
+		await expect.poll(() => snapshots.size).toBe(3);
+		await expect(page.locator('canvas')).toHaveCount(0);
+	} finally {
+		releaseMap();
+	}
+	await expect(page.getByTestId('earthquake-map-layer')).toHaveAttribute('data-ready', 'true');
+});
 
 test('fetches static map data and source attribution once across map and filter updates', async ({
 	page

@@ -2,13 +2,6 @@
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
 	import type * as maplibregl from 'maplibre-gl';
-	import ChartFrame from '$lib/chart/ChartFrame.svelte';
-	import ZonesLayer from '$lib/chart/ZonesLayer.svelte';
-	import AlertPolygonsLayer from '$lib/chart/AlertPolygonsLayer.svelte';
-	import PulseLayer from '$lib/chart/PulseLayer.svelte';
-	import CentroidMarkers from '$lib/chart/CentroidMarkers.svelte';
-	import EarthquakeMarkers from '$lib/chart/EarthquakeMarkers.svelte';
-	import HazardMarkers from '$lib/chart/HazardMarkers.svelte';
 	import Legend from '$lib/chart/Legend.svelte';
 	import PresetButtons from '$lib/components/PresetButtons.svelte';
 	import FeedPanel from '$lib/components/FeedPanel.svelte';
@@ -16,14 +9,26 @@
 	import BottomSheet from '$lib/components/BottomSheet.svelte';
 	import EarthquakePanel from '$lib/components/EarthquakePanel.svelte';
 	import SidePane from '$lib/components/pane/SidePane.svelte';
-	import { LAND_50M, ZONE_CENTROIDS } from '$lib/chart/dataFiles';
-	import { REGION_PRESETS, bboxOfAlerts, initialViewBbox, type Bbox } from '$lib/chart/presets';
+	import { ZONE_CENTROIDS } from '$lib/chart/dataFiles';
+	import { bboxOfAlerts, initialViewBbox, type Bbox } from '$lib/chart/presets';
 	import { alertStore } from '$lib/alerts/store.svelte';
-	import { themeState } from '$lib/theme.svelte';
 	import { BlinkEngine } from '$lib/alerts/blinkEngine.svelte';
 	import { earthquakeStore } from '$lib/earthquakes/store.svelte';
 	import { hazardStore } from '$lib/hazards/store.svelte';
 	import { timelineStore } from '$lib/timeline/store.svelte';
+
+	type GlobeMapComponent = typeof import('$lib/chart/GlobeMap.svelte').default;
+	let GlobeMap = $state<GlobeMapComponent | null>(null);
+
+	if (browser) {
+		import('$lib/chart/GlobeMap.svelte')
+			.then((mod) => {
+				GlobeMap = mod.default;
+			})
+			.catch((err) => {
+				console.error('Failed to load map module:', err);
+			});
+	}
 
 	let map = $state<maplibregl.Map | undefined>();
 	let centroids = $state<Record<string, [number, number]>>({});
@@ -242,27 +247,20 @@
 </script>
 
 <div class="relative h-full w-full overflow-hidden">
-	<ChartFrame
-		bind:map
-		landUrl={LAND_50M}
-		initialBounds={REGION_PRESETS.CONUS}
-		theme={themeState.current}
-		nws={alertStore.useNwsColors}
-		class="h-full w-full"
-	>
-		<ZonesLayer />
-		<AlertPolygonsLayer onselect={selectAlert} />
-		<PulseLayer phase={engine.phase} />
-		<!-- Earthquakes draw first so alert centroid rings, the primary product,
-		     stay on top of earthquake circles. -->
-		<EarthquakeMarkers
+	{#if GlobeMap}
+		<GlobeMap
+			bind:map
+			bind:earthquakeSourceMounted
+			{centroids}
 			phase={engine.phase}
-			onselect={selectEarthquake}
-			onready={() => (earthquakeSourceMounted = true)}
+			{selectedHazardId}
+			onselectAlert={selectAlert}
+			onselectEarthquake={selectEarthquake}
+			onselectHazard={selectHazard}
 		/>
-		<HazardMarkers selectedId={selectedHazardId} onselect={selectHazard} />
-		<CentroidMarkers {centroids} phase={engine.phase} onselect={selectAlert} />
-	</ChartFrame>
+	{:else}
+		<div class="bg-paper h-full w-full" aria-hidden="true"></div>
+	{/if}
 	<div
 		data-testid="earthquake-map-layer"
 		data-ready={earthquakeLayerReady ? 'true' : 'false'}
