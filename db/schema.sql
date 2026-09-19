@@ -15,24 +15,6 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 
 CREATE SCHEMA IF NOT EXISTS sea;
 
-CREATE TABLE sea.alert (
-  id TEXT PRIMARY KEY,
-  event TEXT NOT NULL, severity TEXT NOT NULL, urgency TEXT NOT NULL, certainty TEXT NOT NULL,
-  message_type TEXT, headline TEXT, area_desc TEXT NOT NULL,
-  ugc TEXT[] NOT NULL DEFAULT '{}', same TEXT[] NOT NULL DEFAULT '{}',
-  geometry JSONB,
-  sent TIMESTAMPTZ, effective TIMESTAMPTZ, expires TIMESTAMPTZ, ends TIMESTAMPTZ,
-  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  ended_at TIMESTAMPTZ
-);
-CREATE INDEX idx_alert_active_expires ON sea.alert (expires) WHERE ended_at IS NULL;
-CREATE INDEX idx_alert_ended_at ON sea.alert (ended_at);
-CREATE INDEX idx_alert_severity_active ON sea.alert (severity) WHERE ended_at IS NULL;
-CREATE INDEX idx_alert_area_desc_trgm ON sea.alert USING GIN (area_desc gin_trgm_ops);
-CREATE INDEX idx_alert_event_trgm ON sea.alert USING GIN (event gin_trgm_ops);
-CREATE INDEX idx_alert_first_seen_at ON sea.alert (first_seen_at DESC);
-
 CREATE TABLE sea.source (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -42,6 +24,123 @@ CREATE TABLE sea.source (
   redistributable BOOLEAN NOT NULL,
   priority INTEGER NOT NULL
 );
+
+CREATE TABLE sea.alert (
+  source TEXT NOT NULL REFERENCES sea.source(id),
+  source_id TEXT NOT NULL,
+  sender TEXT,
+  sender_name TEXT,
+  identifier TEXT,
+  message_type TEXT,
+  event TEXT NOT NULL,
+  category TEXT[] NOT NULL DEFAULT '{}',
+  severity TEXT NOT NULL,
+  urgency TEXT NOT NULL,
+  certainty TEXT NOT NULL,
+  headline TEXT,
+  description TEXT,
+  instruction TEXT,
+  web TEXT,
+  contact TEXT,
+  language TEXT,
+  area_desc TEXT NOT NULL,
+  geocodes JSONB NOT NULL DEFAULT '[]',
+  countries TEXT[] NOT NULL DEFAULT '{}',
+  geom geometry(MultiPolygon, 4326),
+  reference_keys TEXT[] NOT NULL DEFAULT '{}',
+  sent TIMESTAMPTZ,
+  effective TIMESTAMPTZ,
+  onset TIMESTAMPTZ,
+  expires TIMESTAMPTZ,
+  ends TIMESTAMPTZ,
+  active_until TIMESTAMPTZ NOT NULL,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ended_at TIMESTAMPTZ,
+  end_reason TEXT,
+  superseded_by TEXT,
+  PRIMARY KEY (source, source_id)
+);
+CREATE INDEX idx_alert_first_seen_at ON sea.alert (first_seen_at DESC);
+CREATE INDEX idx_alert_active_until ON sea.alert (active_until) WHERE ended_at IS NULL;
+CREATE INDEX idx_alert_ended_at ON sea.alert (ended_at);
+CREATE INDEX idx_alert_geom ON sea.alert USING GIST (geom);
+CREATE INDEX idx_alert_reference_keys ON sea.alert USING GIN (reference_keys);
+CREATE INDEX idx_alert_area_desc_trgm ON sea.alert USING GIN (area_desc gin_trgm_ops);
+CREATE INDEX idx_alert_event_trgm ON sea.alert USING GIN (event gin_trgm_ops);
+CREATE INDEX idx_alert_headline_trgm ON sea.alert USING GIN (headline gin_trgm_ops);
+
+CREATE TABLE sea.cap_authority (
+  oid TEXT PRIMARY KEY,
+  source TEXT NOT NULL REFERENCES sea.source(id),
+  name TEXT NOT NULL,
+  country_name TEXT NOT NULL,
+  country_iso3 TEXT NOT NULL,
+  abbrev TEXT,
+  register_url TEXT,
+  categories TEXT[] NOT NULL DEFAULT '{}',
+  raa_pub_date TIMESTAMPTZ,
+  first_seen_at TIMESTAMPTZ NOT NULL,
+  last_seen_at TIMESTAMPTZ NOT NULL,
+  removed_at TIMESTAMPTZ
+);
+
+CREATE TABLE sea.cap_feed (
+  url TEXT PRIMARY KEY,
+  authority_oid TEXT NOT NULL REFERENCES sea.cap_authority(oid),
+  authority_oids TEXT[] NOT NULL,
+  language TEXT,
+  subscribed BOOLEAN NOT NULL,
+  exclusion_reason TEXT,
+  format TEXT,
+  last_polled_at TIMESTAMPTZ,
+  last_success_at TIMESTAMPTZ,
+  last_http_status INTEGER,
+  last_error TEXT,
+  consecutive_failures INTEGER NOT NULL DEFAULT 0,
+  item_count INTEGER,
+  newest_item_at TIMESTAMPTZ,
+  first_seen_at TIMESTAMPTZ NOT NULL,
+  last_seen_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE sea.cap_item (
+  cap_url TEXT PRIMARY KEY,
+  feed_url TEXT NOT NULL REFERENCES sea.cap_feed(url),
+  published_at TIMESTAMPTZ,
+  state TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at TIMESTAMPTZ,
+  http_status INTEGER,
+  error TEXT,
+  message_key TEXT,
+  first_seen_at TIMESTAMPTZ NOT NULL,
+  last_seen_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX idx_cap_item_state_first_seen ON sea.cap_item (state, first_seen_at DESC);
+
+CREATE TABLE sea.cap_message (
+  sender TEXT NOT NULL,
+  identifier TEXT NOT NULL,
+  sent TIMESTAMPTZ NOT NULL,
+  sent_ms BIGINT NOT NULL,
+  status TEXT NOT NULL,
+  msg_type TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  source TEXT NOT NULL REFERENCES sea.source(id),
+  feed_url TEXT NOT NULL,
+  cap_url TEXT NOT NULL,
+  reference_keys TEXT[] NOT NULL DEFAULT '{}',
+  cap JSONB NOT NULL,
+  raw_xml TEXT NOT NULL,
+  normalized BOOLEAN NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  first_seen_at TIMESTAMPTZ NOT NULL,
+  last_seen_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (sender, identifier)
+);
+CREATE INDEX idx_cap_message_reference_keys ON sea.cap_message USING GIN (reference_keys);
+CREATE INDEX idx_cap_message_expires_at ON sea.cap_message (expires_at);
 
 CREATE TABLE sea.earthquake (
   source TEXT NOT NULL REFERENCES sea.source(id), source_id TEXT NOT NULL, contributing_ids TEXT[] NOT NULL DEFAULT '{}', sources TEXT[] NOT NULL DEFAULT '{}',

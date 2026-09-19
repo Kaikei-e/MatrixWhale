@@ -29,7 +29,7 @@ docker run --rm -d --name "$CONTAINER_NAME" \
   -e POSTGRES_PASSWORD="$DB_PASSWORD" \
   -e POSTGRES_DB="$DB_NAME" \
   -p "127.0.0.1::5432" \
-  "$IMAGE_TAG" >/dev/null
+  "$IMAGE_TAG" -c max_connections=400 >/dev/null
 
 HOST_PORT="$(docker port "$CONTAINER_NAME" 5432/tcp | head -n 1 | cut -d: -f2)"
 
