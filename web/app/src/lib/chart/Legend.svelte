@@ -2,7 +2,6 @@
 	import { alertStore } from '$lib/alerts/store.svelte';
 	import { NWS_EVENT_COLORS, DEFAULT_NWS_COLOR } from '$lib/alerts/nwsEventStyle';
 	import { NWS_PRIORITY, UNKNOWN_PRIORITY } from '$lib/alerts/priority';
-	import { summarizeAlertSources } from '$lib/alerts/attribution';
 
 	interface Props {
 		class?: string;
@@ -42,13 +41,12 @@
 
 	const visibleNwsEvents = $derived(nwsEventSummary.slice(0, MAX_NWS_ROWS));
 	const hiddenNwsEventCount = $derived(Math.max(0, nwsEventSummary.length - MAX_NWS_ROWS));
-	const alertSourceSummary = $derived(summarizeAlertSources(alertStore.filtered, 3));
 </script>
 
 <div
 	data-testid="legend"
 	data-motion={motion}
-	class="border-ink-2/30 bg-paper/90 text-ink flex max-h-[60vh] flex-col gap-1.5 overflow-y-auto border px-3 py-2 text-xs {className ??
+	class="border-ink-2/30 bg-paper/90 text-ink flex max-h-[60vh] w-64 flex-col gap-1.5 overflow-y-auto border px-3 py-2 text-xs {className ??
 		''}"
 >
 	{#each BLINK_ROWS as row (row.key)}
@@ -91,20 +89,6 @@
 			</div>
 		</div>
 	</div>
-	{#if alertSourceSummary.totalUnique > 0}
-		<div class="border-ink-2/30 mt-1 flex flex-col gap-1 border-t pt-1.5">
-			<span class="font-semibold">Sources</span>
-			{#each alertSourceSummary.visible as source (source.name)}
-				<div class="flex items-center justify-between gap-2">
-					<span class="text-ink-2 truncate">{source.name}</span>
-					<span class="tabular text-ink-2 shrink-0">{source.count}</span>
-				</div>
-			{/each}
-			{#if alertSourceSummary.hiddenCount > 0}
-				<span class="text-ink-2">+{alertSourceSummary.hiddenCount} more</span>
-			{/if}
-		</div>
-	{/if}
 	{#if alertStore.useNwsColors && nwsEventSummary.length > 0}
 		<div
 			data-testid="nws-colors-summary"
