@@ -225,9 +225,60 @@ services:
       matrix_network:
         ipv4_address: 10.254.100.51
 
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+    ports:
+      - "127.0.0.1:9290:9090"
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    restart: always
+    networks:
+      matrix_network:
+        ipv4_address: 10.254.100.60
+
+  grafana:
+    image: grafana/grafana:13.2.2
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    ports:
+      - "127.0.0.1:3300:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    restart: always
+    depends_on:
+      - prometheus
+    networks:
+      matrix_network:
+        ipv4_address: 10.254.100.61
+
+  postgres_exporter:
+    image: prometheuscommunity/postgres-exporter:v0.20.1
+    environment:
+      - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      matrix_network:
+        ipv4_address: 10.254.100.62
+
 networks:
   matrix_network:
     ipam:
       driver: default
       config:
         - subnet: 10.254.100.0/24
+
+volumes:
+  prometheus_data:
+  grafana_data:

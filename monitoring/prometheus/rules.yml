@@ -1,0 +1,60 @@
+groups:
+  - name: matrixwhale_alerts
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Target {{ $labels.instance }} of job {{ $labels.job }} is down"
+
+      - alert: CoreHttpErrorRateHigh
+        expr: sum by (listener) (rate(matrixwhale_http_requests_total{code=~"5.."}[10m])) / sum by (listener) (rate(matrixwhale_http_requests_total[10m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Core HTTP 5xx error ratio is above 5% on listener {{ $labels.listener }}"
+
+      - alert: AdapterCoreHttpErrorRateHigh
+        expr: sum by (job) (rate(matrixwhale_adapter_http_requests_total{peer="core", code=~"4..|5..|error"}[10m])) / sum by (job) (rate(matrixwhale_adapter_http_requests_total{peer="core"}[10m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Adapter to core HTTP error ratio is above 5% for job {{ $labels.job }}"
+
+      - alert: AdapterUpstreamHttpErrorRateHigh
+        expr: sum by (job) (rate(matrixwhale_adapter_http_requests_total{peer="upstream", job!="cap_adapter", code=~"4..|5..|error"}[10m])) / sum by (job) (rate(matrixwhale_adapter_http_requests_total{peer="upstream", job!="cap_adapter"}[10m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Adapter to upstream HTTP error ratio is above 5% for job {{ $labels.job }}"
+
+      - alert: ProxyHttpErrorRateHigh
+        expr: sum(rate(plecto_requests_total{status_class="5xx"}[10m])) / sum(rate(plecto_requests_total[10m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Proxy HTTP 5xx error ratio is above 5%"
+
+      # Provisional thresholds (≈ 2x poll interval); to be retuned after a few days of data.
+      - alert: IngestLagHigh
+        expr: >-
+          histogram_quantile(0.95, sum by (le, source) (rate(matrixwhale_ingest_lag_seconds_bucket{basis="updated", source="emsc"}[15m]))) > 60
+          or
+          histogram_quantile(0.95, sum by (le, source) (rate(matrixwhale_ingest_lag_seconds_bucket{basis="updated", source="usgs"}[15m]))) > 180
+          or
+          histogram_quantile(0.95, sum by (le, source) (rate(matrixwhale_ingest_lag_seconds_bucket{basis="updated", source="noaa"}[15m]))) > 180
+          or
+          histogram_quantile(0.95, sum by (le, source) (rate(matrixwhale_ingest_lag_seconds_bucket{basis="updated", source="gdacs"}[15m]))) > 600
+          or
+          histogram_quantile(0.95, sum by (le, source) (rate(matrixwhale_ingest_lag_seconds_bucket{basis="updated", source="cap"}[15m]))) > 600
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ingest lag p95 is high for source {{ $labels.source }}"

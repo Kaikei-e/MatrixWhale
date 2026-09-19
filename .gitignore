@@ -7,3 +7,4 @@ db/data18/
 docs/internal
 .serena/
 .mcp.json
+perf/results/

@@ -23,6 +23,9 @@ The project follows a microservices architecture with the following components:
 - **proxy** (Port 8180:80, 9190:9090) - Plecto reverse proxy routing `/api` to streamer and `/` to web
 - **db** (Port 5440:5432) - PostgreSQL 18 + PostGIS 3.6 database (`postgis/postgis:18-3.6`, storage `./db/data18`)
 - **migrate** - Atlas runner applying versioned migrations from `db/migrations/` before `matrix_whale` starts
+- **prometheus** (127.0.0.1:9290) - Scrapes the core (`:6000/metrics`), every adapter (`:2112/metrics`), Plecto and postgres_exporter; 30-day retention; alert rules in `monitoring/prometheus/rules.yml` (no Alertmanager, shown in Grafana only)
+- **grafana** (127.0.0.1:3300) - Provisioned "MatrixWhale performance" dashboard (`monitoring/grafana/`), anonymous admin for the dev host
+- **postgres_exporter** (No exposed port) - Database size, connections and cache hit metrics
 
 All services run in Docker containers with a custom network (10.254.100.0/24) for inter-service communication.
 
@@ -73,6 +76,10 @@ make test-core
 
 # Validate Architecture Decision Records (ADR) graph with DocDag
 make adr-validate
+
+# k6 load test against the core (RATE req/s per endpoint, default 1); results in perf/results/
+make perf-api
+make perf-compare A=perf/results/<a>.json B=perf/results/<b>.json
 ```
 
 ### Web Frontend (SvelteKit)
