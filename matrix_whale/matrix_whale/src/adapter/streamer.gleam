@@ -1,4 +1,5 @@
 import adapter/alert_hub.{type HubMsg, type SSEMessage, Emit, Heartbeat, Resync}
+import adapter/compression
 import adapter/context.{type Context}
 import adapter/earthquake_hub
 import adapter/hazard_hub
@@ -108,6 +109,8 @@ fn router(
     ["api", "v1", "timeline"] -> timeline_response(req, ctx)
     _ -> not_found_response()
   }
+
+  let res = compression.compress_response_if_needed(req, res)
 
   let duration = metrics.monotonic_elapsed_seconds(start)
   metrics.observe_http(metrics.Api, route, method, res.status, duration)
@@ -254,45 +257,71 @@ pub fn etag_json_response(
   body: json.Json,
 ) -> Response(mist.ResponseData) {
   let text = json.to_string(body)
-  let etag =
-    "\""
-    <> {
-      crypto.hash(crypto.Sha256, bit_array.from_string(text))
-      |> bit_array.base16_encode
-    }
-    <> "\""
+  tagged_json_response(req, text, text, "")
+}
+
+fn tagged_json_response(
+  req: Request(connection),
+  text: String,
+  validator_text: String,
+  weakness: String,
+) -> Response(mist.ResponseData) {
+  let raw_hash =
+    crypto.hash(crypto.Sha256, bit_array.from_string(validator_text))
+    |> bit_array.base16_encode
+  let base_etag = weakness <> "\"" <> raw_hash <> "\""
+  let gzip_etag = weakness <> "\"" <> raw_hash <> "-gzip\""
+  let will_gzip = compression.request_accepts_gzip(req)
+  let response_etag = case will_gzip {
+    True -> gzip_etag
+    False -> base_etag
+  }
+
   case request.get_header(req, "if-none-match") {
     Ok(value) ->
-      case if_none_match_matches(value, etag) {
+      case if_none_match_matches(value, response_etag) {
         True ->
           response.new(304)
-          |> response.set_header("etag", etag)
+          |> response.set_header("etag", response_etag)
           |> response.set_header("cache-control", "no-cache")
+          |> compression.add_vary_accept_encoding
           |> response.set_body(mist.Bytes(bytes_tree.new()))
-        False -> etag_body_response(etag, text)
+        False -> etag_body_response(response_etag, text, will_gzip)
       }
-    _ -> etag_body_response(etag, text)
+    _ -> etag_body_response(response_etag, text, will_gzip)
   }
 }
 
 fn etag_body_response(
   etag: String,
   text: String,
+  will_gzip: Bool,
 ) -> Response(mist.ResponseData) {
-  response.new(200)
-  |> response.set_header("content-type", "application/json")
-  |> response.set_header("etag", etag)
-  |> response.set_header("cache-control", "no-cache")
-  |> response.set_body(mist.Bytes(bytes_tree.from_string(text)))
+  let res =
+    response.new(200)
+    |> response.set_header("content-type", "application/json")
+    |> response.set_header("etag", etag)
+    |> response.set_header("cache-control", "no-cache")
+    |> compression.add_vary_accept_encoding
+
+  case will_gzip {
+    True -> {
+      let compressed = compression.gzip(bit_array.from_string(text))
+      let compressed_size = bit_array.byte_size(compressed)
+      res
+      |> response.set_header("content-encoding", "gzip")
+      |> response.set_header("content-length", int.to_string(compressed_size))
+      |> response.set_body(mist.Bytes(bytes_tree.from_bit_array(compressed)))
+    }
+    False -> {
+      res
+      |> response.set_body(mist.Bytes(bytes_tree.from_string(text)))
+    }
+  }
 }
 
 pub fn if_none_match_matches(value: String, etag: String) -> Bool {
-  value
-  |> string.split(",")
-  |> list.any(fn(candidate) {
-    let candidate = string.trim(candidate)
-    candidate == "*" || candidate == etag || candidate == "W/" <> etag
-  })
+  compression.if_none_match_matches(value, etag)
 }
 
 pub fn active_response(
@@ -487,16 +516,27 @@ fn hazards_get_response(
 
   case hazard_reader.recent(hours, types, levels, ctx.db) {
     Error(error) -> error_response(error)
-    Ok(rows) ->
-      etag_json_response(
-        req,
-        json.object([
-          #("hazards", json.array(rows, hazard.to_json)),
-          #("generated_at", json.string(now_rfc3339())),
-          #("count", json.int(list.length(rows))),
-        ]),
-      )
+    Ok(rows) -> hazard_snapshot_response(req, rows, now_rfc3339())
   }
+}
+
+/// Collection contents determine freshness; the response generation clock is
+/// metadata. A weak validator permits revalidation without pretending that
+/// responses with different generated_at values are byte-for-byte identical.
+pub fn hazard_snapshot_response(
+  req: Request(connection),
+  rows: List(hazard.Hazard),
+  generated_at: String,
+) -> Response(mist.ResponseData) {
+  let fields = [
+    #("hazards", json.array(rows, hazard.to_json)),
+    #("count", json.int(list.length(rows))),
+  ]
+  let validator = json.object(fields) |> json.to_string
+  let text =
+    json.object([#("generated_at", json.string(generated_at)), ..fields])
+    |> json.to_string
+  tagged_json_response(req, text, validator, "W/")
 }
 
 fn comma_list(value: String) -> List(String) {
