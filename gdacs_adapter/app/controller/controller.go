@@ -95,6 +95,27 @@ func tickWindows(cfg config, backfill bool, tick time.Time) []tickWindow {
 	}
 }
 
+type queryResult int
+
+const (
+	queryCompleted queryResult = iota
+	queryAbandoned
+	queryCancelled
+)
+
+func (r queryResult) String() string {
+	switch r {
+	case queryCompleted:
+		return "completed"
+	case queryAbandoned:
+		return "abandoned"
+	case queryCancelled:
+		return "cancelled"
+	default:
+		return "unknown"
+	}
+}
+
 type (
 	fetchPageFunc     func(ctx context.Context, client *http.Client, baseURL string, query adapter.EventListQuery, since, until time.Time, pageNumber int) (adapter.EventPage, error)
 	fetchGeometryFunc func(ctx context.Context, client *http.Client, baseURL, eventtype string, eventid, episodeid int64) (json.RawMessage, int, error)
@@ -119,17 +140,29 @@ func run(ctx context.Context, cfg config, limiter *adapter.Limiter, httpClient *
 	pause waitFunc, rng *rand.Rand, now func() time.Time,
 ) {
 	backfill := true
+	var startupTick time.Time
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		tick := now()
-		if !pollTick(ctx, cfg, backfill, tick, limiter, httpClient, fetchPage, sendEvents, pause, rng) {
+		currentTick := now()
+		queryTick := currentTick
+		if backfill {
+			if startupTick.IsZero() {
+				startupTick = currentTick
+			}
+			queryTick = startupTick
+		}
+
+		res := pollTick(ctx, cfg, backfill, queryTick, limiter, httpClient, fetchPage, sendEvents, pause, rng)
+		if res == queryCancelled {
 			return
 		}
-		backfill = false
+		if res == queryCompleted && backfill {
+			backfill = false
+		}
 
-		deadline := tick.Add(cfg.pollInterval)
+		deadline := currentTick.Add(cfg.pollInterval)
 		if !drainGeometry(ctx, cfg, limiter, httpClient, fetchGeom, fetchPending, sendGeom, pause, rng, now, deadline) {
 			return
 		}
@@ -144,43 +177,51 @@ func run(ctx context.Context, cfg config, limiter *adapter.Limiter, httpClient *
 	}
 }
 
-func pollTick(ctx context.Context, cfg config, backfill bool, tick time.Time, limiter *adapter.Limiter, httpClient *http.Client, fetchPage fetchPageFunc, sendEvents sendEventsFunc, pause waitFunc, rng *rand.Rand) bool {
+func pollTick(ctx context.Context, cfg config, backfill bool, tick time.Time, limiter *adapter.Limiter, httpClient *http.Client, fetchPage fetchPageFunc, sendEvents sendEventsFunc, pause waitFunc, rng *rand.Rand) queryResult {
+	allDone := true
 	for _, w := range tickWindows(cfg, backfill, tick) {
-		if !pollAllPages(ctx, cfg, w.query, w.since, w.until, backfill, limiter, httpClient, fetchPage, sendEvents, pause, rng) {
-			return false
+		res := pollAllPages(ctx, cfg, w.query, w.since, w.until, backfill, limiter, httpClient, fetchPage, sendEvents, pause, rng)
+		if res == queryCancelled {
+			return queryCancelled
+		}
+		if res != queryCompleted {
+			allDone = false
 		}
 	}
-	return true
+	if allDone {
+		return queryCompleted
+	}
+	return queryAbandoned
 }
 
-func pollAllPages(ctx context.Context, cfg config, query adapter.EventListQuery, since, until time.Time, backfill bool, limiter *adapter.Limiter, httpClient *http.Client, fetchPage fetchPageFunc, sendEvents sendEventsFunc, pause waitFunc, rng *rand.Rand) bool {
+func pollAllPages(ctx context.Context, cfg config, query adapter.EventListQuery, since, until time.Time, backfill bool, limiter *adapter.Limiter, httpClient *http.Client, fetchPage fetchPageFunc, sendEvents sendEventsFunc, pause waitFunc, rng *rand.Rand) queryResult {
 	pageNumber := 1
 	var backoff time.Duration
 	attempts := 0
 	for {
 		if ctx.Err() != nil {
-			return false
+			return queryCancelled
 		}
 		if err := limiter.Wait(ctx); err != nil {
-			return false
+			return queryCancelled
 		}
 		page, err := fetchPage(ctx, httpClient, cfg.apiURL, query, since, until, pageNumber)
 		limiter.Done()
 		if err != nil {
 			if isNonRetryableStatus(page.HTTPStatus) {
 				slog.Error("GDACS event list request rejected; abandoning query for this tick", "error", err, "eventlist", query.EventList, "page", pageNumber, "status", page.HTTPStatus)
-				return true
+				return queryAbandoned
 			}
 			attempts++
 			if attempts >= maxPageAttempts {
 				slog.Error("GDACS event list fetch failed repeatedly; abandoning query for this tick", "error", err, "eventlist", query.EventList, "page", pageNumber, "attempts", attempts)
-				return true
+				return queryAbandoned
 			}
 			backoff = poll.ComputeBackoff(page.Header, backoff, minBackoff, maxBackoff)
 			delay := poll.Jitter(backoff, maxJitter, rng)
 			slog.Error("GDACS event list fetch failed", "error", err, "eventlist", query.EventList, "page", pageNumber, "attempt", attempts, "next_retry", delay)
 			if !pause(ctx, delay) {
-				return false
+				return queryCancelled
 			}
 			continue
 		}
@@ -197,11 +238,11 @@ func pollAllPages(ctx context.Context, cfg config, query adapter.EventListQuery,
 		}
 		if sendErr := sendEvents(ctx, meta, page.Features); sendErr != nil {
 			slog.Error("GDACS event page delivery to core failed; resuming next tick", "error", sendErr, "eventlist", query.EventList, "page", pageNumber)
-			return true
+			return queryAbandoned
 		}
 		slog.Info("GDACS event page accepted", "eventlist", query.EventList, "page", pageNumber, "count", len(page.Features), "done", page.Done, "backfill", backfill)
 		if page.Done {
-			return true
+			return queryCompleted
 		}
 		pageNumber++
 	}

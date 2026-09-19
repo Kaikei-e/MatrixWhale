@@ -127,10 +127,10 @@ func TestPollAllPagesPagesUntilDoneWithBackfillFlag(t *testing.T) {
 	pause := func(context.Context, time.Duration) bool { pauseCalled = true; return true }
 
 	limiter := adapter.NewLimiter(0)
-	ok := pollAllPages(context.Background(), config{apiURL: "http://x"}, adapter.PrimaryEventListQuery, time.Now(), time.Time{}, true, limiter, &http.Client{}, fetchPage, sendEvents, pause, fixedRNG())
+	res := pollAllPages(context.Background(), config{apiURL: "http://x"}, adapter.PrimaryEventListQuery, time.Now(), time.Time{}, true, limiter, &http.Client{}, fetchPage, sendEvents, pause, fixedRNG())
 
-	if !ok {
-		t.Fatal("pollAllPages returned false with a live context")
+	if res != queryCompleted {
+		t.Fatalf("pollAllPages = %v, want queryCompleted", res)
 	}
 	if len(fetchedPages) != 2 || fetchedPages[0] != 1 || fetchedPages[1] != 2 {
 		t.Fatalf("fetchedPages = %v, want [1 2]", fetchedPages)
@@ -162,10 +162,10 @@ func TestPollAllPagesRetriesFetchFailureWithBackoff(t *testing.T) {
 	pause := func(_ context.Context, d time.Duration) bool { pauseDelays = append(pauseDelays, d); return true }
 
 	limiter := adapter.NewLimiter(0)
-	ok := pollAllPages(context.Background(), config{}, adapter.PrimaryEventListQuery, time.Now(), time.Time{}, false, limiter, &http.Client{}, fetchPage, sendEvents, pause, fixedRNG())
+	res := pollAllPages(context.Background(), config{}, adapter.PrimaryEventListQuery, time.Now(), time.Time{}, false, limiter, &http.Client{}, fetchPage, sendEvents, pause, fixedRNG())
 
-	if !ok {
-		t.Fatal("pollAllPages returned false with a live context")
+	if res != queryCompleted {
+		t.Fatalf("pollAllPages = %v, want queryCompleted", res)
 	}
 	if calls != 2 {
 		t.Fatalf("fetchPage calls = %d, want 2 (retry then succeed)", calls)
@@ -193,10 +193,10 @@ func TestPollAllPagesRetriesAfter429ThenSucceeds(t *testing.T) {
 	pause := func(_ context.Context, d time.Duration) bool { pauseDelays = append(pauseDelays, d); return true }
 
 	limiter := adapter.NewLimiter(0)
-	ok := pollAllPages(context.Background(), config{}, adapter.PrimaryEventListQuery, time.Now(), time.Time{}, false, limiter, &http.Client{}, fetchPage, sendEvents, pause, fixedRNG())
+	res := pollAllPages(context.Background(), config{}, adapter.PrimaryEventListQuery, time.Now(), time.Time{}, false, limiter, &http.Client{}, fetchPage, sendEvents, pause, fixedRNG())
 
-	if !ok {
-		t.Fatal("pollAllPages returned false with a live context")
+	if res != queryCompleted {
+		t.Fatalf("pollAllPages = %v, want queryCompleted", res)
 	}
 	if calls != 2 {
 		t.Fatalf("fetchPage calls = %d, want 2 (retry after 429, then succeed)", calls)
@@ -221,10 +221,10 @@ func TestPollAllPagesAbandonsQueryAfterMaxAttemptsOn503(t *testing.T) {
 	pause := func(_ context.Context, d time.Duration) bool { pauseDelays = append(pauseDelays, d); return true }
 
 	limiter := adapter.NewLimiter(0)
-	ok := pollAllPages(context.Background(), config{}, adapter.PrimaryEventListQuery, time.Now(), time.Time{}, false, limiter, &http.Client{}, fetchPage, sendEvents, pause, fixedRNG())
+	res := pollAllPages(context.Background(), config{}, adapter.PrimaryEventListQuery, time.Now(), time.Time{}, false, limiter, &http.Client{}, fetchPage, sendEvents, pause, fixedRNG())
 
-	if !ok {
-		t.Fatal("pollAllPages returned false with a live context")
+	if res != queryAbandoned {
+		t.Fatalf("pollAllPages = %v, want queryAbandoned", res)
 	}
 	if calls != maxPageAttempts {
 		t.Fatalf("fetchPage calls = %d, want %d (abandon after maxPageAttempts)", calls, maxPageAttempts)
@@ -249,10 +249,10 @@ func TestPollAllPagesAbandonsImmediatelyOnNonRetryable4xx(t *testing.T) {
 	pause := func(context.Context, time.Duration) bool { pauseCalled = true; return true }
 
 	limiter := adapter.NewLimiter(0)
-	ok := pollAllPages(context.Background(), config{}, adapter.PrimaryEventListQuery, time.Now(), time.Time{}, false, limiter, &http.Client{}, fetchPage, sendEvents, pause, fixedRNG())
+	res := pollAllPages(context.Background(), config{}, adapter.PrimaryEventListQuery, time.Now(), time.Time{}, false, limiter, &http.Client{}, fetchPage, sendEvents, pause, fixedRNG())
 
-	if !ok {
-		t.Fatal("pollAllPages returned false with a live context")
+	if res != queryAbandoned {
+		t.Fatalf("pollAllPages = %v, want queryAbandoned", res)
 	}
 	if calls != 1 {
 		t.Fatalf("fetchPage calls = %d, want 1 (no retry on a non-retryable 4xx)", calls)
@@ -281,10 +281,10 @@ func TestPollTickAbandonsQueryOn404ButStillRunsNextQuery(t *testing.T) {
 
 	limiter := adapter.NewLimiter(0)
 	cfg := config{apiURL: "http://x", backfillDays: 14, pollInterval: time.Minute}
-	ok := pollTick(context.Background(), cfg, true, time.Now(), limiter, &http.Client{}, fetchPage, sendEvents, pause, fixedRNG())
+	res := pollTick(context.Background(), cfg, true, time.Now(), limiter, &http.Client{}, fetchPage, sendEvents, pause, fixedRNG())
 
-	if !ok {
-		t.Fatal("pollTick returned false with a live context")
+	if res != queryAbandoned {
+		t.Fatalf("pollTick = %v, want queryAbandoned", res)
 	}
 	if sendCalls != 1 {
 		t.Fatalf("sendEvents calls = %d, want 1 (only the tsunami query's page sends; the 404'd primary query never does)", sendCalls)
@@ -313,10 +313,10 @@ func TestPollAllPagesAbandonsTickOnCoreSendFailure(t *testing.T) {
 	pause := func(context.Context, time.Duration) bool { pauseCalled = true; return true }
 
 	limiter := adapter.NewLimiter(0)
-	ok := pollAllPages(context.Background(), config{}, adapter.PrimaryEventListQuery, time.Now(), time.Time{}, false, limiter, &http.Client{}, fetchPage, sendEvents, pause, fixedRNG())
+	res := pollAllPages(context.Background(), config{}, adapter.PrimaryEventListQuery, time.Now(), time.Time{}, false, limiter, &http.Client{}, fetchPage, sendEvents, pause, fixedRNG())
 
-	if !ok {
-		t.Fatal("a core send failure should not signal context death")
+	if res != queryAbandoned {
+		t.Fatalf("pollAllPages = %v, want queryAbandoned", res)
 	}
 	if fetchCalls != 1 || sendCalls != 1 {
 		t.Fatalf("fetchCalls=%d sendCalls=%d, want 1 and 1 (abandon rest of tick)", fetchCalls, sendCalls)
@@ -548,5 +548,351 @@ func TestRunQueriesPrimaryThenTsunamiEventListEachTick(t *testing.T) {
 	want := []string{adapter.EventTypesPrimary, adapter.EventTypesTsunami}
 	if len(gotEventLists) != 2 || gotEventLists[0] != want[0] || gotEventLists[1] != want[1] {
 		t.Fatalf("eventLists = %v, want %v", gotEventLists, want)
+	}
+}
+
+func TestRunPreservesStartupWindowOnCoreSendFailureUntilAcknowledged(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	t0 := time.Date(2026, 9, 19, 8, 0, 0, 0, time.UTC)
+	currentTime := t0
+	now := func() time.Time { return currentTime }
+
+	type queryRecord struct {
+		eventList string
+		since     time.Time
+		until     time.Time
+	}
+	var recordedQueries []queryRecord
+	var recordedSends []bool
+
+	fetchPage := func(_ context.Context, _ *http.Client, _ string, query adapter.EventListQuery, since, until time.Time, _ int) (adapter.EventPage, error) {
+		recordedQueries = append(recordedQueries, queryRecord{
+			eventList: query.EventList,
+			since:     since,
+			until:     until,
+		})
+		return adapter.EventPage{Done: true, HTTPStatus: 200}, nil
+	}
+
+	coreSends := 0
+	sendEvents := func(_ context.Context, meta core.PollMeta, _ []json.RawMessage) error {
+		coreSends++
+		recordedSends = append(recordedSends, meta.Backfill)
+		// First core send (primary query on tick 0) fails
+		if coreSends == 1 {
+			return errors.New("simulated core send failure")
+		}
+		return nil
+	}
+
+	fetchPending := func(context.Context, int) ([]adapter.GeometryPendingEntry, error) { return nil, nil }
+	sendGeom := func(context.Context, core.PollMeta, []adapter.GeometryResult) error { return nil }
+	fetchGeom := func(context.Context, *http.Client, string, string, int64, int64) (json.RawMessage, int, error) {
+		return nil, 0, nil
+	}
+
+	ticks := 0
+	pause := func(ctx context.Context, d time.Duration) bool {
+		ticks++
+		if ticks >= 3 {
+			cancel()
+			return false
+		}
+		currentTime = currentTime.Add(5 * time.Minute)
+		return ctx.Err() == nil
+	}
+
+	limiter := adapter.NewLimiter(0)
+	cfg := config{apiURL: "http://x", backfillDays: 14, pollInterval: 5 * time.Minute, minRequestInterval: 0}
+	run(ctx, cfg, limiter, &http.Client{}, fetchPage, fetchGeom, sendEvents, fetchPending, sendGeom, pause, fixedRNG(), now)
+
+	if len(recordedQueries) != 6 {
+		t.Fatalf("expected 6 queries across 3 ticks, got %d", len(recordedQueries))
+	}
+
+	expectedStartupSince := t0.AddDate(0, 0, -14)
+	expectedStartupTsunamiUntil := t0.AddDate(0, 0, 7)
+
+	// Tick 0: primary failed delivery, tsunami succeeded
+	if !recordedQueries[0].since.Equal(expectedStartupSince) {
+		t.Fatalf("tick 0 primary since = %v, want %v", recordedQueries[0].since, expectedStartupSince)
+	}
+	if !recordedQueries[1].since.Equal(expectedStartupSince) || !recordedQueries[1].until.Equal(expectedStartupTsunamiUntil) {
+		t.Fatalf("tick 0 tsunami window = [%v, %v], want [%v, %v]", recordedQueries[1].since, recordedQueries[1].until, expectedStartupSince, expectedStartupTsunamiUntil)
+	}
+
+	// Tick 1: window must be preserved despite time advancing 5 minutes
+	if !recordedQueries[2].since.Equal(expectedStartupSince) {
+		t.Fatalf("tick 1 primary since = %v, want startup %v", recordedQueries[2].since, expectedStartupSince)
+	}
+	if !recordedQueries[3].since.Equal(expectedStartupSince) || !recordedQueries[3].until.Equal(expectedStartupTsunamiUntil) {
+		t.Fatalf("tick 1 tsunami window = [%v, %v], want [%v, %v]", recordedQueries[3].since, recordedQueries[3].until, expectedStartupSince, expectedStartupTsunamiUntil)
+	}
+
+	// Tick 2: transition to steady state
+	t2 := t0.Add(10 * time.Minute)
+	expectedSteadySince := t2.Add(-15 * time.Minute)
+	expectedSteadyTsunamiSince := t2.AddDate(0, 0, -14)
+	expectedSteadyTsunamiUntil := t2.AddDate(0, 0, 7)
+
+	if !recordedQueries[4].since.Equal(expectedSteadySince) {
+		t.Fatalf("tick 2 steady primary since = %v, want %v", recordedQueries[4].since, expectedSteadySince)
+	}
+	if !recordedQueries[5].since.Equal(expectedSteadyTsunamiSince) || !recordedQueries[5].until.Equal(expectedSteadyTsunamiUntil) {
+		t.Fatalf("tick 2 steady tsunami window = [%v, %v], want [%v, %v]", recordedQueries[5].since, recordedQueries[5].until, expectedSteadyTsunamiSince, expectedSteadyTsunamiUntil)
+	}
+
+	// Backfill flag on sends
+	if len(recordedSends) != 6 {
+		t.Fatalf("expected 6 send calls recorded, got %d", len(recordedSends))
+	}
+	if !recordedSends[0] || !recordedSends[1] || !recordedSends[2] || !recordedSends[3] {
+		t.Fatalf("startup sends (ticks 0 and 1) should have backfill=true, got %v", recordedSends[:4])
+	}
+	if recordedSends[4] || recordedSends[5] {
+		t.Fatalf("steady-state sends (tick 2) should have backfill=false, got %v", recordedSends[4:])
+	}
+}
+
+func TestRunPreservesStartupWindowOnExhaustedFetchRetriesUntilAcknowledged(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	t0 := time.Date(2026, 9, 19, 8, 0, 0, 0, time.UTC)
+	currentTime := t0
+	now := func() time.Time { return currentTime }
+
+	type queryRecord struct {
+		eventList string
+		since     time.Time
+		until     time.Time
+	}
+	var recordedQueries []queryRecord
+
+	fetchAttempts := 0
+	fetchPage := func(_ context.Context, _ *http.Client, _ string, query adapter.EventListQuery, since, until time.Time, _ int) (adapter.EventPage, error) {
+		recordedQueries = append(recordedQueries, queryRecord{
+			eventList: query.EventList,
+			since:     since,
+			until:     until,
+		})
+		if query.EventList == adapter.EventTypesPrimary && fetchAttempts < maxPageAttempts {
+			fetchAttempts++
+			return adapter.EventPage{HTTPStatus: 503, Header: http.Header{}}, errors.New("temporary upstream 503")
+		}
+		return adapter.EventPage{Done: true, HTTPStatus: 200}, nil
+	}
+
+	var recordedSends []bool
+	sendEvents := func(_ context.Context, meta core.PollMeta, _ []json.RawMessage) error {
+		recordedSends = append(recordedSends, meta.Backfill)
+		return nil
+	}
+
+	fetchPending := func(context.Context, int) ([]adapter.GeometryPendingEntry, error) { return nil, nil }
+	sendGeom := func(context.Context, core.PollMeta, []adapter.GeometryResult) error { return nil }
+	fetchGeom := func(context.Context, *http.Client, string, string, int64, int64) (json.RawMessage, int, error) {
+		return nil, 0, nil
+	}
+
+	ticks := 0
+	pause := func(ctx context.Context, d time.Duration) bool {
+		// Backoff pauses during primary fetch retries in tick 0
+		if fetchAttempts < maxPageAttempts {
+			return ctx.Err() == nil
+		}
+		ticks++
+		if ticks >= 3 {
+			cancel()
+			return false
+		}
+		currentTime = currentTime.Add(5 * time.Minute)
+		return ctx.Err() == nil
+	}
+
+	limiter := adapter.NewLimiter(0)
+	cfg := config{apiURL: "http://x", backfillDays: 14, pollInterval: 5 * time.Minute, minRequestInterval: 0}
+	run(ctx, cfg, limiter, &http.Client{}, fetchPage, fetchGeom, sendEvents, fetchPending, sendGeom, pause, fixedRNG(), now)
+
+	if len(recordedQueries) != 8 {
+		t.Fatalf("expected 8 queries across 3 ticks, got %d", len(recordedQueries))
+	}
+
+	expectedStartupSince := t0.AddDate(0, 0, -14)
+	expectedStartupTsunamiUntil := t0.AddDate(0, 0, 7)
+
+	for i := 0; i < 3; i++ {
+		if !recordedQueries[i].since.Equal(expectedStartupSince) {
+			t.Fatalf("tick 0 primary attempt %d since = %v, want %v", i, recordedQueries[i].since, expectedStartupSince)
+		}
+	}
+	if !recordedQueries[3].since.Equal(expectedStartupSince) || !recordedQueries[3].until.Equal(expectedStartupTsunamiUntil) {
+		t.Fatalf("tick 0 tsunami window = [%v, %v], want [%v, %v]", recordedQueries[3].since, recordedQueries[3].until, expectedStartupSince, expectedStartupTsunamiUntil)
+	}
+
+	if !recordedQueries[4].since.Equal(expectedStartupSince) {
+		t.Fatalf("tick 1 primary since = %v, want %v", recordedQueries[4].since, expectedStartupSince)
+	}
+	if !recordedQueries[5].since.Equal(expectedStartupSince) || !recordedQueries[5].until.Equal(expectedStartupTsunamiUntil) {
+		t.Fatalf("tick 1 tsunami window = [%v, %v], want [%v, %v]", recordedQueries[5].since, recordedQueries[5].until, expectedStartupSince, expectedStartupTsunamiUntil)
+	}
+
+	t2 := t0.Add(10 * time.Minute)
+	expectedSteadySince := t2.Add(-15 * time.Minute)
+	expectedSteadyTsunamiSince := t2.AddDate(0, 0, -14)
+	expectedSteadyTsunamiUntil := t2.AddDate(0, 0, 7)
+
+	if !recordedQueries[6].since.Equal(expectedSteadySince) {
+		t.Fatalf("tick 2 steady primary since = %v, want %v", recordedQueries[6].since, expectedSteadySince)
+	}
+	if !recordedQueries[7].since.Equal(expectedSteadyTsunamiSince) || !recordedQueries[7].until.Equal(expectedSteadyTsunamiUntil) {
+		t.Fatalf("tick 2 steady tsunami window = [%v, %v], want [%v, %v]", recordedQueries[7].since, recordedQueries[7].until, expectedSteadyTsunamiSince, expectedSteadyTsunamiUntil)
+	}
+
+	if len(recordedSends) != 5 {
+		t.Fatalf("expected 5 sends, got %d", len(recordedSends))
+	}
+	for i := 0; i < 3; i++ {
+		if !recordedSends[i] {
+			t.Fatalf("startup send %d should have backfill=true", i)
+		}
+	}
+	for i := 3; i < 5; i++ {
+		if recordedSends[i] {
+			t.Fatalf("steady-state send %d should have backfill=false", i)
+		}
+	}
+}
+
+func TestRunPreservesStartupWindowOnTerminalFetchRejection(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	t0 := time.Date(2026, 9, 19, 8, 0, 0, 0, time.UTC)
+	currentTime := t0
+	now := func() time.Time { return currentTime }
+
+	type queryRecord struct {
+		eventList string
+		since     time.Time
+	}
+	var recordedQueries []queryRecord
+
+	attempts := 0
+	fetchPage := func(_ context.Context, _ *http.Client, _ string, query adapter.EventListQuery, since, _ time.Time, _ int) (adapter.EventPage, error) {
+		recordedQueries = append(recordedQueries, queryRecord{
+			eventList: query.EventList,
+			since:     since,
+		})
+		attempts++
+		if attempts == 1 {
+			return adapter.EventPage{HTTPStatus: http.StatusNotFound}, errors.New("not found")
+		}
+		return adapter.EventPage{Done: true, HTTPStatus: 200}, nil
+	}
+
+	sendEvents := func(context.Context, core.PollMeta, []json.RawMessage) error { return nil }
+	fetchPending := func(context.Context, int) ([]adapter.GeometryPendingEntry, error) { return nil, nil }
+	sendGeom := func(context.Context, core.PollMeta, []adapter.GeometryResult) error { return nil }
+	fetchGeom := func(context.Context, *http.Client, string, string, int64, int64) (json.RawMessage, int, error) {
+		return nil, 0, nil
+	}
+
+	ticks := 0
+	pause := func(ctx context.Context, d time.Duration) bool {
+		ticks++
+		if ticks >= 3 {
+			cancel()
+			return false
+		}
+		currentTime = currentTime.Add(5 * time.Minute)
+		return ctx.Err() == nil
+	}
+
+	limiter := adapter.NewLimiter(0)
+	cfg := config{apiURL: "http://x", backfillDays: 14, pollInterval: 5 * time.Minute, minRequestInterval: 0}
+	run(ctx, cfg, limiter, &http.Client{}, fetchPage, fetchGeom, sendEvents, fetchPending, sendGeom, pause, fixedRNG(), now)
+
+	expectedStartupSince := t0.AddDate(0, 0, -14)
+
+	if len(recordedQueries) != 6 {
+		t.Fatalf("expected 6 queries, got %d", len(recordedQueries))
+	}
+	if !recordedQueries[0].since.Equal(expectedStartupSince) {
+		t.Fatalf("tick 0 primary since = %v, want %v", recordedQueries[0].since, expectedStartupSince)
+	}
+	if !recordedQueries[2].since.Equal(expectedStartupSince) {
+		t.Fatalf("tick 1 primary since = %v, want %v", recordedQueries[2].since, expectedStartupSince)
+	}
+	t2 := t0.Add(10 * time.Minute)
+	expectedSteadySince := t2.Add(-15 * time.Minute)
+	if !recordedQueries[4].since.Equal(expectedSteadySince) {
+		t.Fatalf("tick 2 steady primary since = %v, want %v", recordedQueries[4].since, expectedSteadySince)
+	}
+}
+
+func TestPollAllPagesReturnsCancelledOnContextCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	limiter := adapter.NewLimiter(0)
+	fetchPage := func(_ context.Context, _ *http.Client, _ string, _ adapter.EventListQuery, _, _ time.Time, _ int) (adapter.EventPage, error) {
+		t.Fatal("fetchPage should not be called on cancelled context")
+		return adapter.EventPage{}, nil
+	}
+	sendEvents := func(context.Context, core.PollMeta, []json.RawMessage) error { return nil }
+	pause := func(context.Context, time.Duration) bool { return false }
+
+	res := pollAllPages(ctx, config{}, adapter.PrimaryEventListQuery, time.Now(), time.Time{}, false, limiter, &http.Client{}, fetchPage, sendEvents, pause, fixedRNG())
+	if res != queryCancelled {
+		t.Fatalf("pollAllPages = %v, want queryCancelled", res)
+	}
+}
+
+func TestPollTickReturnsCancelledOnContextCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	limiter := adapter.NewLimiter(0)
+	fetchPage := func(_ context.Context, _ *http.Client, _ string, _ adapter.EventListQuery, _, _ time.Time, _ int) (adapter.EventPage, error) {
+		t.Fatal("fetchPage should not be called on cancelled context")
+		return adapter.EventPage{}, nil
+	}
+	sendEvents := func(context.Context, core.PollMeta, []json.RawMessage) error { return nil }
+	pause := func(context.Context, time.Duration) bool { return false }
+
+	res := pollTick(ctx, config{}, false, time.Now(), limiter, &http.Client{}, fetchPage, sendEvents, pause, fixedRNG())
+	if res != queryCancelled {
+		t.Fatalf("pollTick = %v, want queryCancelled", res)
+	}
+}
+
+func TestRunContextCancellationStopsPromptly(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	fetchPage := func(_ context.Context, _ *http.Client, _ string, _ adapter.EventListQuery, _, _ time.Time, _ int) (adapter.EventPage, error) {
+		cancel()
+		return adapter.EventPage{Done: true, HTTPStatus: 200}, nil
+	}
+	sendEvents := func(context.Context, core.PollMeta, []json.RawMessage) error { return nil }
+	fetchPending := func(context.Context, int) ([]adapter.GeometryPendingEntry, error) { return nil, nil }
+	sendGeom := func(context.Context, core.PollMeta, []adapter.GeometryResult) error { return nil }
+	fetchGeom := func(context.Context, *http.Client, string, string, int64, int64) (json.RawMessage, int, error) {
+		return nil, 0, nil
+	}
+	pauseCalled := false
+	pause := func(ctx context.Context, _ time.Duration) bool {
+		pauseCalled = true
+		return ctx.Err() == nil
+	}
+
+	limiter := adapter.NewLimiter(0)
+	cfg := config{apiURL: "http://x", backfillDays: 14, pollInterval: 5 * time.Minute, minRequestInterval: 0}
+	run(ctx, cfg, limiter, &http.Client{}, fetchPage, fetchGeom, sendEvents, fetchPending, sendGeom, pause, fixedRNG(), time.Now)
+
+	if pauseCalled {
+		t.Fatal("run should not have called pause when context is already cancelled")
 	}
 }
