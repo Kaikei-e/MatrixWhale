@@ -5,6 +5,12 @@
 	import type * as maplibregl from 'maplibre-gl';
 	import type { Snippet } from 'svelte';
 	import { DAY, NIGHT } from './tokens';
+	import { fetchGeoJson } from './zoneCache';
+
+	const EMPTY_FC: GeoJSON.FeatureCollection = {
+		type: 'FeatureCollection',
+		features: []
+	};
 
 	interface TickMark {
 		pos: number;
@@ -35,7 +41,22 @@
 
 	const TICK_STEPS = [30, 20, 10, 5, 2, 1, 0.5];
 
+	const BASE_STYLE: maplibregl.StyleSpecification = {
+		version: 8,
+		sources: {},
+		layers: [
+			{
+				id: 'bg',
+				type: 'background',
+				paint: {
+					'background-color': ['match', ['global-state', 'theme'], 'night', NIGHT.paper, DAY.paper]
+				}
+			}
+		]
+	};
+
 	let container: HTMLDivElement | undefined = $state();
+
 	let width = $state(0);
 	let height = $state(0);
 	let xTicks = $state<TickMark[]>([]);
@@ -101,6 +122,21 @@
 			resizeObserver.disconnect();
 		};
 	});
+
+	let landData = $state.raw<GeoJSON.FeatureCollection>(EMPTY_FC);
+
+	$effect(() => {
+		const url = landUrl;
+		let active = true;
+		fetchGeoJson(url)
+			.then((data) => {
+				if (active) landData = data;
+			})
+			.catch(() => {});
+		return () => {
+			active = false;
+		};
+	});
 </script>
 
 <div bind:this={container} class="relative {className ?? ''}">
@@ -110,30 +146,12 @@
 		{interactive}
 		renderWorldCopies
 		attributionControl={false}
-		style={{
-			version: 8,
-			sources: {},
-			layers: [
-				{
-					id: 'bg',
-					type: 'background',
-					paint: {
-						'background-color': [
-							'match',
-							['global-state', 'theme'],
-							'night',
-							NIGHT.paper,
-							DAY.paper
-						]
-					}
-				}
-			]
-		}}
+		style={BASE_STYLE}
 		globalState={{ theme, nws }}
 		bounds={initialBounds}
 		class="h-full w-full"
 	>
-		<GeoJSONSource id="land" data={landUrl}>
+		<GeoJSONSource id="land" data={landData}>
 			<FillLayer
 				id="land-fill"
 				paint={{

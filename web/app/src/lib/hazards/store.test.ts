@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearSourcesInFlight } from '$lib/sources/fetch';
+import { encodePolygon, encodeMultiPolygon } from '../../../scripts/geodata/geometry-transport.mjs';
 import { HazardStore } from './store.svelte';
 import type { Hazard } from './types';
 
@@ -375,4 +376,203 @@ describe('HazardStore', () => {
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 
+	it('appends geometry=polyline query parameter to the snapshot URL only, not SSE or detail', async () => {
+		fetchMock.mockResolvedValue(new Response(JSON.stringify({ hazards: [] })));
+		const store = new HazardStore();
+		await store.connect('/api/v1/hazards/recent', '/api/v1/hazards/stream');
+		const stream = FakeEventSource.instances[0];
+		expect(stream.url).toBe('/api/v1/hazards/stream');
+		expect(stream.url).not.toContain('geometry=polyline');
+
+		stream.open();
+		await settle();
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		const snapshotUrl = fetchMock.mock.calls[0][0] as string;
+		expect(snapshotUrl).toContain('/api/v1/hazards/recent');
+		expect(snapshotUrl).toContain('geometry=polyline');
+
+		// Check detail request does not have geometry=polyline
+		fetchMock.mockResolvedValueOnce(new Response(null, { status: 404 }));
+		await store.fetchDetail('gdacs:TC-1234');
+		const detailUrl = fetchMock.mock.calls[1][0] as string;
+		expect(detailUrl).toBe('/api/v1/hazards/gdacs/TC-1234');
+		expect(detailUrl).not.toContain('geometry=polyline');
+
+		store.disconnect();
+	});
+
+	it('decodes encoded polyline Polygon from snapshot before storing in hazards', async () => {
+		const polygonGeoJson: GeoJSON.Polygon = {
+			type: 'Polygon',
+			coordinates: [
+				[
+					[120.5123, 14.5123],
+					[121.5123, 14.5123],
+					[121.5123, 15.5123],
+					[120.5123, 15.5123],
+					[120.5123, 14.5123]
+				]
+			]
+		};
+		const encodedGeom = encodePolygon(polygonGeoJson, 4);
+		const rawHazard = makeHazard({
+			id: 'gdacs:TC-101',
+			primary_geometry: encodedGeom as unknown as GeoJSON.Polygon
+		});
+
+		fetchMock.mockResolvedValue(new Response(JSON.stringify({ hazards: [rawHazard] })));
+		const store = new HazardStore();
+		await store.connect('/api/v1/hazards/recent', '/api/v1/hazards/stream');
+		FakeEventSource.instances[0].open();
+		await settle();
+
+		const stored = store.hazards.get('gdacs:TC-101');
+		expect(stored).toBeDefined();
+		expect(stored?.primary_geometry).toEqual(polygonGeoJson);
+		expect(stored?.primary_geometry?.type).toBe('Polygon');
+		expect(
+			(stored?.primary_geometry as unknown as Record<string, unknown>).encoding
+		).toBeUndefined();
+
+		store.disconnect();
+	});
+
+	it('decodes encoded polyline MultiPolygon from snapshot before storing in hazards', async () => {
+		const multiPolygonGeoJson: GeoJSON.MultiPolygon = {
+			type: 'MultiPolygon',
+			coordinates: [
+				[
+					[
+						[10.0, 20.0],
+						[11.0, 20.0],
+						[11.0, 21.0],
+						[10.0, 20.0]
+					]
+				],
+				[
+					[
+						[30.0, 40.0],
+						[31.0, 40.0],
+						[31.0, 41.0],
+						[30.0, 40.0]
+					]
+				]
+			]
+		};
+		const encodedGeom = encodeMultiPolygon(multiPolygonGeoJson, 1);
+		const rawHazard = makeHazard({
+			id: 'gdacs:FL-202',
+			hazard_type: 'flood',
+			primary_geometry: encodedGeom as unknown as GeoJSON.MultiPolygon
+		});
+
+		fetchMock.mockResolvedValue(new Response(JSON.stringify({ hazards: [rawHazard] })));
+		const store = new HazardStore();
+		await store.connect('/api/v1/hazards/recent', '/api/v1/hazards/stream');
+		FakeEventSource.instances[0].open();
+		await settle();
+
+		const stored = store.hazards.get('gdacs:FL-202');
+		expect(stored).toBeDefined();
+		expect(stored?.primary_geometry).toEqual(multiPolygonGeoJson);
+		expect(stored?.primary_geometry?.type).toBe('MultiPolygon');
+
+		store.disconnect();
+	});
+
+	it('preserves ordinary GeoJSON fixtures and null geometry without error (legacy fallback)', async () => {
+		const ordinaryPoly: GeoJSON.Polygon = {
+			type: 'Polygon',
+			coordinates: [
+				[
+					[0, 0],
+					[1, 0],
+					[1, 1],
+					[0, 0]
+				]
+			]
+		};
+		const hazardOrdinary = makeHazard({ id: 'gdacs:TC-legacy-1', primary_geometry: ordinaryPoly });
+		const hazardNull = makeHazard({ id: 'gdacs:TC-legacy-2', primary_geometry: null });
+
+		fetchMock.mockResolvedValue(
+			new Response(JSON.stringify({ hazards: [hazardOrdinary, hazardNull] }))
+		);
+		const store = new HazardStore();
+		await store.connect('/api/v1/hazards/recent', '/api/v1/hazards/stream');
+		FakeEventSource.instances[0].open();
+		await settle();
+
+		expect(store.hazards.get('gdacs:TC-legacy-1')?.primary_geometry).toEqual(ordinaryPoly);
+		expect(store.hazards.get('gdacs:TC-legacy-2')?.primary_geometry).toBeNull();
+
+		store.disconnect();
+	});
+
+	it('sets snapshotError when snapshot contains malformed encoded geometry', async () => {
+		const malformedHazard = makeHazard({
+			id: 'gdacs:TC-bad',
+			primary_geometry: {
+				type: 'Polygon',
+				encoding: 'polyline',
+				precision: 4,
+				coordinates: ['invalid_char_$$$']
+			} as unknown as GeoJSON.Polygon
+		});
+
+		fetchMock.mockResolvedValue(new Response(JSON.stringify({ hazards: [malformedHazard] })));
+		const store = new HazardStore();
+		await store.connect('/api/v1/hazards/recent', '/api/v1/hazards/stream');
+		FakeEventSource.instances[0].open();
+		await settle();
+
+		expect(store.snapshotError).toBeTruthy();
+		expect(store.hazards.has('gdacs:TC-bad')).toBe(false);
+
+		store.disconnect();
+	});
+
+	it('preserves decoded GeoJSON across 304 Not Modified cache hits', async () => {
+		const polyGeoJson: GeoJSON.Polygon = {
+			type: 'Polygon',
+			coordinates: [
+				[
+					[10.0, 20.0],
+					[15.0, 20.0],
+					[15.0, 25.0],
+					[10.0, 20.0]
+				]
+			]
+		};
+		const encoded = encodePolygon(polyGeoJson, 1);
+		const rawHazard = makeHazard({
+			id: 'gdacs:TC-cached',
+			primary_geometry: encoded as unknown as GeoJSON.Polygon
+		});
+
+		fetchMock
+			.mockResolvedValueOnce(
+				new Response(JSON.stringify({ hazards: [rawHazard] }), {
+					headers: { etag: '"etag-1"' }
+				})
+			)
+			.mockResolvedValueOnce(new Response(null, { status: 304 }));
+
+		const store = new HazardStore();
+		await store.connect('/api/v1/hazards/recent', '/api/v1/hazards/stream');
+		FakeEventSource.instances[0].open();
+		await settle();
+
+		expect(store.hazards.get('gdacs:TC-cached')?.primary_geometry).toEqual(polyGeoJson);
+
+		// Trigger resync which causes a 304 Not Modified
+		FakeEventSource.instances[0].emit('resync', {});
+		await settle();
+
+		expect(store.hazards.get('gdacs:TC-cached')?.primary_geometry).toEqual(polyGeoJson);
+		expect(store.snapshotError).toBeNull();
+
+		store.disconnect();
+	});
 });

@@ -1,6 +1,7 @@
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import type { DataSource } from '$lib/earthquakes/types';
 import { fetchSourcesShared } from '$lib/sources/fetch';
+import { decodeHazard } from '$lib/chart/geometryTransport';
 import {
 	ALERT_LEVELS,
 	HAZARD_TYPES,
@@ -30,11 +31,12 @@ function boundedFilter(filter: Partial<HazardFilter>): HazardFilter {
 }
 
 function requestUrl(url: string, filter: HazardFilter): string {
-	const params = new URLSearchParams({
-		types: [...filter.types].map((type) => HAZARD_TYPE_CODES[type]).join(','),
-		levels: [...filter.levels].join(',')
-	});
-	return `${url}${url.includes('?') ? '&' : '?'}${params}`;
+	const [base, search] = url.split('?');
+	const params = new URLSearchParams(search);
+	params.set('types', [...filter.types].map((type) => HAZARD_TYPE_CODES[type]).join(','));
+	params.set('levels', [...filter.levels].join(','));
+	params.set('geometry', 'polyline');
+	return `${base}?${params.toString()}`;
 }
 
 /**
@@ -175,13 +177,14 @@ export class HazardStore {
 				return;
 			}
 			if (!response.ok) throw new Error(`snapshot request failed with status ${response.status}`);
-			const { hazards } = (await response.json()) as { hazards: Hazard[] };
+			const raw = (await response.json()) as { hazards: Hazard[] };
 			if (
 				generation !== this.#generation ||
 				filterRevision !== this.#filterRevision ||
 				request !== this.#snapshotRequest
 			)
 				return;
+			const hazards = (raw.hazards ?? []).map((hazard) => decodeHazard(hazard));
 			const receivedEtag = response.headers.get('etag');
 			if (receivedEtag) this.#etagByUrl.set(url, receivedEtag);
 			this.#snapshotByUrl.delete(url);

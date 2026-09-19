@@ -107,7 +107,12 @@
 		0
 	];
 
-	import { createZoneStateCache } from './zoneCache';
+	import { createZoneStateCache, fetchGeoJson } from './zoneCache';
+
+	const EMPTY_FC: GeoJSON.FeatureCollection = {
+		type: 'FeatureCollection',
+		features: []
+	};
 
 	const getZoneEntries = createZoneStateCache();
 
@@ -126,12 +131,46 @@
 	const marineZones = $derived(zoneEntries.filter((zone) => MARINE_UGC.test(zone.ugc)));
 
 	// Draw order: less specific first, so overlapping smaller zones stay visible.
-	const sources = $derived([
-		{ id: 'zones-forecast', data: FORECAST_ZONES, zones: forecastZones },
-		{ id: 'zones-county', data: COUNTY_ZONES, zones: countyZones },
-		{ id: 'zones-marine-offshore', data: MARINE_OFFSHORE_ZONES, zones: marineZones },
-		{ id: 'zones-marine-coastal', data: MARINE_COASTAL_ZONES, zones: marineZones }
-	]);
+	// Keep sources statically defined so GeoJSONSource props remain reference-stable across
+	// alert updates, preventing spurious setData calls and duplicate GeoJSON network fetches.
+	const ZONE_SOURCES = [
+		{ id: 'zones-forecast', data: FORECAST_ZONES },
+		{ id: 'zones-county', data: COUNTY_ZONES },
+		{ id: 'zones-marine-offshore', data: MARINE_OFFSHORE_ZONES },
+		{ id: 'zones-marine-coastal', data: MARINE_COASTAL_ZONES }
+	] as const;
+
+	function getZonesForSource(sourceId: string) {
+		switch (sourceId) {
+			case 'zones-forecast':
+				return forecastZones;
+			case 'zones-county':
+				return countyZones;
+			case 'zones-marine-offshore':
+			case 'zones-marine-coastal':
+				return marineZones;
+			default:
+				return [];
+		}
+	}
+
+	let zoneData = $state.raw<Record<string, GeoJSON.FeatureCollection>>({});
+
+	$effect(() => {
+		let active = true;
+		for (const src of ZONE_SOURCES) {
+			fetchGeoJson(src.data)
+				.then((data) => {
+					if (active) {
+						zoneData = { ...zoneData, [src.id]: data };
+					}
+				})
+				.catch(() => {});
+		}
+		return () => {
+			active = false;
+		};
+	});
 
 	// FeatureState calls setFeatureState as soon as it mounts, which MapLibre
 	// rejects until the source has been added to a loaded style.
@@ -142,15 +181,20 @@
 	// layout properties (sort keys included) cannot read.
 </script>
 
-{#each sources as src (src.id)}
-	<GeoJSONSource id={src.id} data={src.data} promoteId="ugc" bind:source={sourceInstances[src.id]}>
+{#each ZONE_SOURCES as src (src.id)}
+	<GeoJSONSource
+		id={src.id}
+		data={zoneData[src.id] ?? EMPTY_FC}
+		promoteId="ugc"
+		bind:source={sourceInstances[src.id]}
+	>
 		<FillLayer
 			id="{src.id}-fill"
 			paint={{ 'fill-color': ALERT_COLOR, 'fill-opacity': FILL_OPACITY }}
 		/>
 		<LineLayer id="{src.id}-line" paint={{ 'line-color': LINE_COLOR, 'line-width': LINE_WIDTH }} />
 		{#if sourceInstances[src.id]}
-			{#each src.zones as zone (zone.ugc)}
+			{#each getZonesForSource(src.id) as zone (zone.ugc)}
 				<FeatureState id={zone.ugc} state={zone.state} />
 			{/each}
 		{/if}

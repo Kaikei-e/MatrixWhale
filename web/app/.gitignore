@@ -7,6 +7,9 @@ node_modules
 /.svelte-kit
 /build
 
+# Generated geodata
+/static/data/*-polyline-v1.json
+
 # OS
 .DS_Store
 Thumbs.db

@@ -3,6 +3,7 @@ import type { BlinkBucket } from '$lib/alerts/blinkBucket';
 import { bucketFor, bucketRank } from '$lib/alerts/blinkBucket';
 import { NWS_EVENT_COLORS, DEFAULT_NWS_COLOR } from '$lib/alerts/nwsEventStyle';
 import { extractUgc } from '$lib/alerts/geocodes';
+import { decodeGeometry } from './geometryTransport';
 
 export interface ZoneState {
 	[key: string]: unknown;
@@ -70,4 +71,69 @@ export function createZoneStateCache() {
 		stateCache = nextCache;
 		return entries;
 	};
+}
+
+// Versioned local URLs are immutable. Keep fulfilled promises as well as
+// in-flight work so remounts and concurrent consumers reuse one download.
+const geoJsonCache = new Map<string, Promise<GeoJSON.FeatureCollection>>();
+let activeDownloads = 0;
+const waitingDownloads: Array<() => void> = [];
+
+export function decodeFeatureCollection(fc: GeoJSON.FeatureCollection): GeoJSON.FeatureCollection {
+	if (!fc || typeof fc !== 'object' || !Array.isArray(fc.features)) {
+		return fc;
+	}
+	for (let i = 0; i < fc.features.length; i++) {
+		const feature = fc.features[i];
+		if (feature && feature.geometry) {
+			feature.geometry = decodeGeometry(feature.geometry) as GeoJSON.Geometry;
+		}
+	}
+	return fc;
+}
+
+// HTTP/1.1 has six connections per origin, three held by live SSE streams.
+// Leave room for snapshots instead of queueing all five map files ahead of them.
+async function downloadGeoJson(
+	url: string,
+	fetchFn: typeof fetch
+): Promise<GeoJSON.FeatureCollection> {
+	if (activeDownloads >= 2) {
+		await new Promise<void>((resolve) => waitingDownloads.push(resolve));
+	} else {
+		activeDownloads++;
+	}
+	try {
+		const response = await fetchFn(url, { priority: 'low' });
+		if (!response.ok) {
+			throw new Error(`Failed to fetch GeoJSON from ${url}: HTTP ${response.status}`);
+		}
+		const data = (await response.json()) as GeoJSON.FeatureCollection;
+		return decodeFeatureCollection(data);
+	} finally {
+		const next = waitingDownloads.shift();
+		if (next) next();
+		else activeDownloads--;
+	}
+}
+
+export function fetchGeoJson(
+	url: string,
+	fetchFn: typeof fetch = fetch
+): Promise<GeoJSON.FeatureCollection> {
+	const cached = geoJsonCache.get(url);
+	if (cached) return cached;
+
+	const pending = Promise.resolve()
+		.then(() => downloadGeoJson(url, fetchFn))
+		.catch((error) => {
+			if (geoJsonCache.get(url) === pending) geoJsonCache.delete(url);
+			throw error;
+		});
+	geoJsonCache.set(url, pending);
+	return pending;
+}
+
+export function clearGeoJsonCache(): void {
+	geoJsonCache.clear();
 }
