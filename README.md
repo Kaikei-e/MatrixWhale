@@ -6,7 +6,7 @@ MatrixWhale is developed as a foundation for processing large amounts of data, a
 
 ## Demo
 
-Live NWS alerts, USGS & EMSC earthquakes, and GDACS multi-hazards (tropical cyclones, floods, volcanoes, wildfires, droughts, and tsunamis) on the nautical chart at `/globe`, in day and night palettes. A tabbed side pane provides arrival-ordered Timeline, Earthquakes, Hazards, Alerts, and Feed views with real-time SSE streaming, severity filtering, and drill-in detail panels.
+Live NWS alerts, national CAP alerts from about 130 countries (followed from the WMO Register of Alerting Authorities), USGS & EMSC earthquakes, and GDACS multi-hazards (tropical cyclones, floods, volcanoes, wildfires, droughts, and tsunamis) on the nautical chart at `/globe`, in day and night palettes. A tabbed side pane provides arrival-ordered Timeline, Earthquakes, Hazards, Alerts, and Feed views with real-time SSE streaming, severity filtering, and drill-in detail panels.
 
 <table>
   <tr>
@@ -23,7 +23,7 @@ Live NWS alerts, USGS & EMSC earthquakes, and GDACS multi-hazards (tropical cycl
 
 ## Architecture
 
-The diagram below reflects the live data paths across all integrated sources: NOAA alerts, USGS earthquakes, EMSC earthquakes, and GDACS multi-hazards flow from upstream services through Go adapters into the Gleam/BEAM core, which normalizes, deduplicates, and merges records into PostgreSQL 18 + PostGIS 3.6, streaming them out to the browser through the Plecto reverse proxy.
+The diagram below reflects the live data paths across all integrated sources: NOAA alerts, national CAP alerts, USGS earthquakes, EMSC earthquakes, and GDACS multi-hazards flow from upstream services through Go adapters into the Gleam/BEAM core, which normalizes, deduplicates, and merges records into PostgreSQL 18 + PostGIS 3.6, streaming them out to the browser through the Plecto reverse proxy.
 
 ```mermaid
 flowchart LR
@@ -32,6 +32,7 @@ flowchart LR
     USGSFeed["USGS summary feeds<br/>all_day / all_week .geojson"]
     EMSCFeed["EMSC SeismicPortal<br/>WebSocket + FDSN backfill"]
     GDACSFeed["GDACS API<br/>polled 5m + geometry on-demand"]
+    RAA["WMO RAA rss.xml<br/>~200 national CAP feeds"]
   end
 
   subgraph Adapters["Adapters (Go) & Common"]
@@ -39,6 +40,7 @@ flowchart LR
     UsgsAdapter["usgs_adapter"]
     EmscAdapter["emsc_adapter"]
     GdacsAdapter["gdacs_adapter"]
+    CapAdapter["cap_adapter"]
     CommonPkg["adapters/common"]
   end
 
@@ -50,7 +52,8 @@ flowchart LR
 
   subgraph DB["PostgreSQL 18 + PostGIS 3.6 (sea schema)"]
     SourceReg[("sea.source")]
-    AlertTbl[("sea.alert")]
+    AlertTbl[("sea.alert (multi-source CAP)")]
+    CapTbls[("sea.cap_authority / cap_feed / cap_item / cap_message")]
     EqTbl[("sea.earthquake & revision")]
     CanonicalTbl[("sea.event & event_member")]
     GdacsTbl[("sea.gdacs_event (raw episodes)")]
@@ -68,14 +71,17 @@ flowchart LR
   USGSFeed -->|"GET all_day.geojson, If-Modified-Since"| UsgsAdapter
   EMSCFeed -->|"WebSocket push + FDSN queries"| EmscAdapter
   GDACSFeed -->|"GET geteventlist, polled 5m"| GdacsAdapter
+  RAA -->|"registry daily, feed indexes 5m, CAP docs on demand"| CapAdapter
 
   NoaaAdapter -->|"POST /api/v1/noaa_data/send"| Receiver
   UsgsAdapter -->|"POST /api/v1/usgs_data/send"| Receiver
   EmscAdapter -->|"POST /api/v1/emsc_data/send"| Receiver
   GdacsAdapter -->|"POST /api/v1/gdacs_data/send"| Receiver
+  CapAdapter -->|"POST /api/v1/cap_data/registry, index, alerts"| Receiver
 
   Receiver -->|"GET /api/v1/gdacs_data/geometry/pending"| GdacsAdapter
   GdacsAdapter -->|"POST /api/v1/gdacs_data/geometry"| Receiver
+  Receiver -->|"GET /api/v1/cap_data/feeds, pending"| CapAdapter
 
   Receiver -->|"upsert, diff, merge, normalize"| DB
   Receiver -.->|"fan-out events"| Hubs
@@ -92,9 +98,10 @@ flowchart LR
   - `usgs_adapter`: Starts with `all_week.geojson` backfill, switches to `all_day.geojson` with conditional GET (`If-Modified-Since`, >=60s floor), retrying safely on delivery failures.
   - `emsc_adapter`: Subscribes to real-time WebSocket push (`standing_order`), backfills via FDSN query, and runs gap-fill queries on reconnects.
   - `gdacs_adapter`: Polls multi-hazard events every 5 minutes (with a 10s minimum request interval), and pulls pending episode geometries in the background driven by the core's pending queue.
+  - `cap_adapter`: Reads the WMO Register of Alerting Authorities daily, polls each subscribed national CAP feed index every 5 minutes with conditional GET (one request per host at a time, 2s apart), and fetches the CAP documents the core lists as pending, converting CAP XML into a lossless JSON mirror.
 - **Core (`matrix_whale`)**: Built in Gleam on the Erlang/BEAM VM:
-  - **Receiver (`:6000`)**: Classifies revisions and deduplicates incoming payloads in pure Gleam functions (`domain/` and `intake/`). Merges earthquakes from USGS, EMSC, and GDACS into canonical events (`sea.event`), and normalizes GDACS raw episodes into `sea.hazard` with PostGIS geometry in the same database transaction.
-  - **Streamer (`:8080`)**: Serves REST endpoints (`/api/v1/alerts/*`, `/api/v1/earthquakes/recent`, `/api/v1/hazards/recent`, `/api/v1/hazards/{source}/{source_id}`, `/api/v1/timeline`, `/api/v1/sources`, `/api/v1/pipeline/status`) and real-time SSE streams (`/api/v1/alerts/stream`, `/api/v1/earthquakes/stream`, `/api/v1/hazards/stream`).
+  - **Receiver (`:6000`)**: Classifies revisions and deduplicates incoming payloads in pure Gleam functions (`domain/` and `intake/`). Merges earthquakes from USGS, EMSC, and GDACS into canonical events (`sea.event`), normalizes GDACS raw episodes into `sea.hazard` with PostGIS geometry in the same database transaction, and normalizes national CAP messages into the multi-source `sea.alert` (one transaction per message, Update/Cancel chains applied).
+  - **Streamer (`:8080`)**: Serves REST endpoints (`/api/v1/alerts/*` incl. `/api/v1/alerts/detail`, `/api/v1/cap/feeds`, `/api/v1/earthquakes/recent`, `/api/v1/hazards/recent`, `/api/v1/hazards/{source}/{source_id}`, `/api/v1/timeline`, `/api/v1/sources`, `/api/v1/pipeline/status`) and real-time SSE streams (`/api/v1/alerts/stream`, `/api/v1/earthquakes/stream`, `/api/v1/hazards/stream`).
   - **In-process pub/sub hubs**: Sibling OTP processes on the same BEAM node provide low-latency fan-out from receiver to streamer without external message brokers.
 - **Database (PostgreSQL 18 + PostGIS 3.6)**:
   - `sea.source`: Central registry for licenses, priorities, and attribution text.
@@ -102,10 +109,11 @@ flowchart LR
   - `sea.event` & `sea.event_member`: Canonical merged earthquakes combining cross-source detections by origin/ID matching and spatio-temporal misfit scoring.
   - `sea.gdacs_event`: Raw GDACS episode storage preserving all historical episodes and unprojected GeoJSON geometry.
   - `sea.hazard`: Normalized multi-hazard layer containing PostGIS `Point` centroid, `Polygon` bbox, and `Geometry` primary polygon with GiST spatial indexes.
-  - `sea.alert`: NWS weather alerts with geometry polygons and lifecycle timestamps (`sent`, `expires`, `ended_at`).
+  - `sea.alert`: Multi-source CAP-shaped alerts (NOAA and every national alerting authority) keyed by `(source, source_id)`, with PostGIS `MultiPolygon` geometry, `active_until`, and `ended_at`/`end_reason` (`expired`, `cancelled`, `superseded`, `withdrawn`).
+  - `sea.cap_authority`, `sea.cap_feed`, `sea.cap_item`, `sea.cap_message`: The RAA registry, per-feed health, feed index items (the pending queue), and raw CAP messages (JSON mirror + raw XML).
 - **Edge**:
   - **Plecto reverse proxy (`:80` / `:8180`)**: Single entry point routing `/api` to the Gleam streamer and everything else to the SvelteKit frontend, enforcing rate limits.
-  - **Web (`:4173` / `:4174`)**: SvelteKit application with MapLibre GL rendering nautical charts (`/globe`), earthquake flasher markers, hazard polygons, and a 5-tab side pane (Timeline, Earthquakes, Hazards, Alerts, Feed).
+  - **Web (`:4173` / `:4174`)**: SvelteKit application with MapLibre GL rendering nautical charts (`/globe`), earthquake flasher markers, hazard polygons, a 5-tab side pane (Timeline, Earthquakes, Hazards, Alerts, Feed), and a `/feeds` page with per-feed CAP health.
 
 ## Database migrations
 
@@ -146,9 +154,9 @@ Because the production poll switches from all_week to all_day, a revision more t
 
 `GET /api/v1/earthquakes/recent` defaults to the latest 24 hours at M2.5+; `hours=1..168`, `minmag=<number>|all`, and `type=earthquake|all` refine the snapshot, filtering on each canonical event's projected columns. It returns `{"earthquakes": [<Event>, ...]}`, where each event carries its projected scalar fields (from the highest-priority, most-recently-updated member) plus a `members` list of every linked source row with its `matched_by` (`origin`, `id`, or `misfit`) and `misfit` score. It sends a content-hash ETag and `Cache-Control: no-cache`; clients should revalidate it. `GET /api/v1/earthquakes/stream` emits the same canonical event JSON in `new` and `update` events with `is_backfill`, plus `heartbeat` and `resync`; `new` is a newly created event, `update` is a change to an existing event's projection (a member added, revised, or its status changed). The event id contains a process epoch. A reconnect receives `resync` and must refetch the snapshot rather than assuming a replay buffer survived a core restart.
 
-`GET /api/v1/pipeline/status` keeps the existing NOAA top-level fields and adds per-source statistics under `sources.<source_id>` (`noaa`, `usgs`, `emsc`, and `gdacs`), each with `last_fetch_at`, `last_http_status`, `received`, `deduped`, `written`, `dropped`, `bytes`, a `dedup` breakdown (`intake`, `unchanged`, `stale`), and `matched` (how many of that source's rows in the most recent write attached to an existing canonical event rather than creating one).
+`GET /api/v1/pipeline/status` keeps the existing NOAA top-level fields and adds per-source statistics under `sources.<source_id>` (`noaa`, `usgs`, `emsc`, `gdacs`, and `cap`), each with `last_fetch_at`, `last_http_status`, `received`, `deduped`, `written`, `dropped`, `bytes`, a `dedup` breakdown (`intake`, `unchanged`, `stale`), and `matched` (how many of that source's rows in the most recent write attached to an existing canonical event rather than creating one).
 
-`GET /api/v1/sources` returns the core's source registry (`id`, `name`, `homepage`, `license`, `attribution_text`, `redistributable`, `priority`, currently `noaa`, `usgs`, `emsc`, and `gdacs`) — the only place clients get license/attribution text; canonical events carry a `preferred_source`/`sources` list but no license fields of their own.
+`GET /api/v1/sources` returns the core's source registry (`id`, `name`, `homepage`, `license`, `attribution_text`, `redistributable`, `priority`; the static `noaa`, `usgs`, `emsc`, and `gdacs` rows plus one `cap-<oid>` row per RAA alerting authority, read from `sea.source`) — the only place clients get license/attribution text; canonical events carry a `preferred_source`/`sources` list but no license fields of their own.
 
 Start it with `docker compose --env-file .env up --build usgs_adapter` after MatrixWhale and PostgreSQL are available. The adapter shuts down when it receives SIGTERM/SIGINT and does not advance a feed validator if the core POST fails.
 
@@ -197,6 +205,22 @@ cd gdacs_adapter/app
 go test -race ./...
 go vet ./...
 go build ./...
+```
+
+## National CAP alerts via the WMO Register of Alerting Authorities
+
+`cap_adapter` reads the WMO Register of Alerting Authorities (`https://alertingauthority.wmo.int/rss.xml`, RSS 2.0) at startup and daily (`CAP_REGISTRY_INTERVAL`) and posts every entry to `POST /api/v1/cap_data/registry`. The core decides which feeds to subscribe: NWS feeds are excluded (covered by `noaa_adapter`), and when an authority lists an English feed its other-language feeds are skipped. Each authority becomes a `sea.source` row `cap-<oid>` credited as "<authority> (<country>), via the WMO Register of Alerting Authorities".
+
+Every 5 minutes (`CAP_POLL_INTERVAL`) the adapter reads `GET /api/v1/cap_data/feeds`, polls each due feed index with conditional GET, and posts the items to `POST /api/v1/cap_data/index` (also on failure, which drives per-feed health and back-off to 1 h / 6 h after repeated failures). For the rest of the cycle it fetches the CAP documents listed by `GET /api/v1/cap_data/pending` and posts them to `POST /api/v1/cap_data/alerts`. Index items published more than 7 days ago are never fetched. Requests are limited to one in flight per host with a 2s gap (`CAP_HOST_MIN_INTERVAL`) and 8 hosts at once (`CAP_MAX_PARALLEL_HOSTS`).
+
+The core stores each message in `sea.cap_message` keyed by `(sender, identifier)` and normalizes `Actual` + `Public` Alert/Update messages into `sea.alert`, preferring the English `<info>` and the highest severity among the display-language infos. Polygons and circles become a PostGIS `MultiPolygon`; geocode-only alerts are listed but not drawn. Updates mark the referenced alerts `superseded`, Cancels mark them `cancelled`, including when messages arrive out of order. `GET /api/v1/cap/feeds` (and the web `/feeds` page) reports each feed's health (`ok`, `empty`, `stale`, `degraded`, `failing`, `pending`, `excluded`).
+
+Run adapter checks locally with:
+
+```sh
+cd cap_adapter/app
+go test -race ./...
+go vet ./...
 ```
 
 ## Arrival-ordered timeline

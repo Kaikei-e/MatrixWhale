@@ -17,8 +17,9 @@ The project follows a microservices architecture with the following components:
 - **usgs_adapter** (No exposed port) - Go service adapter for USGS earthquake feeds (startup `all_week` backfill, `all_day` polling with conditional GET)
 - **emsc_adapter** (No exposed port) - Go service adapter for EMSC real-time WebSocket feed (`wss://www.seismicportal.eu/standing_order/websocket`) and FDSN backfill/gap-fill
 - **gdacs_adapter** (No exposed port) - Go service adapter for GDACS multi-hazard polling (5-minute cycle) and core-driven pending geometry fetching (10s rate limiter)
+- **cap_adapter** (No exposed port) - Go service adapter that follows the WMO Register of Alerting Authorities (daily) to ~200 national CAP feeds, polls feed indexes every 5 minutes with conditional GET and a per-host limiter, and fetches CAP documents from the core's pending list
 - **rss_feed_adapter** (Port 8086:8085) - Go service for RSS feed processing
-- **web** (Port 4174:4173) - SvelteKit frontend application with TypeScript, MapLibre nautical chart (`/globe`), tabbed side pane (Timeline, Earthquakes, Hazards, Alerts, Feed)
+- **web** (Port 4174:4173) - SvelteKit frontend application with TypeScript, MapLibre nautical chart (`/globe`), tabbed side pane (Timeline, Earthquakes, Hazards, Alerts, Feed), `/feeds` CAP feed health page
 - **proxy** (Port 8180:80, 9190:9090) - Plecto reverse proxy routing `/api` to streamer and `/` to web
 - **db** (Port 5440:5432) - PostgreSQL 18 + PostGIS 3.6 database (`postgis/postgis:18-3.6`, storage `./db/data18`)
 - **migrate** - Atlas runner applying versioned migrations from `db/migrations/` before `matrix_whale` starts
@@ -127,6 +128,9 @@ cd emsc_adapter/app && go test -race ./...
 # GDACS adapter
 cd gdacs_adapter/app && go test -race ./...
 
+# CAP adapter (WMO RAA national feeds)
+cd cap_adapter/app && go test -race ./...
+
 # RSS feed adapter & Federation orchestrator
 cd rss_feed_adapter/rss_feed_adapter && go test ./...
 cd federation_orchestrator/federation_orchestrator && go test ./...
@@ -151,6 +155,7 @@ cd federation_orchestrator/federation_orchestrator && go test ./...
 - `usgs_adapter/app/` - Go USGS earthquake feed adapter
 - `emsc_adapter/app/` - Go EMSC real-time WebSocket and FDSN backfill adapter
 - `gdacs_adapter/app/` - Go GDACS multi-hazard polling and pending geometry adapter
+- `cap_adapter/app/` - Go WMO RAA registry, national CAP feed polling, and pending CAP document adapter
 - `rss_feed_adapter/rss_feed_adapter/` - Go RSS feed service with `go.mod`
 - `federation_orchestrator/federation_orchestrator/` - Go orchestrator with gRPC/protobuf definitions
 
