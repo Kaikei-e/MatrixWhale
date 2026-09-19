@@ -1,5 +1,6 @@
 import adapter/context.{type Context}
 import adapter/earthquake_hub
+import domain/earthquake.{type Earthquake}
 import domain/source.{type Source}
 import gleam/list
 import gleam/result
@@ -7,6 +8,7 @@ import gleam/time/timestamp
 import intake/pipeline
 import intake/record.{Incoming, Key}
 import message/reciever/models/earthquake_feature.{type IncomingEarthquake}
+import metrics
 import repository/earthquake_writer
 
 pub type EarthquakeResult {
@@ -43,9 +45,21 @@ pub fn process(
     })
 
   pipeline.run(records, ctx.seen, now_ms, fn(survivors) {
-    earthquake_writer.write_batch(survivors, now_ms, ctx.db)
+    metrics.time_db(metrics.EarthquakeWrite, fn() {
+      earthquake_writer.write_batch(survivors, now_ms, ctx.db)
+    })
   })
   |> result.map(fn(outcome) {
+    metrics.record_intake(source.id, outcome)
+
+    let now_float = metrics.now_seconds()
+    let new_rows = list.flat_map(outcome.results, fn(diff) { diff.new })
+    let updated_rows = list.flat_map(outcome.results, fn(diff) { diff.updated })
+    let observations = lag_observations(new_rows, updated_rows, now_float)
+    list.each(observations, fn(obs) {
+      metrics.observe_ingest_lag(source.id, obs.0, obs.1)
+    })
+
     let new_events =
       list.flat_map(outcome.results, fn(diff) { diff.events.new })
     let updated_events =
@@ -82,4 +96,56 @@ pub fn split_expired(
   let #(live, expired) =
     list.partition(features, fn(feature) { feature.time > cutoff_ms })
   #(live, list.length(expired))
+}
+
+pub fn lag_observations(
+  new_rows: List(Earthquake),
+  updated_rows: List(Earthquake),
+  now_seconds: Float,
+) -> List(#(metrics.LagBasis, Float)) {
+  let new_obs =
+    list.flat_map(new_rows, fn(eq) {
+      let updated_obs = case eq.updated_at_ms > 0 {
+        True -> [
+          #(
+            metrics.LagUpdated,
+            metrics.calculate_lag(
+              now_seconds,
+              metrics.ms_to_seconds(eq.updated_at_ms),
+            ),
+          ),
+        ]
+        False -> []
+      }
+      let occurred_obs = case eq.occurred_at_ms > 0 {
+        True -> [
+          #(
+            metrics.LagOccurred,
+            metrics.calculate_lag(
+              now_seconds,
+              metrics.ms_to_seconds(eq.occurred_at_ms),
+            ),
+          ),
+        ]
+        False -> []
+      }
+      list.append(updated_obs, occurred_obs)
+    })
+
+  let updated_obs =
+    list.filter_map(updated_rows, fn(eq) {
+      case eq.updated_at_ms > 0 {
+        True ->
+          Ok(#(
+            metrics.LagUpdated,
+            metrics.calculate_lag(
+              now_seconds,
+              metrics.ms_to_seconds(eq.updated_at_ms),
+            ),
+          ))
+        False -> Error(Nil)
+      }
+    })
+
+  list.append(new_obs, updated_obs)
 }

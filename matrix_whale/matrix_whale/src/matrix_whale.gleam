@@ -9,6 +9,7 @@ import gleam/erlang/process
 import gleam/time/duration
 import gleam/time/timestamp
 import intake/seen_set
+import metrics
 import pog
 import repeatedly
 import repository/alert_writer
@@ -20,6 +21,7 @@ import wisp
 const default_seen_ttl_ms = 3_600_000
 
 pub fn main() {
+  metrics.setup()
   let db = initialize_db.initialize_db()
   let assert Ok(Nil) = source_writer.sync(db)
 
@@ -74,7 +76,11 @@ fn sweep_and_clean_alerts(
   hub: process.Subject(alert_hub.HubMsg),
 ) -> Nil {
   let now = timestamp.system_time()
-  case alert_writer.expire_due(now, db) {
+  case
+    metrics.time_db(metrics.AlertExpire, fn() {
+      alert_writer.expire_due(now, db)
+    })
+  {
     Ok(rows) -> {
       alert_hub.publish(
         hub,
@@ -84,7 +90,11 @@ fn sweep_and_clean_alerts(
     Error(error) -> wisp.log_error("Alert expiry sweep failed: " <> error)
   }
   let cutoff = timestamp.subtract(now, duration.hours(24 * 7))
-  case alert_writer.cleanup(cutoff, db) {
+  case
+    metrics.time_db(metrics.AlertCleanup, fn() {
+      alert_writer.cleanup(cutoff, db)
+    })
+  {
     Ok(Nil) -> Nil
     Error(error) -> wisp.log_error("Alert retention cleanup failed: " <> error)
   }
@@ -104,7 +114,11 @@ fn now_ms() -> Int {
 }
 
 fn cleanup_earthquakes(db: pog.Connection) -> Nil {
-  case earthquake_reader.cleanup(db) {
+  case
+    metrics.time_db(metrics.EarthquakeCleanup, fn() {
+      earthquake_reader.cleanup(db)
+    })
+  {
     Ok(_) -> Nil
     Error(error) ->
       wisp.log_error("Earthquake retention cleanup failed: " <> error)

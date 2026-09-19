@@ -8,6 +8,7 @@ import gleam/otp/actor
 import gleam/time/calendar
 import gleam/time/timestamp
 import message/reciever/models/noaa.{type PollMeta}
+import metrics
 import repeatedly
 import repository/alert_writer.{type AlertDiff}
 
@@ -79,7 +80,7 @@ pub type HubMsg {
     reply_to: Subject(Int),
   )
   Unsubscribe(id: Int)
-  Publish(diff: AlertDiff)
+  Publish(diff: AlertDiff, published_at: Int)
   RecordPoll(meta: PollMeta)
   RecordDecoded(decoded: Int, dropped: Int)
   RecordWrite(new: Int, updated: Int, ended: Int)
@@ -141,7 +142,8 @@ pub fn unsubscribe(hub: Subject(HubMsg), id: Int) -> Nil {
 }
 
 pub fn publish(hub: Subject(HubMsg), diff: AlertDiff) -> Nil {
-  process.send(hub, Publish(diff))
+  let published_at = metrics.monotonic_now()
+  process.send(hub, Publish(diff, published_at))
 }
 
 pub fn record_poll(hub: Subject(HubMsg), meta: PollMeta) -> Nil {
@@ -281,41 +283,47 @@ fn handle_message(state: State, message: HubMsg) -> actor.Next(State, HubMsg) {
       process.send(subject, Heartbeat(state.next_event_id - 1))
       process.send(reply_to, id)
 
+      let client_count = dict.size(subscribers)
+      metrics.set_sse_clients(metrics.Alerts, client_count)
+
       actor.continue(
         State(
           ..state,
           subscribers: subscribers,
           next_subscriber_id: id + 1,
-          stats: PipelineStats(
-            ..state.stats,
-            sse_clients: dict.size(subscribers),
-          ),
+          stats: PipelineStats(..state.stats, sse_clients: client_count),
         ),
       )
     }
 
     Unsubscribe(id) -> {
       let subscribers = dict.delete(state.subscribers, id)
+      let client_count = dict.size(subscribers)
+      metrics.set_sse_clients(metrics.Alerts, client_count)
       actor.continue(
         State(
           ..state,
           subscribers: subscribers,
-          stats: PipelineStats(
-            ..state.stats,
-            sse_clients: dict.size(subscribers),
-          ),
+          stats: PipelineStats(..state.stats, sse_clients: client_count),
         ),
       )
     }
 
-    Publish(diff) -> {
+    Publish(diff, published_at) -> {
       let #(new_state, entries) = append_diff(state, diff)
-      dict.values(new_state.subscribers)
-      |> list.each(fn(subject) {
-        list.each(entries, fn(entry) {
-          process.send(subject, Emit(entry.event, entry.id, entry.data))
-        })
-      })
+      case entries {
+        [] -> Nil
+        _ -> {
+          dict.values(new_state.subscribers)
+          |> list.each(fn(subject) {
+            list.each(entries, fn(entry) {
+              process.send(subject, Emit(entry.event, entry.id, entry.data))
+            })
+          })
+          let delay = metrics.monotonic_elapsed_seconds(published_at)
+          metrics.observe_sse_publish_delay(metrics.Alerts, delay)
+        }
+      }
       actor.continue(new_state)
     }
 

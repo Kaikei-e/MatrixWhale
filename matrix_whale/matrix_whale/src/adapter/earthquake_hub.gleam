@@ -9,6 +9,7 @@ import gleam/otp/actor
 import gleam/string
 import gleam/time/calendar
 import gleam/time/timestamp
+import metrics
 import repeatedly
 
 const heartbeat_ms = 25_000
@@ -26,7 +27,12 @@ pub type EarthquakeHubMsg {
     reply: Subject(Int),
   )
   Unsubscribe(id: Int)
-  Publish(new: List(EventView), updated: List(EventView), backfill: Bool)
+  Publish(
+    new: List(EventView),
+    updated: List(EventView),
+    backfill: Bool,
+    published_at: Int,
+  )
   Tick
 }
 
@@ -76,7 +82,8 @@ pub fn publish(
   updated: List(EventView),
   backfill: Bool,
 ) -> Nil {
-  process.send(h, Publish(new, updated, backfill))
+  let published_at = metrics.monotonic_now()
+  process.send(h, Publish(new, updated, backfill, published_at))
 }
 
 fn handle(
@@ -94,27 +101,33 @@ fn handle(
       }
       process.send(subject, Heartbeat(last_id(state)))
       process.send(reply, id)
+      let subscribers = dict.insert(state.subscribers, id, subject)
+      metrics.set_sse_clients(metrics.Earthquakes, dict.size(subscribers))
       actor.continue(
-        State(
-          ..state,
-          subscribers: dict.insert(state.subscribers, id, subject),
-          next_subscriber: id + 1,
-        ),
+        State(..state, subscribers: subscribers, next_subscriber: id + 1),
       )
     }
-    Unsubscribe(id) ->
-      actor.continue(
-        State(..state, subscribers: dict.delete(state.subscribers, id)),
-      )
-    Publish(new, updated, backfill) -> {
+    Unsubscribe(id) -> {
+      let subscribers = dict.delete(state.subscribers, id)
+      metrics.set_sse_clients(metrics.Earthquakes, dict.size(subscribers))
+      actor.continue(State(..state, subscribers: subscribers))
+    }
+    Publish(new, updated, backfill, published_at) -> {
       let #(state, first_events) = events_for(state, new, "new", backfill)
       let #(state, second_events) =
         events_for(state, updated, "update", backfill)
       let events = list.append(first_events, second_events)
-      dict.values(state.subscribers)
-      |> list.each(fn(subject) {
-        list.each(events, fn(event) { process.send(subject, event) })
-      })
+      case events {
+        [] -> Nil
+        _ -> {
+          dict.values(state.subscribers)
+          |> list.each(fn(subject) {
+            list.each(events, fn(event) { process.send(subject, event) })
+          })
+          let delay = metrics.monotonic_elapsed_seconds(published_at)
+          metrics.observe_sse_publish_delay(metrics.Earthquakes, delay)
+        }
+      }
       actor.continue(state)
     }
     Tick -> {

@@ -12,6 +12,7 @@ import intake/record.{Incoming, Key}
 import message/reciever/models/gdacs.{
   type GdacsFeature, type GdacsGeometryResult,
 }
+import metrics
 import repository/gdacs_event_writer
 import repository/gdacs_geometry_writer
 import wisp
@@ -46,9 +47,28 @@ pub fn process(
     })
 
   pipeline.run(records, ctx.seen, now_ms, fn(survivors) {
-    gdacs_event_writer.write_batch(survivors, now_ms, ctx.db)
+    metrics.time_db(metrics.GdacsEventWrite, fn() {
+      gdacs_event_writer.write_batch(survivors, now_ms, ctx.db)
+    })
   })
   |> result.map(fn(outcome) {
+    metrics.record_intake("gdacs", outcome)
+
+    let now_float = metrics.now_seconds()
+    let written_features =
+      list.flat_map(outcome.results, fn(r) { r.written_features })
+
+    list.each(written_features, fn(feature) {
+      case feature.modified_at_ms > 0 {
+        True -> {
+          let mod_sec = metrics.ms_to_seconds(feature.modified_at_ms)
+          let lag = metrics.calculate_lag(now_float, mod_sec)
+          metrics.observe_ingest_lag("gdacs", metrics.LagUpdated, lag)
+        }
+        False -> Nil
+      }
+    })
+
     let new_hazards = list.flat_map(outcome.results, fn(r) { r.new_hazards })
     let updated_hazards =
       list.flat_map(outcome.results, fn(r) { r.updated_hazards })
@@ -77,7 +97,9 @@ pub fn process_geometry(
   ctx: Context,
 ) -> Result(GdacsGeometryResultAck, String) {
   let now_ms = current_ms()
-  gdacs_geometry_writer.apply(results, now_ms, ctx.db)
+  metrics.time_db(metrics.GdacsGeometryWrite, fn() {
+    gdacs_geometry_writer.apply(results, now_ms, ctx.db)
+  })
   |> result.map(fn(outcome) {
     hazard_hub.publish(ctx.hazard_hub, [], outcome.changed_hazards)
     run_geometry_earthquake_path(outcome.applied, backfill, ctx)

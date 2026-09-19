@@ -1,5 +1,6 @@
 import adapter/context.{type Context}
 import gleam/erlang/process
+import gleam/http
 import gleam/string_tree
 import logs/reciever/usgs_adapter
 import message/reciever/cap_reciever
@@ -7,6 +8,7 @@ import message/reciever/emsc_reciever
 import message/reciever/gdacs_reciever
 import message/reciever/noaa_reciever
 import message/reciever/usgs_reciever
+import metrics
 import mist
 import wisp.{type Request, type Response}
 import wisp/wisp_mist
@@ -25,10 +27,25 @@ pub fn reciever_main(ctx: Context) {
   process.sleep_forever()
 }
 
-fn reciever_router(request: Request, ctx: Context) -> Response {
+pub fn reciever_router(request: Request, ctx: Context) -> Response {
+  let start = metrics.monotonic_now()
+  let segments = wisp.path_segments(request)
+  let route = metrics.route_template(segments)
   use req <- middleware(request)
+  let method = http.method_to_string(req.method)
 
-  case wisp.path_segments(request) {
+  let res = case segments {
+    ["metrics"] ->
+      case req.method {
+        http.Get ->
+          wisp.response(200)
+          |> wisp.set_header(
+            "content-type",
+            "text/plain; version=0.0.4; charset=utf-8",
+          )
+          |> wisp.string_body(metrics.render())
+        _ -> wisp.response(405)
+      }
     ["api", "v1", "health"] -> {
       wisp.json_response(
         string_tree.from_string("system is alive") |> string_tree.to_string,
@@ -57,6 +74,10 @@ fn reciever_router(request: Request, ctx: Context) -> Response {
     ["api", "v1", "cap_data", "alerts"] -> cap_reciever.alerts_handler(req, ctx)
     _ -> wisp.response(404)
   }
+
+  let duration = metrics.monotonic_elapsed_seconds(start)
+  metrics.observe_http(metrics.Ingest, route, method, res.status, duration)
+  res
 }
 
 fn middleware(request: Request, handle_request: fn(Request) -> Response) {

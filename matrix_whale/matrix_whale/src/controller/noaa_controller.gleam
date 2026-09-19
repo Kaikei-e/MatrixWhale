@@ -2,11 +2,13 @@ import adapter/alert_hub
 import adapter/context.{type Context}
 import domain/source
 import gleam/list
+import gleam/option.{Some}
 import gleam/string
 import gleam/time/timestamp
 import intake/pipeline
 import intake/record.{Incoming, Key}
 import message/reciever/models/noaa.{type FeatureElement, Test}
+import metrics
 import repository/alert_writer
 import wisp
 
@@ -52,10 +54,20 @@ pub fn noaa_controller(
 
   case
     pipeline.run(records, ctx.seen, now_ms, fn(survivors) {
-      alert_writer.write_batch(survivors, run_ended_sweep, all_ids, now, ctx.db)
+      metrics.time_db(metrics.NoaaAlertWrite, fn() {
+        alert_writer.write_batch(
+          survivors,
+          run_ended_sweep,
+          all_ids,
+          now,
+          ctx.db,
+        )
+      })
     })
   {
     Ok(outcome) -> {
+      metrics.record_intake("noaa", outcome)
+
       let diff =
         alert_writer.AlertDiff(
           new: list.flat_map(outcome.results, fn(d) { d.new }),
@@ -63,6 +75,18 @@ pub fn noaa_controller(
           ended: list.flat_map(outcome.results, fn(d) { d.ended }),
         )
       let ended_count = list.length(diff.ended)
+
+      let now_float = metrics.now_seconds()
+      list.each(list.append(diff.new, diff.updated), fn(alert) {
+        case alert.sent {
+          Some(sent_ts) -> {
+            let sent_sec = metrics.timestamp_to_seconds(sent_ts)
+            let lag = metrics.calculate_lag(now_float, sent_sec)
+            metrics.observe_ingest_lag("noaa", metrics.LagUpdated, lag)
+          }
+          _ -> Nil
+        }
+      })
 
       wisp.log_info(
         "Alerts: "

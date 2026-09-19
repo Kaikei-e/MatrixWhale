@@ -14,6 +14,7 @@ import intake/pipeline
 import intake/record
 import intake/seen_set
 import message/reciever/models/cap as models_cap
+import metrics
 import pog
 import repository/alert_writer.{AlertDiff}
 import repository/cap_feed_reader.{type SubscribedFeed}
@@ -38,13 +39,15 @@ pub fn process_registry(
   ctx: Context,
 ) -> Result(RegistryAck, String) {
   let now = timestamp.system_time()
-  cap_registry_writer.write_registry(
-    items,
-    received,
-    decode_dropped,
-    now,
-    ctx.db,
-  )
+  metrics.time_db(metrics.CapRegistryWrite, fn() {
+    cap_registry_writer.write_registry(
+      items,
+      received,
+      decode_dropped,
+      now,
+      ctx.db,
+    )
+  })
 }
 
 pub fn get_feeds(ctx: Context) -> Result(List(SubscribedFeed), String) {
@@ -60,15 +63,17 @@ pub fn process_index(
   ctx: Context,
 ) -> Result(IndexAck, String) {
   let now = timestamp.system_time()
-  cap_item_writer.write_index(
-    feed_url,
-    meta,
-    items,
-    received,
-    decode_dropped,
-    now,
-    ctx.db,
-  )
+  metrics.time_db(metrics.CapIndexWrite, fn() {
+    cap_item_writer.write_index(
+      feed_url,
+      meta,
+      items,
+      received,
+      decode_dropped,
+      now,
+      ctx.db,
+    )
+  })
 }
 
 pub fn get_pending(
@@ -239,10 +244,14 @@ pub fn process_alerts(
 
       use outcome <- result.try(
         pipeline.run(records, ctx.seen, now_ms, fn(chunk) {
-          cap_message_writer.write_batch(chunk, now, ctx.db)
+          metrics.time_db(metrics.CapMessageWrite, fn() {
+            cap_message_writer.write_batch(chunk, now, ctx.db)
+          })
         })
         |> result.map_error(fn(error) { "CAP database write failed: " <> error }),
       )
+
+      metrics.record_intake("cap", outcome)
 
       let diff =
         AlertDiff(
@@ -250,6 +259,18 @@ pub fn process_alerts(
           updated: list.flat_map(outcome.results, fn(r) { r.diff.updated }),
           ended: list.flat_map(outcome.results, fn(r) { r.diff.ended }),
         )
+
+      let now_float = metrics.now_seconds()
+      list.each(list.append(diff.new, diff.updated), fn(alert) {
+        case alert.sent {
+          Some(sent_ts) -> {
+            let sent_sec = metrics.timestamp_to_seconds(sent_ts)
+            let lag = metrics.calculate_lag(now_float, sent_sec)
+            metrics.observe_ingest_lag("cap", metrics.LagUpdated, lag)
+          }
+          _ -> Nil
+        }
+      })
 
       alert_hub.publish(ctx.hub, diff)
 

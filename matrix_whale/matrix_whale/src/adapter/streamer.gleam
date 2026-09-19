@@ -26,6 +26,7 @@ import gleam/string
 import gleam/string_tree
 import gleam/time/calendar
 import gleam/time/timestamp
+import metrics
 import mist
 import repository/alert_reader
 import repository/cap_feed_reader
@@ -73,7 +74,12 @@ fn router(
   req: Request(mist.Connection),
   ctx: Context,
 ) -> Response(mist.ResponseData) {
-  case request.path_segments(req) {
+  let start = metrics.monotonic_now()
+  let segments = request.path_segments(req)
+  let route = metrics.route_template(segments)
+  let method = http.method_to_string(req.method)
+
+  let res = case segments {
     ["api", "v1", "streamer", "health"] -> health_response()
     ["api", "v1", "alerts", "active"] -> active_response(req, ctx)
     ["api", "v1", "alerts", "detail"] -> alert_detail_response(req, ctx)
@@ -102,6 +108,10 @@ fn router(
     ["api", "v1", "timeline"] -> timeline_response(req, ctx)
     _ -> not_found_response()
   }
+
+  let duration = metrics.monotonic_elapsed_seconds(start)
+  metrics.observe_http(metrics.Api, route, method, res.status, duration)
+  res
 }
 
 fn earthquake_stream_response(
