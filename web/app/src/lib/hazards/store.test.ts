@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearSourcesInFlight } from '$lib/sources/fetch';
 import { HazardStore } from './store.svelte';
 import type { Hazard } from './types';
 
@@ -81,6 +82,7 @@ describe('HazardStore', () => {
 	const fetchMock = vi.fn();
 
 	beforeEach(() => {
+		clearSourcesInFlight();
 		vi.useFakeTimers();
 		FakeEventSource.instances = [];
 		vi.stubGlobal('EventSource', FakeEventSource);
@@ -89,6 +91,7 @@ describe('HazardStore', () => {
 	});
 
 	afterEach(() => {
+		clearSourcesInFlight();
 		vi.useRealTimers();
 		vi.unstubAllGlobals();
 	});
@@ -297,4 +300,79 @@ describe('HazardStore', () => {
 
 		expect(store.sources.get('gdacs')?.name).toBe('GDACS');
 	});
+
+	it('discards sources response if disconnect is called while request is in flight', async () => {
+		let resolveSources: (res: Response) => void;
+		const sourcesPromise = new Promise<Response>((resolve) => {
+			resolveSources = resolve;
+		});
+		fetchMock.mockReturnValue(sourcesPromise);
+
+		const store = new HazardStore();
+		const fetchTask = store.fetchSources('/api/v1/sources');
+
+		store.disconnect();
+
+		resolveSources!(
+			new Response(
+				JSON.stringify({
+					sources: [
+						{
+							id: 'late-gdacs',
+							name: 'Late GDACS',
+							homepage: '',
+							license: '',
+							attribution_text: '',
+							redistributable: false,
+							priority: 1
+						}
+					]
+				})
+			)
+		);
+		await fetchTask;
+
+		expect(store.sources.has('late-gdacs')).toBe(false);
+	});
+
+	it('shares in-flight fetch across multiple concurrent calls', async () => {
+		let resolveSources: (res: Response) => void;
+		const sourcesPromise = new Promise<Response>((resolve) => {
+			resolveSources = resolve;
+		});
+		fetchMock.mockReturnValue(sourcesPromise);
+
+		const store1 = new HazardStore();
+		const store2 = new HazardStore();
+
+		const p1 = store1.fetchSources('/api/v1/sources');
+		const p2 = store2.fetchSources('/api/v1/sources');
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+
+		resolveSources!(
+			new Response(
+				JSON.stringify({
+					sources: [
+						{
+							id: 'gdacs',
+							name: 'GDACS',
+							homepage: '',
+							license: '',
+							attribution_text: '',
+							redistributable: false,
+							priority: 80
+						}
+					]
+				})
+			)
+		);
+
+		await Promise.all([p1, p2]);
+
+		expect(store1.sources.get('gdacs')?.name).toBe('GDACS');
+		expect(store2.sources.get('gdacs')?.name).toBe('GDACS');
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
 });

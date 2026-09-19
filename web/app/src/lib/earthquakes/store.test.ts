@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearSourcesInFlight } from '$lib/sources/fetch';
 import { EarthquakeStore } from './store.svelte';
 import type { Earthquake, EarthquakeMember } from './types';
 
@@ -102,6 +103,7 @@ describe('EarthquakeStore', () => {
 	const fetchMock = vi.fn();
 
 	beforeEach(() => {
+		clearSourcesInFlight();
 		vi.useFakeTimers();
 		FakeEventSource.instances = [];
 		vi.stubGlobal('EventSource', FakeEventSource);
@@ -110,6 +112,7 @@ describe('EarthquakeStore', () => {
 	});
 
 	afterEach(() => {
+		clearSourcesInFlight();
 		vi.useRealTimers();
 		vi.unstubAllGlobals();
 	});
@@ -363,5 +366,79 @@ describe('EarthquakeStore', () => {
 		await store.fetchSources('/api/v1/sources');
 
 		expect(store.sources.get('usgs')?.name).toBe('U.S. Geological Survey');
+	});
+
+	it('discards sources response if disconnect is called while request is in flight', async () => {
+		let resolveSources: (res: Response) => void;
+		const sourcesPromise = new Promise<Response>((resolve) => {
+			resolveSources = resolve;
+		});
+		fetchMock.mockReturnValue(sourcesPromise);
+
+		const store = new EarthquakeStore();
+		const fetchTask = store.fetchSources('/api/v1/sources');
+
+		store.disconnect();
+
+		resolveSources!(
+			new Response(
+				JSON.stringify({
+					sources: [
+						{
+							id: 'late-usgs',
+							name: 'Late Arrival',
+							homepage: '',
+							license: '',
+							attribution_text: '',
+							redistributable: true,
+							priority: 1
+						}
+					]
+				})
+			)
+		);
+		await fetchTask;
+
+		expect(store.sources.has('late-usgs')).toBe(false);
+	});
+
+	it('shares in-flight fetch across multiple concurrent calls', async () => {
+		let resolveSources: (res: Response) => void;
+		const sourcesPromise = new Promise<Response>((resolve) => {
+			resolveSources = resolve;
+		});
+		fetchMock.mockReturnValue(sourcesPromise);
+
+		const store1 = new EarthquakeStore();
+		const store2 = new EarthquakeStore();
+
+		const p1 = store1.fetchSources('/api/v1/sources');
+		const p2 = store2.fetchSources('/api/v1/sources');
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+
+		resolveSources!(
+			new Response(
+				JSON.stringify({
+					sources: [
+						{
+							id: 'usgs',
+							name: 'U.S. Geological Survey',
+							homepage: '',
+							license: '',
+							attribution_text: '',
+							redistributable: true,
+							priority: 100
+						}
+					]
+				})
+			)
+		);
+
+		await Promise.all([p1, p2]);
+
+		expect(store1.sources.get('usgs')?.name).toBe('U.S. Geological Survey');
+		expect(store2.sources.get('usgs')?.name).toBe('U.S. Geological Survey');
+		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 });

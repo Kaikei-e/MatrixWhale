@@ -1,5 +1,6 @@
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import type { DataSource } from '$lib/earthquakes/types';
+import { fetchSourcesShared } from '$lib/sources/fetch';
 import {
 	ALERT_LEVELS,
 	HAZARD_TYPES,
@@ -84,11 +85,11 @@ export class HazardStore {
 	}
 
 	async fetchSources(url: string): Promise<void> {
+		const generation = this.#generation;
 		try {
-			const response = await fetch(url);
-			if (!response.ok) return;
-			const body = (await response.json()) as { sources: DataSource[] };
-			for (const source of body.sources) this.sources.set(source.id, source);
+			const sources = await fetchSourcesShared(url);
+			if (generation !== this.#generation) return;
+			for (const source of sources) this.sources.set(source.id, source);
 		} catch {
 			// Attribution is supplementary; leave labels/links working without it.
 		}

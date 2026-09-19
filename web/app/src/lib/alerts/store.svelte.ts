@@ -16,7 +16,97 @@ const ARRIVAL_MS = 5000;
 const UPDATE_MS = 1000;
 const ENDED_MS = 1000;
 const HEARTBEAT_TIMEOUT_MS = 60000;
-const SNAPSHOT_TIMEOUT_MS = 10000;
+export const SNAPSHOT_IDLE_TIMEOUT_MS = 10000;
+export const SNAPSHOT_DEADLINE_MS = 120000;
+
+/**
+ * Reads a JSON response while resetting an inactivity (idle) timeout whenever
+ * incoming data chunks arrive. This prevents slow connections (such as 1.6 Mbps
+ * / 150 ms RTT) from being cut off during a steady download while still guarding
+ * against true network stalls or an excessive overall duration.
+ */
+export async function fetchSnapshotWithIdleTimeout<T>(
+	url: string,
+	parentSignal: AbortSignal,
+	idleTimeoutMs = SNAPSHOT_IDLE_TIMEOUT_MS,
+	deadlineMs = SNAPSHOT_DEADLINE_MS,
+	fetchFn: typeof fetch = fetch
+): Promise<T> {
+	const internalAc = new AbortController();
+
+	const onParentAbort = () => {
+		internalAc.abort(parentSignal.reason);
+	};
+	if (parentSignal.aborted) {
+		internalAc.abort(parentSignal.reason);
+	} else {
+		parentSignal.addEventListener('abort', onParentAbort, { once: true });
+	}
+
+	let idleTimer: ReturnType<typeof setTimeout> | undefined;
+	let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+
+	const resetIdleTimer = () => {
+		if (idleTimer) clearTimeout(idleTimer);
+		idleTimer = setTimeout(() => {
+			internalAc.abort(
+				new DOMException('The operation timed out due to inactivity.', 'TimeoutError')
+			);
+		}, idleTimeoutMs);
+	};
+
+	deadlineTimer = setTimeout(() => {
+		internalAc.abort(
+			new DOMException('The operation exceeded the overall deadline.', 'TimeoutError')
+		);
+	}, deadlineMs);
+
+	try {
+		resetIdleTimer();
+		const response = await fetchFn(url, { signal: internalAc.signal });
+		if (!response.ok) {
+			throw new Error(`snapshot request failed with status ${response.status}`);
+		}
+		resetIdleTimer();
+
+		if (response.body && typeof response.body.getReader === 'function') {
+			const reader = response.body.getReader();
+			const cancelReader = () => {
+				void reader.cancel(internalAc.signal.reason).catch(() => {});
+			};
+			internalAc.signal.addEventListener('abort', cancelReader, { once: true });
+			const decoder = new TextDecoder();
+			const chunks: string[] = [];
+			try {
+				internalAc.signal.throwIfAborted();
+				while (true) {
+					const { done, value } = await reader.read();
+					internalAc.signal.throwIfAborted();
+					if (done) break;
+					if (value.byteLength > 0) {
+						chunks.push(decoder.decode(value, { stream: true }));
+						resetIdleTimer();
+					}
+				}
+				chunks.push(decoder.decode());
+				return JSON.parse(chunks.join('')) as T;
+			} catch (error) {
+				internalAc.signal.throwIfAborted();
+				throw error;
+			} finally {
+				internalAc.signal.removeEventListener('abort', cancelReader);
+				reader.releaseLock();
+			}
+		} else {
+			const data = (await response.json()) as T;
+			return data;
+		}
+	} finally {
+		if (idleTimer) clearTimeout(idleTimer);
+		if (deadlineTimer) clearTimeout(deadlineTimer);
+		parentSignal.removeEventListener('abort', onParentAbort);
+	}
+}
 
 export function nextBlinkAfterArrival(severity: Severity, acknowledged: boolean): BlinkMode {
 	if (acknowledged) return 'static';
@@ -182,11 +272,7 @@ export class AlertStore {
 		this.#streamBuffer = buffer;
 
 		try {
-			const timeoutSignal = AbortSignal.timeout(SNAPSHOT_TIMEOUT_MS);
-			const signal = AbortSignal.any([ac.signal, timeoutSignal]);
-			const response = await fetch(url, { signal });
-			if (!response.ok) throw new Error(`snapshot request failed with status ${response.status}`);
-			const alerts = (await response.json()) as Alert[];
+			const alerts = await fetchSnapshotWithIdleTimeout<Alert[]>(url, ac.signal);
 			if (ac.signal.aborted) return;
 
 			this.activeAlerts.clear();

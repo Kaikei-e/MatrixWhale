@@ -529,4 +529,208 @@ describe('AlertStore.subscribeRaw', () => {
 
 		store.disconnect();
 	});
+
+	it('does not abort snapshot when chunks arrive steadily even if total duration exceeds 10 seconds', async () => {
+		vi.useFakeTimers();
+		try {
+			const alert1 = makeAlert({ id: 'slow-1', severity: 'Extreme' });
+			const fullJson = JSON.stringify([alert1]);
+			const half = Math.floor(fullJson.length / 2);
+			const chunk1 = fullJson.slice(0, half);
+			const chunk2 = fullJson.slice(half);
+
+			const encoder = new TextEncoder();
+			let controllerRef: ReadableStreamDefaultController<Uint8Array>;
+			const stream = new ReadableStream<Uint8Array>({
+				start(controller) {
+					controllerRef = controller;
+				}
+			});
+
+			vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(stream)));
+
+			const store = new AlertStore();
+			const connectPromise = store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+
+			// Let fetch resolve and start reading the body
+			await vi.advanceTimersByTimeAsync(100);
+
+			// First chunk at 6 seconds
+			await vi.advanceTimersByTimeAsync(6000);
+			controllerRef!.enqueue(encoder.encode(chunk1));
+
+			// Second chunk at 12 seconds total (6 seconds since last chunk) - would have aborted with 10s fixed timeout!
+			await vi.advanceTimersByTimeAsync(6000);
+			controllerRef!.enqueue(encoder.encode(chunk2));
+			controllerRef!.close();
+
+			await vi.advanceTimersByTimeAsync(100);
+			await connectPromise;
+
+			expect(store.snapshotError).toBeNull();
+			expect(store.activeAlerts.has('slow-1')).toBe(true);
+			store.disconnect();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('aborts snapshot if chunk arrival stalls for 10 seconds of inactivity', async () => {
+		vi.useFakeTimers();
+		try {
+			const encoder = new TextEncoder();
+			let controllerRef: ReadableStreamDefaultController<Uint8Array>;
+			const stream = new ReadableStream<Uint8Array>({
+				start(controller) {
+					controllerRef = controller;
+				}
+			});
+
+			vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(stream)));
+
+			const store = new AlertStore();
+			const connectPromise = store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+
+			await vi.advanceTimersByTimeAsync(100);
+
+			// First chunk arrives
+			controllerRef!.enqueue(encoder.encode('['));
+
+			// Stalls for 10001 ms without any data
+			await vi.advanceTimersByTimeAsync(10001);
+			await connectPromise;
+
+			expect(store.snapshotError).toContain('timed out due to inactivity');
+			expect(store.activeAlerts.size).toBe(0);
+			store.disconnect();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('successfully recovers via retrySnapshot after an idle timeout', async () => {
+		vi.useFakeTimers();
+		try {
+			const alert1 = makeAlert({ id: 'retry-1', severity: 'Extreme' });
+			const encoder = new TextEncoder();
+
+			let controllerRef: ReadableStreamDefaultController<Uint8Array>;
+			const stalledStream = new ReadableStream<Uint8Array>({
+				start(controller) {
+					controllerRef = controller;
+				}
+			});
+
+			const fetchMock = vi
+				.fn()
+				.mockResolvedValueOnce(new Response(stalledStream))
+				.mockResolvedValueOnce(new Response(JSON.stringify([alert1])));
+
+			vi.stubGlobal('fetch', fetchMock);
+
+			const store = new AlertStore();
+			const connectPromise = store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+
+			await vi.advanceTimersByTimeAsync(100);
+			controllerRef!.enqueue(encoder.encode('['));
+
+			// Advance beyond idle timeout
+			await vi.advanceTimersByTimeAsync(10001);
+			await connectPromise;
+
+			expect(store.snapshotError).toContain('timed out due to inactivity');
+			expect(store.activeAlerts.size).toBe(0);
+
+			// Retry snapshot
+			store.retrySnapshot();
+			await vi.advanceTimersByTimeAsync(100);
+
+			expect(store.snapshotError).toBeNull();
+			expect(store.activeAlerts.has('retry-1')).toBe(true);
+			store.disconnect();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('buffers and replays SSE events arriving during a prolonged snapshot download', async () => {
+		vi.useFakeTimers();
+		try {
+			const alertSnap = makeAlert({ id: 'snap-event', last_seen_at: '2026-09-17T10:00:00Z' });
+			const alertNewSse = makeAlert({
+				id: 'snap-event',
+				headline: 'Updated by SSE',
+				last_seen_at: '2026-09-17T11:00:00Z'
+			});
+
+			const encoder = new TextEncoder();
+			let controllerRef: ReadableStreamDefaultController<Uint8Array>;
+			const stream = new ReadableStream<Uint8Array>({
+				start(controller) {
+					controllerRef = controller;
+				}
+			});
+
+			vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(stream)));
+
+			const store = new AlertStore();
+			const connectPromise = store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+
+			await vi.advanceTimersByTimeAsync(100);
+			const sseStream = FakeEventSource.instances[0];
+
+			// SSE event arrives while snapshot is downloading
+			sseStream.emit('alert.update', alertNewSse);
+
+			// Snapshot finishes at 15s (2 chunks at 7.5s intervals)
+			await vi.advanceTimersByTimeAsync(7500);
+			const fullJson = JSON.stringify([alertSnap]);
+			controllerRef!.enqueue(encoder.encode(fullJson.slice(0, 10)));
+
+			await vi.advanceTimersByTimeAsync(7500);
+			controllerRef!.enqueue(encoder.encode(fullJson.slice(10)));
+			controllerRef!.close();
+
+			await vi.advanceTimersByTimeAsync(100);
+			await connectPromise;
+
+			// SSE event must have won the revision race over older snapshot record
+			expect(store.activeAlerts.get('snap-event')?.headline).toBe('Updated by SSE');
+			store.disconnect();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('aborts active body stream reading and cleans up cleanly on disconnect', async () => {
+		vi.useFakeTimers();
+		try {
+			let cancelled = false;
+			const stream = new ReadableStream<Uint8Array>({
+				start() {},
+				cancel() {
+					cancelled = true;
+				}
+			});
+
+			vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(stream)));
+
+			const store = new AlertStore();
+			const connectPromise = store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+
+			await vi.advanceTimersByTimeAsync(100);
+			expect(store.connected).toBe('connecting');
+
+			store.disconnect();
+			expect(store.connected).toBe('closed');
+			expect(cancelled).toBe(true);
+
+			await vi.advanceTimersByTimeAsync(100);
+			await connectPromise;
+			expect(store.snapshotError).toBeNull();
+			expect(store.activeAlerts.size).toBe(0);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 });

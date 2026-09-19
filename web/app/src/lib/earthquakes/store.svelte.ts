@@ -1,4 +1,5 @@
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+import { fetchSourcesShared } from '$lib/sources/fetch';
 import type {
 	DataSource,
 	Earthquake,
@@ -105,11 +106,11 @@ export class EarthquakeStore {
 	}
 
 	async fetchSources(url: string): Promise<void> {
+		const generation = this.#generation;
 		try {
-			const response = await fetch(url);
-			if (!response.ok) return;
-			const body = (await response.json()) as { sources: DataSource[] };
-			for (const source of body.sources) this.sources.set(source.id, source);
+			const sources = await fetchSourcesShared(url);
+			if (generation !== this.#generation) return;
+			for (const source of sources) this.sources.set(source.id, source);
 		} catch {
 			// Attribution is supplementary; leave labels/links working without it.
 		}
