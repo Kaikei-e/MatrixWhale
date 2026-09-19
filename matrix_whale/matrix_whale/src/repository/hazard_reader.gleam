@@ -25,9 +25,14 @@ pub fn recent(
     [] -> pog.null()
     ls -> pog.array(pog.text, list.map(ls, string.lowercase))
   }
+  // The snapshot serializer only exposes primary_geometry. Do not detoast and
+  // transfer the full episode FeatureCollection for every row; keep its decoder
+  // slot null. Detail queries still select the complete geometries below.
+  let snapshot_columns =
+    string.replace(hazard.columns, "geometries::text", "NULL::text")
   pog.query(
     "SELECT "
-    <> hazard.columns
+    <> snapshot_columns
     <> " FROM sea.hazard WHERE modified_at >= now() - ($1 || ' hours')::interval AND ($2::text[] IS NULL OR hazard_type = ANY($2)) AND ($3::text[] IS NULL OR alert_level = ANY($3)) ORDER BY modified_at_ms DESC",
   )
   |> pog.parameter(pog.text(string.inspect(hours)))

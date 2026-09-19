@@ -1,4 +1,5 @@
 import domain/earthquake
+import domain/geometry_transport
 import gleam/dict
 import gleam/dynamic.{type Dynamic}
 import gleam/dynamic/decode
@@ -764,6 +765,18 @@ pub fn to_json(hazard: Hazard) -> json.Json {
   json.object(common_fields(hazard))
 }
 
+pub fn to_polyline_json(hazard: Hazard) -> json.Json {
+  let primary_geom = case hazard.primary_geometry {
+    None -> json.null()
+    Some(text) ->
+      case geometry_transport.encode_geometry_text(text) {
+        Ok(encoded) -> encoded
+        Error(Nil) -> nullable_raw_json(hazard.primary_geometry)
+      }
+  }
+  json.object(common_fields_with_geometry(hazard, primary_geom))
+}
+
 pub fn to_detail_json(hazard: Hazard) -> json.Json {
   json.object(
     list.append(common_fields(hazard), [
@@ -773,6 +786,13 @@ pub fn to_detail_json(hazard: Hazard) -> json.Json {
 }
 
 fn common_fields(h: Hazard) -> List(#(String, json.Json)) {
+  common_fields_with_geometry(h, nullable_raw_json(h.primary_geometry))
+}
+
+fn common_fields_with_geometry(
+  h: Hazard,
+  primary_geometry: json.Json,
+) -> List(#(String, json.Json)) {
   [
     #("id", json.string(h.source <> ":" <> h.source_id)),
     #("source", json.string(h.source)),
@@ -804,7 +824,7 @@ fn common_fields(h: Hazard) -> List(#(String, json.Json)) {
     #("longitude", json.float(h.longitude)),
     #("latitude", json.float(h.latitude)),
     #("bbox", bbox_json(h.bbox)),
-    #("primary_geometry", nullable_raw_json(h.primary_geometry)),
+    #("primary_geometry", primary_geometry),
     #("external_ids", json.array(h.external_ids, json.string)),
     #("first_seen_at", time_json(h.first_seen_at)),
     #("last_seen_at", time_json(h.last_seen_at)),

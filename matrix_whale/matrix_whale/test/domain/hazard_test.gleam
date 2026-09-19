@@ -1,6 +1,7 @@
 import domain/hazard
 import gleam/dynamic/decode
 import gleam/json
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import gleam/time/timestamp
@@ -297,4 +298,81 @@ fn sample_hazard() -> hazard.Hazard {
     first_seen_at: ts,
     last_seen_at: ts,
   )
+}
+
+pub fn to_polyline_json_encodes_polygon_and_preserves_other_fields_test() {
+  let polygon_geojson =
+    "{\"type\":\"Polygon\",\"coordinates\":[[[105.8726,-8.5419],[106.0,-8.0],[105.0,-8.0],[105.8726,-8.5419]]]}"
+  let h =
+    hazard.Hazard(..sample_hazard(), primary_geometry: Some(polygon_geojson))
+
+  let default_json = hazard.to_json(h) |> json.to_string
+  let polyline_json = hazard.to_polyline_json(h) |> json.to_string
+
+  // Both have identical id
+  let assert Ok(id1) =
+    json.parse(default_json, decode.at(["id"], decode.string))
+  let assert Ok(id2) =
+    json.parse(polyline_json, decode.at(["id"], decode.string))
+  id1 |> should.equal(id2)
+
+  // Default geometry is GeoJSON Polygon without "encoding" field
+  let assert Ok(def_geom_type) =
+    json.parse(
+      default_json,
+      decode.at(["primary_geometry", "type"], decode.string),
+    )
+  def_geom_type |> should.equal("Polygon")
+  case
+    json.parse(
+      default_json,
+      decode.at(["primary_geometry", "encoding"], decode.string),
+    )
+  {
+    Error(_) -> True |> should.equal(True)
+    Ok(_) -> False |> should.equal(True)
+  }
+
+  // Polyline geometry has type: Polygon, encoding: polyline, precision: 4, coordinates: list(string)
+  let assert Ok(poly_geom_type) =
+    json.parse(
+      polyline_json,
+      decode.at(["primary_geometry", "type"], decode.string),
+    )
+  poly_geom_type |> should.equal("Polygon")
+
+  let assert Ok(poly_encoding) =
+    json.parse(
+      polyline_json,
+      decode.at(["primary_geometry", "encoding"], decode.string),
+    )
+  poly_encoding |> should.equal("polyline")
+
+  let assert Ok(poly_precision) =
+    json.parse(
+      polyline_json,
+      decode.at(["primary_geometry", "precision"], decode.int),
+    )
+  poly_precision |> should.equal(4)
+
+  let assert Ok(poly_coords) =
+    json.parse(
+      polyline_json,
+      decode.at(["primary_geometry", "coordinates"], decode.list(decode.string)),
+    )
+  list.length(poly_coords) |> should.equal(1)
+}
+
+pub fn to_polyline_json_falls_back_for_point_test() {
+  let h = sample_hazard()
+  let default_json = hazard.to_json(h) |> json.to_string
+  let polyline_json = hazard.to_polyline_json(h) |> json.to_string
+  polyline_json |> should.equal(default_json)
+}
+
+pub fn to_polyline_json_handles_none_geometry_test() {
+  let h = hazard.Hazard(..sample_hazard(), primary_geometry: None)
+  let default_json = hazard.to_json(h) |> json.to_string
+  let polyline_json = hazard.to_polyline_json(h) |> json.to_string
+  polyline_json |> should.equal(default_json)
 }

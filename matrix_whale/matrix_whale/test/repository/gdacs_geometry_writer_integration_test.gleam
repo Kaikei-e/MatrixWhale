@@ -1,7 +1,9 @@
 // Opt-in PostgreSQL integration tests. See test/support/test_db.gleam for
 // the shared harness; MATRIX_WHALE_TEST_DATABASE_URL must be set to a
 // disposable, dedicated database.
+import domain/hazard
 import gleam/int
+import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
 import gleeunit/should
@@ -9,6 +11,7 @@ import intake/record
 import message/reciever/models/gdacs
 import repository/gdacs_event_writer
 import repository/gdacs_geometry_writer
+import repository/hazard_reader
 import support/test_db
 
 const feature_collection = "{\"type\":\"FeatureCollection\",\"features\":[{\"properties\":{\"Class\":\"Poly_Circle\"},\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[[105,-9],[106,-9],[106,-8],[105,-8],[105,-9]]]}}]}"
@@ -51,7 +54,7 @@ pub fn apply_fills_primary_geometry_and_geometries_integration_test() {
   test_db.with_test_db(fn(conn) {
     let now = test_db.now_ms()
     let feature =
-      sample_feature(event_id: 11, episode_id: 1, modified_at_ms: 100)
+      sample_feature(event_id: 11, episode_id: 1, modified_at_ms: now)
     let assert Ok(_) =
       gdacs_event_writer.write_batch([incoming(feature)], now, conn)
 
@@ -67,6 +70,18 @@ pub fn apply_fills_primary_geometry_and_geometries_integration_test() {
     let assert [changed] = outcome.changed_hazards
     changed.primary_geometry |> should.not_equal(None)
     changed.geometries |> should.not_equal(None)
+
+    let assert Ok([snapshot]) = hazard_reader.recent(336, [], [], conn)
+    snapshot.geometries |> should.equal(None)
+    snapshot.primary_geometry |> should.equal(changed.primary_geometry)
+    snapshot
+    |> hazard.to_json
+    |> json.to_string
+    |> should.equal(changed |> hazard.to_json |> json.to_string)
+
+    let assert Ok(Some(#(detail, _))) =
+      hazard_reader.detail("gdacs", "EQ-11", conn)
+    detail.geometries |> should.equal(changed.geometries)
   })
 }
 

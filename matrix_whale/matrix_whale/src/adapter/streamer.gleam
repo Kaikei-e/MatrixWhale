@@ -528,8 +528,13 @@ pub fn hazard_snapshot_response(
   rows: List(hazard.Hazard),
   generated_at: String,
 ) -> Response(mist.ResponseData) {
+  let query = request.get_query(req) |> result.unwrap([])
+  let serializer = case list.key_find(query, "geometry") {
+    Ok("polyline") -> hazard.to_polyline_json
+    _ -> hazard.to_json
+  }
   let fields = [
-    #("hazards", json.array(rows, hazard.to_json)),
+    #("hazards", json.array(rows, serializer)),
     #("count", json.int(list.length(rows))),
   ]
   let validator = json.object(fields) |> json.to_string
