@@ -1,4 +1,5 @@
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+import { withSnapshotPriority } from '$lib/api/snapshotPriority';
 import {
 	type Alert,
 	type BlinkMode,
@@ -282,7 +283,7 @@ export class AlertStore {
 
 	#loadSnapshot(url: string): Promise<void> {
 		if (this.#snapshotInFlight) return this.#snapshotInFlight;
-		const promise = this.#doLoadSnapshot(url);
+		const promise = withSnapshotPriority(() => this.#doLoadSnapshot(url));
 		this.#snapshotInFlight = promise;
 		return promise.finally(() => {
 			if (this.#snapshotInFlight === promise) {

@@ -4,6 +4,7 @@ import { bucketFor, bucketRank } from '$lib/alerts/blinkBucket';
 import { NWS_EVENT_COLORS, DEFAULT_NWS_COLOR } from '$lib/alerts/nwsEventStyle';
 import { extractUgc } from '$lib/alerts/geocodes';
 import { decodeGeometry } from './geometryTransport';
+import { waitForSnapshots } from '$lib/api/snapshotPriority';
 
 export interface ZoneState {
 	[key: string]: unknown;
@@ -92,8 +93,8 @@ export function decodeFeatureCollection(fc: GeoJSON.FeatureCollection): GeoJSON.
 	return fc;
 }
 
-// HTTP/1.1 has six connections per origin, three held by live SSE streams.
-// Leave room for snapshots instead of queueing all five map files ahead of them.
+// The stores share one SSE connection. Keep map downloads bounded so snapshots
+// can still progress on a slow connection.
 async function downloadGeoJson(
 	url: string,
 	fetchFn: typeof fetch
@@ -104,6 +105,7 @@ async function downloadGeoJson(
 		activeDownloads++;
 	}
 	try {
+		await waitForSnapshots();
 		const response = await fetchFn(url, { priority: 'low' });
 		if (!response.ok) {
 			throw new Error(`Failed to fetch GeoJSON from ${url}: HTTP ${response.status}`);
