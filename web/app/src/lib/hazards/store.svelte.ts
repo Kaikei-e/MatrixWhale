@@ -2,6 +2,7 @@ import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import type { DataSource } from '$lib/earthquakes/types';
 import { fetchSourcesShared } from '$lib/sources/fetch';
 import { decodeHazard } from '$lib/chart/geometryTransport';
+import { openStreamChannel, type LiveStreamSubscription } from '$lib/api/liveStream';
 import {
 	ALERT_LEVELS,
 	HAZARD_TYPES,
@@ -53,8 +54,8 @@ export class HazardStore {
 	filter = $state<HazardFilter>(defaultFilter());
 
 	#snapshotBaseUrl: string | undefined;
-	#streamUrl: string | undefined;
-	#es: EventSource | undefined;
+	#es: LiveStreamSubscription | undefined;
+	#snapshotInFlight: Promise<void> | null = null;
 	#etagByUrl = new SvelteMap<string, string>();
 	#snapshotByUrl = new SvelteMap<string, { hazards: Hazard[]; streamSequence: number }>();
 	#watchdog: ReturnType<typeof setTimeout> | undefined;
@@ -71,14 +72,13 @@ export class HazardStore {
 	);
 
 	async connect(
-		snapshotUrl: string,
-		streamUrl: string,
+		snapshotUrl: string = '/api/v1/hazards/recent',
+		streamUrl?: string,
 		filter: Partial<HazardFilter> = {}
 	): Promise<void> {
 		if (this.#es) return;
 		this.filter = boundedFilter(filter);
 		this.#snapshotBaseUrl = snapshotUrl;
-		this.#streamUrl = streamUrl;
 		this.connected = 'connecting';
 		// Mirrors EarthquakeStore: the initial snapshot loads from `open`, after
 		// the SSE subscription has begun, so events arriving during the download
@@ -119,12 +119,14 @@ export class HazardStore {
 	setFilter(filter: Partial<HazardFilter>): void {
 		this.filter = boundedFilter({ ...this.filter, ...filter });
 		this.#filterRevision += 1;
+		this.#snapshotInFlight = null;
 		this.trim();
 		void this.#loadSnapshot();
 	}
 
 	disconnect(): void {
 		this.#generation += 1;
+		this.#snapshotInFlight = null;
 		this.#es?.close();
 		this.#es = undefined;
 		if (this.#watchdog) clearTimeout(this.#watchdog);
@@ -133,6 +135,7 @@ export class HazardStore {
 	}
 
 	retrySnapshot(): void {
+		this.#snapshotInFlight = null;
 		void this.#loadSnapshot();
 	}
 
@@ -153,6 +156,20 @@ export class HazardStore {
 	}
 
 	async #loadSnapshot(): Promise<void> {
+		if (!this.#snapshotBaseUrl) return;
+		if (this.#snapshotInFlight) return this.#snapshotInFlight;
+		const promise = this.#doLoadSnapshot();
+		this.#snapshotInFlight = promise;
+		try {
+			await promise;
+		} finally {
+			if (this.#snapshotInFlight === promise) {
+				this.#snapshotInFlight = null;
+			}
+		}
+	}
+
+	async #doLoadSnapshot(): Promise<void> {
 		if (!this.#snapshotBaseUrl) return;
 		const generation = this.#generation;
 		const filterRevision = this.#filterRevision;
@@ -233,24 +250,24 @@ export class HazardStore {
 		}
 	}
 
-	#openStream(url: string): void {
-		const es = new EventSource(url);
+	#openStream(url?: string): void {
+		const es = openStreamChannel('hazards', url);
 		es.addEventListener('new', this.#handleNew);
 		es.addEventListener('update', this.#handleUpdate);
 		es.addEventListener('resync', this.#handleResync);
 		es.addEventListener('heartbeat', this.#handleHeartbeat);
 		es.onopen = this.#handleOpen;
 		es.onerror = this.#handleError;
+		es.onreconnect = this.#handleReconnect;
 		this.#es = es;
 		this.#armWatchdog();
 	}
 
 	#restartStream(): void {
-		if (!this.#streamUrl || !this.#es) return;
-		this.#es.close();
-		this.#es = undefined;
+		if (!this.#es) return;
 		this.connected = 'connecting';
-		this.#openStream(this.#streamUrl);
+		this.#armWatchdog();
+		this.#es.restart();
 	}
 
 	#armWatchdog(): void {
@@ -291,13 +308,25 @@ export class HazardStore {
 	}
 
 	#handleNew = (event: MessageEvent<string>): void => {
-		const hazard = JSON.parse(event.data) as Hazard;
+		let raw: Hazard;
+		try {
+			raw = JSON.parse(event.data) as Hazard;
+		} catch {
+			return;
+		}
+		const hazard = decodeHazard(raw);
 		this.#emitRaw({ type: 'new', record: hazard });
 		this.#applyStreamHazard(hazard);
 	};
 
 	#handleUpdate = (event: MessageEvent<string>): void => {
-		const hazard = JSON.parse(event.data) as Hazard;
+		let raw: Hazard;
+		try {
+			raw = JSON.parse(event.data) as Hazard;
+		} catch {
+			return;
+		}
+		const hazard = decodeHazard(raw);
 		this.#emitRaw({ type: 'update', record: hazard });
 		this.#applyStreamHazard(hazard);
 	};
@@ -312,11 +341,18 @@ export class HazardStore {
 		this.#armWatchdog();
 	};
 
+	#handleReconnect = (): void => {
+		this.connected = 'connecting';
+		this.#armWatchdog();
+	};
+
 	#handleOpen = (): void => {
 		this.connected = 'open';
 		this.#armWatchdog();
-		// Also runs after a watchdog restart; a snapshot repairs anything outside
-		// the server's replay buffer or lost when the watchdog rebuilt the stream.
+		// Invalidate any pre-disconnect snapshot in flight so it does not count as a post-reconnect baseline
+		this.#snapshotRequest += 1;
+		this.#snapshotInFlight = null;
+		// Start fresh post-subscription snapshot; subsequent resync events will coalesce into it
 		void this.#loadSnapshot();
 	};
 

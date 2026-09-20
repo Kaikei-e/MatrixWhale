@@ -231,7 +231,7 @@ test('injecting an SSE new earthquake while at the top inserts it immediately', 
 }) => {
 	await mockBackend(page);
 	await mockTimeline(page);
-	const earthquakeSse = new SseInjector(page, '**/api/v1/earthquakes/stream');
+	const earthquakeSse = new SseInjector(page);
 	await earthquakeSse.install();
 	await page.goto('/globe');
 
@@ -239,7 +239,7 @@ test('injecting an SSE new earthquake while at the top inserts it immediately', 
 	await sidePanel.getByRole('tab', { name: /Timeline/ }).click();
 	await expect(sidePanel.getByTestId('timeline-item')).toHaveCount(7);
 
-	earthquakeSse.push('new', {
+	earthquakeSse.push('earthquakes.new', {
 		...earthquakeItem(999, T0).earthquake,
 		place: 'Brand New Quake'
 	});
@@ -253,7 +253,7 @@ test('injecting while scrolled down shows the "1 new" pill; clicking it inserts 
 }) => {
 	await mockBackend(page);
 	await mockTimeline(page);
-	const earthquakeSse = new SseInjector(page, '**/api/v1/earthquakes/stream');
+	const earthquakeSse = new SseInjector(page);
 	await earthquakeSse.install();
 	await page.goto('/globe');
 
@@ -265,7 +265,7 @@ test('injecting while scrolled down shows the "1 new" pill; clicking it inserts 
 		el.scrollTop = 200;
 	});
 
-	earthquakeSse.push('new', {
+	earthquakeSse.push('earthquakes.new', {
 		...earthquakeItem(998, T0).earthquake,
 		place: 'Pending Quake'
 	});
@@ -286,7 +286,7 @@ test('injecting an update for a visible key shows the updated badge without movi
 }) => {
 	await mockBackend(page);
 	await mockTimeline(page);
-	const earthquakeSse = new SseInjector(page, '**/api/v1/earthquakes/stream');
+	const earthquakeSse = new SseInjector(page);
 	await earthquakeSse.install();
 	await page.goto('/globe');
 
@@ -296,7 +296,7 @@ test('injecting an update for a visible key shows the updated badge without movi
 	await expect(rows).toHaveCount(7);
 	await expect(rows.nth(0)).toContainText('Test Trench');
 
-	earthquakeSse.push('update', {
+	earthquakeSse.push('earthquakes.update', {
 		...earthquakeItem(501, minutesBefore(1)).earthquake,
 		place: 'Revised Trench'
 	});

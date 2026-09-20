@@ -68,3 +68,22 @@ test('fetches static map data and source attribution once across map and filter 
 	expect([...geodata.values()]).toEqual([1, 1, 1, 1, 1]);
 	expect(sources).toBe(1);
 });
+
+test('shares a single SSE transport socket across alerts, earthquakes, and hazards stores', async ({
+	page
+}) => {
+	await mockBackend(page);
+	const sseRequests: string[] = [];
+	page.on('request', (request) => {
+		const url = new URL(request.url());
+		if (url.pathname.includes('/stream')) {
+			sseRequests.push(url.pathname + url.search);
+		}
+	});
+
+	await page.goto('/globe');
+	await expect(page.getByTestId('earthquake-map-layer')).toHaveAttribute('data-ready', 'true');
+
+	// Expect exactly 1 SSE connection opened across the entire page (reduced 3 -> 1)
+	expect(sseRequests).toEqual(['/api/v1/stream?geometry=polyline']);
+});

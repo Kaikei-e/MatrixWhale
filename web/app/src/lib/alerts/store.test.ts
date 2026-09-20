@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { resetSharedLiveStream } from '$lib/api/liveStream';
 import { AlertStore, nextBlinkAfterArrival } from './store.svelte';
 import type { Alert } from './types';
 
@@ -21,11 +22,19 @@ class FakeEventSource {
 		this.closed = true;
 	}
 
+	open(): void {
+		this.onopen?.(new Event('open'));
+	}
+
 	emit(type: string, body: unknown): void {
 		for (const listener of this.listeners.get(type) ?? []) {
 			listener(new MessageEvent(type, { data: JSON.stringify(body) }));
 		}
 	}
+}
+
+async function settle(): Promise<void> {
+	for (let index = 0; index < 8; index += 1) await Promise.resolve();
 }
 
 function makeAlert(overrides: Partial<Alert>): Alert {
@@ -196,12 +205,14 @@ describe('AlertStore derived state', () => {
 
 describe('AlertStore.subscribeRaw', () => {
 	beforeEach(() => {
+		resetSharedLiveStream();
 		FakeEventSource.instances = [];
 		vi.stubGlobal('EventSource', FakeEventSource);
 		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([]))));
 	});
 
 	afterEach(() => {
+		resetSharedLiveStream();
 		vi.unstubAllGlobals();
 	});
 
@@ -209,6 +220,8 @@ describe('AlertStore.subscribeRaw', () => {
 		const store = new AlertStore();
 		await store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
 		const stream = FakeEventSource.instances[0];
+		stream.open();
+		await settle();
 
 		const received: Array<{ type: string; id?: string }> = [];
 		const unsubscribe = store.subscribeRaw((event) => {
@@ -238,6 +251,8 @@ describe('AlertStore.subscribeRaw', () => {
 		const store = new AlertStore();
 		await store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
 		const stream = FakeEventSource.instances[0];
+		stream.open();
+		await settle();
 
 		const inactiveAlert = makeAlert({ id: 'inactive-1', severity: 'Extreme' });
 		stream.emit('alert.ended', inactiveAlert);
@@ -266,6 +281,8 @@ describe('AlertStore.subscribeRaw', () => {
 		const store = new AlertStore();
 		await store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
 		const stream = FakeEventSource.instances[0];
+		stream.open();
+		await settle();
 
 		expect(store.activeAlerts.size).toBe(2);
 
@@ -360,6 +377,7 @@ describe('AlertStore.subscribeRaw', () => {
 
 		expect(FakeEventSource.instances.length).toBe(1);
 		const stream = FakeEventSource.instances[0];
+		stream.open();
 
 		const bufferedAlert = makeAlert({
 			id: 'race-1',
@@ -400,12 +418,14 @@ describe('AlertStore.subscribeRaw', () => {
 		const stream = FakeEventSource.instances[0];
 		expect(stream.closed).toBe(false);
 
+		stream.open();
 		store.disconnect();
 		expect(stream.closed).toBe(true);
 		expect(store.connected).toBe('closed');
 
 		resolveSnapshot!(new Response(JSON.stringify([makeAlert({ id: 'abandoned-1' })])));
 		await connectPromise;
+		await settle();
 
 		expect(store.activeAlerts.size).toBe(0);
 		expect(store.connected).toBe('closed');
@@ -416,6 +436,8 @@ describe('AlertStore.subscribeRaw', () => {
 		);
 		await store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
 		expect(FakeEventSource.instances.length).toBe(2);
+		FakeEventSource.instances[1].open();
+		await settle();
 		expect(store.activeAlerts.has('reconnect-1')).toBe(true);
 		store.disconnect();
 	});
@@ -433,6 +455,7 @@ describe('AlertStore.subscribeRaw', () => {
 		const store = new AlertStore();
 		const connectPromise = store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
 		const stream = FakeEventSource.instances[0];
+		stream.open();
 
 		const olderEvent = makeAlert({
 			id: 'alert-1',
@@ -463,6 +486,7 @@ describe('AlertStore.subscribeRaw', () => {
 
 			vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([]))));
 			await store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+			FakeEventSource.instances[0].open();
 
 			vi.advanceTimersByTime(10000);
 
@@ -494,6 +518,7 @@ describe('AlertStore.subscribeRaw', () => {
 			const store = new AlertStore();
 			await store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
 			const stream = FakeEventSource.instances[0];
+			stream.open();
 
 			const alert = makeAlert({ id: 'fading-1', severity: 'Extreme' });
 			store.activeAlerts.set(alert.id, alert);
@@ -519,6 +544,8 @@ describe('AlertStore.subscribeRaw', () => {
 		const store = new AlertStore();
 		await store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
 		const stream = FakeEventSource.instances[0];
+		stream.open();
+		await settle();
 
 		store.subscribeRaw(() => {
 			throw new Error('listener failure');
@@ -551,6 +578,7 @@ describe('AlertStore.subscribeRaw', () => {
 
 			const store = new AlertStore();
 			const connectPromise = store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+			FakeEventSource.instances[0].open();
 
 			// Let fetch resolve and start reading the body
 			await vi.advanceTimersByTimeAsync(100);
@@ -590,6 +618,7 @@ describe('AlertStore.subscribeRaw', () => {
 
 			const store = new AlertStore();
 			const connectPromise = store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+			FakeEventSource.instances[0].open();
 
 			await vi.advanceTimersByTimeAsync(100);
 
@@ -630,6 +659,7 @@ describe('AlertStore.subscribeRaw', () => {
 
 			const store = new AlertStore();
 			const connectPromise = store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+			FakeEventSource.instances[0].open();
 
 			await vi.advanceTimersByTimeAsync(100);
 			controllerRef!.enqueue(encoder.encode('['));
@@ -675,9 +705,10 @@ describe('AlertStore.subscribeRaw', () => {
 
 			const store = new AlertStore();
 			const connectPromise = store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+			const sseStream = FakeEventSource.instances[0];
+			sseStream.open();
 
 			await vi.advanceTimersByTimeAsync(100);
-			const sseStream = FakeEventSource.instances[0];
 
 			// SSE event arrives while snapshot is downloading
 			sseStream.emit('alert.update', alertNewSse);
@@ -717,9 +748,10 @@ describe('AlertStore.subscribeRaw', () => {
 
 			const store = new AlertStore();
 			const connectPromise = store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+			FakeEventSource.instances[0].open();
 
 			await vi.advanceTimersByTimeAsync(100);
-			expect(store.connected).toBe('connecting');
+			expect(store.connected).toBe('open');
 
 			store.disconnect();
 			expect(store.connected).toBe('closed');
@@ -732,5 +764,21 @@ describe('AlertStore.subscribeRaw', () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+
+	it('retains immediate pre-subscription snapshot when connected with an explicit custom stream URL', async () => {
+		const alert1 = makeAlert({ id: 'custom-1', severity: 'Extreme' });
+		const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([alert1])));
+		vi.stubGlobal('fetch', fetchMock);
+
+		const store = new AlertStore();
+		// Passing an explicit custom stream URL
+		await store.connect('/custom/snapshot', '/custom/stream');
+
+		// Snapshot request was started and resolved immediately during connect, BEFORE any open event
+		expect(fetchMock).toHaveBeenCalledWith('/custom/snapshot', expect.any(Object));
+		expect(store.activeAlerts.has('custom-1')).toBe(true);
+
+		store.disconnect();
 	});
 });

@@ -1,5 +1,6 @@
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { fetchSourcesShared } from '$lib/sources/fetch';
+import { openStreamChannel, type LiveStreamSubscription } from '$lib/api/liveStream';
 import type {
 	DataSource,
 	Earthquake,
@@ -56,8 +57,8 @@ export class EarthquakeStore {
 	filter = $state<EarthquakeFilter>({ ...DEFAULT_FILTER });
 
 	#snapshotBaseUrl: string | undefined;
-	#streamUrl: string | undefined;
-	#es: EventSource | undefined;
+	#es: LiveStreamSubscription | undefined;
+	#snapshotInFlight: Promise<void> | null = null;
 	#etagByUrl = new SvelteMap<string, string>();
 	#snapshotByUrl = new SvelteMap<string, { earthquakes: Earthquake[]; streamSequence: number }>();
 	#watchdog: ReturnType<typeof setTimeout> | undefined;
@@ -89,14 +90,13 @@ export class EarthquakeStore {
 	});
 
 	async connect(
-		snapshotUrl: string,
-		streamUrl: string,
+		snapshotUrl: string = '/api/v1/earthquakes/recent',
+		streamUrl?: string,
 		filter: Partial<EarthquakeFilter> = DEFAULT_FILTER
 	): Promise<void> {
 		if (this.#es) return;
 		this.filter = boundedFilter(filter);
 		this.#snapshotBaseUrl = snapshotUrl;
-		this.#streamUrl = streamUrl;
 		this.connected = 'connecting';
 		// The initial snapshot is loaded from `open`, after the server has begun
 		// the SSE subscription. Events arriving while it downloads win by their
@@ -119,12 +119,14 @@ export class EarthquakeStore {
 	setFilter(filter: Partial<EarthquakeFilter>): void {
 		this.filter = boundedFilter({ ...this.filter, ...filter });
 		this.#filterRevision += 1;
+		this.#snapshotInFlight = null;
 		this.trim();
 		void this.#loadSnapshot();
 	}
 
 	disconnect(): void {
 		this.#generation += 1;
+		this.#snapshotInFlight = null;
 		this.#es?.close();
 		this.#es = undefined;
 		if (this.#watchdog) clearTimeout(this.#watchdog);
@@ -137,6 +139,7 @@ export class EarthquakeStore {
 	}
 
 	retrySnapshot(): void {
+		this.#snapshotInFlight = null;
 		void this.#loadSnapshot();
 	}
 
@@ -164,6 +167,20 @@ export class EarthquakeStore {
 	}
 
 	async #loadSnapshot(): Promise<void> {
+		if (!this.#snapshotBaseUrl) return;
+		if (this.#snapshotInFlight) return this.#snapshotInFlight;
+		const promise = this.#doLoadSnapshot();
+		this.#snapshotInFlight = promise;
+		try {
+			await promise;
+		} finally {
+			if (this.#snapshotInFlight === promise) {
+				this.#snapshotInFlight = null;
+			}
+		}
+	}
+
+	async #doLoadSnapshot(): Promise<void> {
 		if (!this.#snapshotBaseUrl) return;
 		const generation = this.#generation;
 		const filterRevision = this.#filterRevision;
@@ -244,24 +261,24 @@ export class EarthquakeStore {
 		}
 	}
 
-	#openStream(url: string): void {
-		const es = new EventSource(url);
+	#openStream(url?: string): void {
+		const es = openStreamChannel('earthquakes', url);
 		es.addEventListener('new', this.#handleNew);
 		es.addEventListener('update', this.#handleUpdate);
 		es.addEventListener('resync', this.#handleResync);
 		es.addEventListener('heartbeat', this.#handleHeartbeat);
 		es.onopen = this.#handleOpen;
 		es.onerror = this.#handleError;
+		es.onreconnect = this.#handleReconnect;
 		this.#es = es;
 		this.#armWatchdog();
 	}
 
 	#restartStream(): void {
-		if (!this.#streamUrl || !this.#es) return;
-		this.#es.close();
-		this.#es = undefined;
+		if (!this.#es) return;
 		this.connected = 'connecting';
-		this.#openStream(this.#streamUrl);
+		this.#armWatchdog();
+		this.#es.restart();
 	}
 
 	#armWatchdog(): void {
@@ -360,12 +377,18 @@ export class EarthquakeStore {
 		this.#armWatchdog();
 	};
 
+	#handleReconnect = (): void => {
+		this.connected = 'connecting';
+		this.#armWatchdog();
+	};
+
 	#handleOpen = (): void => {
 		this.connected = 'open';
 		this.#armWatchdog();
-		// Also run this after a watchdog restart. Native EventSource reconnects
-		// with Last-Event-ID when possible; a snapshot repairs anything outside
-		// the server's replay buffer or lost when the watchdog rebuilt it.
+		// Invalidate any pre-disconnect snapshot in flight so it does not count as a post-reconnect baseline
+		this.#snapshotRequest += 1;
+		this.#snapshotInFlight = null;
+		// Start fresh post-subscription snapshot; subsequent resync events will coalesce into it
 		void this.#loadSnapshot();
 	};
 

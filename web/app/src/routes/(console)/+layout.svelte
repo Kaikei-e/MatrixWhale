@@ -7,7 +7,7 @@
 	let { children }: { children?: Snippet } = $props();
 
 	$effect(() => {
-		if (browser) alertStore.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+		if (browser) alertStore.connect();
 		return () => alertStore.disconnect();
 	});
 

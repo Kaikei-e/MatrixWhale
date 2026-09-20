@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearSourcesInFlight } from '$lib/sources/fetch';
+import { resetSharedLiveStream } from '$lib/api/liveStream';
 import { encodePolygon, encodeMultiPolygon } from '../../../scripts/geodata/geometry-transport.mjs';
 import { HazardStore } from './store.svelte';
 import type { Hazard } from './types';
@@ -83,6 +84,7 @@ describe('HazardStore', () => {
 	const fetchMock = vi.fn();
 
 	beforeEach(() => {
+		resetSharedLiveStream();
 		clearSourcesInFlight();
 		vi.useFakeTimers();
 		FakeEventSource.instances = [];
@@ -92,6 +94,7 @@ describe('HazardStore', () => {
 	});
 
 	afterEach(() => {
+		resetSharedLiveStream();
 		clearSourcesInFlight();
 		vi.useRealTimers();
 		vi.unstubAllGlobals();
@@ -379,9 +382,9 @@ describe('HazardStore', () => {
 	it('appends geometry=polyline query parameter to the snapshot URL only, not SSE or detail', async () => {
 		fetchMock.mockResolvedValue(new Response(JSON.stringify({ hazards: [] })));
 		const store = new HazardStore();
-		await store.connect('/api/v1/hazards/recent', '/api/v1/hazards/stream');
+		await store.connect('/api/v1/hazards/recent', '/custom/hazards/stream');
 		const stream = FakeEventSource.instances[0];
-		expect(stream.url).toBe('/api/v1/hazards/stream');
+		expect(stream.url).toBe('/custom/hazards/stream');
 		expect(stream.url).not.toContain('geometry=polyline');
 
 		stream.open();
@@ -572,6 +575,88 @@ describe('HazardStore', () => {
 
 		expect(store.hazards.get('gdacs:TC-cached')?.primary_geometry).toEqual(polyGeoJson);
 		expect(store.snapshotError).toBeNull();
+
+		store.disconnect();
+	});
+
+	it('invalidates pending snapshot on reconnect so deferred old response does not count as fresh baseline', async () => {
+		let resolveOldSnapshot!: (res: Response) => void;
+		const oldSnapshotPromise = new Promise<Response>((resolve) => {
+			resolveOldSnapshot = resolve;
+		});
+
+		let resolveNewSnapshot!: (res: Response) => void;
+		const newSnapshotPromise = new Promise<Response>((resolve) => {
+			resolveNewSnapshot = resolve;
+		});
+
+		let fetchCalls = 0;
+		fetchMock.mockImplementation(() => {
+			fetchCalls++;
+			if (fetchCalls === 1) return oldSnapshotPromise;
+			return newSnapshotPromise;
+		});
+
+		const store = new HazardStore();
+		await store.connect('/api/v1/hazards/recent', '/api/v1/hazards/stream');
+		const stream = FakeEventSource.instances[0];
+
+		// Initial connection starts snapshot 1
+		stream.open();
+		expect(fetchCalls).toBe(1);
+
+		// Native reconnect triggers new open while snapshot 1 is still pending
+		stream.open();
+		expect(fetchCalls).toBe(2);
+
+		// Subsequent resync coalesces into the new post-subscription snapshot
+		stream.emit('resync', {});
+		expect(fetchCalls).toBe(2);
+
+		// SSE update arrives on the reconnected stream
+		const streamHazard = makeHazard({
+			id: 'gdacs:TC-1',
+			title: 'Fresh SSE Cyclone',
+			modified_at_ms: 50
+		});
+		stream.emit('new', streamHazard);
+		expect(store.hazards.get('gdacs:TC-1')?.title).toBe('Fresh SSE Cyclone');
+
+		// The old deferred snapshot (begun before reconnect) now resolves with stale data
+		resolveOldSnapshot(
+			new Response(
+				JSON.stringify({
+					hazards: [
+						makeHazard({
+							id: 'gdacs:TC-1',
+							title: 'Stale Pre-Reconnect Cyclone',
+							modified_at_ms: 10
+						})
+					]
+				})
+			)
+		);
+		await settle();
+
+		// Old snapshot must NOT overwrite the fresh SSE event
+		expect(store.hazards.get('gdacs:TC-1')?.title).toBe('Fresh SSE Cyclone');
+
+		// Fresh post-reconnect snapshot resolves
+		resolveNewSnapshot(
+			new Response(
+				JSON.stringify({
+					hazards: [
+						makeHazard({
+							id: 'gdacs:TC-1',
+							title: 'Fresh SSE Cyclone',
+							modified_at_ms: 50
+						})
+					]
+				})
+			)
+		);
+		await settle();
+		expect(store.hazards.get('gdacs:TC-1')?.title).toBe('Fresh SSE Cyclone');
 
 		store.disconnect();
 	});

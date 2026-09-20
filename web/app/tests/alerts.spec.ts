@@ -80,7 +80,7 @@ test.describe('Alerts tab in SidePane', () => {
 
 	test('retains detail on SSE ended and refetches on SSE resync', async ({ page }) => {
 		await mockBackend(page);
-		const alertSse = new SseInjector(page, '**/api/v1/alerts/stream');
+		const alertSse = new SseInjector(page);
 		await alertSse.install();
 		await page.goto('/globe');
 
@@ -97,7 +97,7 @@ test.describe('Alerts tab in SidePane', () => {
 		await expect(sidePanel.getByRole('heading', { name: /Tornado Warning/ })).toBeVisible();
 
 		// Push SSE ended event for Tornado Warning
-		alertSse.push('alert.ended', {
+		alertSse.push('alerts.ended', {
 			...ALERTS[0],
 			ended_at: new Date().toISOString(),
 			end_reason: 'expired'
@@ -119,7 +119,7 @@ test.describe('Alerts tab in SidePane', () => {
 		const resyncFetchPromise = page.waitForRequest((req) =>
 			req.url().includes('/api/v1/alerts/active')
 		);
-		alertSse.push('resync', { type: 'resync' });
+		alertSse.push('alerts.resync', { type: 'resync' });
 		await resyncFetchPromise;
 
 		// Once snapshot is reloaded, active count returns to 2
@@ -150,7 +150,7 @@ test.describe('Alerts tab in SidePane', () => {
 
 	test('update of the same alert id with new last_seen_at refetches detail', async ({ page }) => {
 		await mockBackend(page);
-		const alertSse = new SseInjector(page, '**/api/v1/alerts/stream');
+		const alertSse = new SseInjector(page);
 		await alertSse.install();
 		await page.goto('/globe');
 
@@ -174,7 +174,7 @@ test.describe('Alerts tab in SidePane', () => {
 		expect(detailFetchCount).toBe(1);
 
 		// Push SSE update for the SAME alert id with a new last_seen_at
-		alertSse.push('alert.update', {
+		alertSse.push('alerts.update', {
 			...ALERTS[0],
 			headline: 'Tornado Warning Updated By Radar',
 			last_seen_at: new Date().toISOString()

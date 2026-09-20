@@ -541,6 +541,12 @@ export async function mockBackend(page: Page): Promise<void> {
 			}
 		});
 	});
+	await page.route('**/api/v1/stream*', (route) =>
+		route.fulfill({
+			contentType: 'text/event-stream',
+			body: 'event: alerts.heartbeat\nid: 1\ndata: {}\n\nevent: earthquakes.heartbeat\ndata: {}\n\nevent: hazards.heartbeat\ndata: {}\n\n'
+		})
+	);
 	await page.route('**/api/v1/alerts/stream', (route) =>
 		route.fulfill({
 			contentType: 'text/event-stream',
@@ -593,24 +599,44 @@ export async function mockBackend(page: Page): Promise<void> {
  */
 export class SseInjector {
 	#queue: string[] = [];
+	#started = false;
+	#wake: (() => void) | undefined;
 
 	constructor(
 		private readonly page: Page,
-		private readonly urlPattern: string
+		private readonly urlPattern: string = '**/api/v1/stream*'
 	) {}
 
 	async install(): Promise<void> {
-		await this.page.route(this.urlPattern, (route) => {
-			const events = this.#queue.join('');
-			this.#queue = [];
-			route.fulfill({
-				contentType: 'text/event-stream',
-				body: `retry: 50\nevent: heartbeat\ndata: {}\n\n${events}`
+		// When tests specify a legacy pattern, also route the shared stream default
+		const patterns = [this.urlPattern];
+		if (this.urlPattern !== '**/api/v1/stream*') {
+			patterns.push('**/api/v1/stream*');
+		}
+
+		for (const pattern of patterns) {
+			await this.page.route(pattern, async (route) => {
+				// Hold the reconnect until the next injected event. Completing an
+				// empty stream every 50ms would continuously refetch snapshots.
+				if (this.#started && this.#queue.length === 0) {
+					await new Promise<void>((resolve) => {
+						this.#wake = resolve;
+					});
+				}
+				this.#started = true;
+				const events = this.#queue.join('');
+				this.#queue = [];
+				route.fulfill({
+					contentType: 'text/event-stream',
+					body: `retry: 50\nevent: alerts.heartbeat\ndata: {}\n\nevent: earthquakes.heartbeat\ndata: {}\n\nevent: hazards.heartbeat\ndata: {}\n\nevent: heartbeat\ndata: {}\n\n${events}`
+				});
 			});
-		});
+		}
 	}
 
 	push(eventType: string, data: unknown): void {
 		this.#queue.push(`event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`);
+		this.#wake?.();
+		this.#wake = undefined;
 	}
 }

@@ -11,6 +11,11 @@ import { computeZoneSeverity } from './geocodes';
 import { activeCountriesWithCounts, type CountryOption } from './countries';
 import { filterAlerts } from './filter';
 import { loadAcknowledged, saveAcknowledged, loadFlag, saveFlag } from './storage';
+import {
+	openStreamChannel,
+	isSharedStreamUrl,
+	type LiveStreamSubscription
+} from '$lib/api/liveStream';
 
 const ARRIVAL_MS = 5000;
 const UPDATE_MS = 1000;
@@ -140,8 +145,10 @@ export class AlertStore {
 	#stopAll = $state(loadFlag('alerts.stopAll', false));
 	#useNwsColors = $state(loadFlag('alerts.useNwsColors', false));
 
-	#es: EventSource | undefined;
+	#es: LiveStreamSubscription | undefined;
 	#snapshotUrl: string | undefined;
+	#isSharedStream = false;
+	#snapshotInFlight: Promise<void> | null = null;
 	#alertTimers = new SvelteMap<string, ReturnType<typeof setTimeout>>();
 	#watchdog: ReturnType<typeof setTimeout> | undefined;
 	#rawListeners = new SvelteSet<(event: RawAlertEvent) => void>();
@@ -216,13 +223,18 @@ export class AlertStore {
 
 	filtered = $derived.by(() => filterAlerts(this.sorted, this.severityFilter, this.countryFilter));
 
-	async connect(snapshotUrl: string, streamUrl: string): Promise<void> {
+	async connect(snapshotUrl: string = '/api/v1/alerts/active', streamUrl?: string): Promise<void> {
 		if (this.#es) return;
 		this.#snapshotUrl = snapshotUrl;
 		this.connected = 'connecting';
+		this.#isSharedStream = isSharedStreamUrl(streamUrl);
 		this.#streamBuffer = [];
 		this.#openStream(streamUrl);
-		await this.#loadSnapshot(snapshotUrl);
+
+		if (!this.#isSharedStream) {
+			// Legacy path for explicit custom stream URL: immediate pre-subscription snapshot
+			await this.#loadSnapshot(snapshotUrl);
+		}
 	}
 
 	disconnect(): void {
@@ -230,6 +242,7 @@ export class AlertStore {
 			this.#snapshotAbortController.abort();
 			this.#snapshotAbortController = undefined;
 		}
+		this.#snapshotInFlight = null;
 		this.#streamBuffer = null;
 		this.#es?.close();
 		this.#es = undefined;
@@ -249,6 +262,11 @@ export class AlertStore {
 	}
 
 	retrySnapshot(): void {
+		if (this.#snapshotAbortController) {
+			this.#snapshotAbortController.abort();
+			this.#snapshotAbortController = undefined;
+		}
+		this.#snapshotInFlight = null;
 		if (this.#snapshotUrl) void this.#loadSnapshot(this.#snapshotUrl);
 	}
 
@@ -262,7 +280,18 @@ export class AlertStore {
 		for (const listener of this.#rawListeners) listener(event);
 	}
 
-	async #loadSnapshot(url: string): Promise<void> {
+	#loadSnapshot(url: string): Promise<void> {
+		if (this.#snapshotInFlight) return this.#snapshotInFlight;
+		const promise = this.#doLoadSnapshot(url);
+		this.#snapshotInFlight = promise;
+		return promise.finally(() => {
+			if (this.#snapshotInFlight === promise) {
+				this.#snapshotInFlight = null;
+			}
+		});
+	}
+
+	async #doLoadSnapshot(url: string): Promise<void> {
 		if (this.#snapshotAbortController) {
 			this.#snapshotAbortController.abort();
 		}
@@ -312,15 +341,33 @@ export class AlertStore {
 		}
 	}
 
-	#openStream(url: string): void {
-		const es = new EventSource(url);
+	#openStream(url?: string): void {
+		const es = openStreamChannel('alerts', url);
 		es.addEventListener('alert.new', this.#handleNew);
 		es.addEventListener('alert.update', this.#handleUpdate);
 		es.addEventListener('alert.ended', this.#handleEnded);
 		es.addEventListener('resync', this.#handleResync);
 		es.addEventListener('heartbeat', this.#handleHeartbeat);
+		es.onopen = this.#handleOpen;
 		es.onerror = this.#handleError;
+		es.onreconnect = this.#handleReconnect;
 		this.#es = es;
+		this.#armWatchdog();
+	}
+
+	#restartStream(): void {
+		if (!this.#es) return;
+		this.connected = 'connecting';
+		this.#armWatchdog();
+		this.#es.restart();
+	}
+
+	#armWatchdog(): void {
+		if (this.#watchdog) clearTimeout(this.#watchdog);
+		this.#watchdog = setTimeout(() => {
+			this.connected = 'closed';
+			this.#restartStream();
+		}, HEARTBEAT_TIMEOUT_MS);
 	}
 
 	#handleResync = (): void => {
@@ -441,10 +488,29 @@ export class AlertStore {
 
 	#handleHeartbeat = (): void => {
 		this.connected = 'open';
-		if (this.#watchdog) clearTimeout(this.#watchdog);
-		this.#watchdog = setTimeout(() => {
-			this.connected = 'closed';
-		}, HEARTBEAT_TIMEOUT_MS);
+		this.#armWatchdog();
+	};
+
+	#handleReconnect = (): void => {
+		this.connected = 'connecting';
+		this.#armWatchdog();
+	};
+
+	#handleOpen = (): void => {
+		this.connected = 'open';
+		this.#armWatchdog();
+		if (this.#isSharedStream) {
+			this.#snapshotAbortController?.abort();
+			this.#snapshotInFlight = null;
+			this.#streamBuffer = [];
+			// On shared stream, snapshot starts after stream subscription open
+			// (backend subscribes all hubs before Mist headers).
+			// Also, shared watchdog restart creates a fresh EventSource (no Last-Event-ID),
+			// so alertStore MUST refetch its snapshot on shared open even if server does not emit resync.
+			if (this.#snapshotUrl) {
+				void this.#loadSnapshot(this.#snapshotUrl);
+			}
+		}
 	};
 
 	#handleError = (): void => {

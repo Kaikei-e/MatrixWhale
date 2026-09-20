@@ -70,7 +70,7 @@
 
 	$effect(() => {
 		if (!browser) return;
-		void earthquakeStore.connect('/api/v1/earthquakes/recent', '/api/v1/earthquakes/stream', {
+		void earthquakeStore.connect('/api/v1/earthquakes/recent', undefined, {
 			hours: 24,
 			minMagnitude: 2.5,
 			eventType: 'earthquake'
@@ -85,7 +85,7 @@
 
 	$effect(() => {
 		if (!browser) return;
-		void hazardStore.connect('/api/v1/hazards/recent', '/api/v1/hazards/stream');
+		void hazardStore.connect();
 		return () => hazardStore.disconnect();
 	});
 
