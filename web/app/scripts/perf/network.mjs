@@ -11,7 +11,13 @@ const output = args.get('--out') ?? '/tmp/matrixwhale-network.json';
 const seconds = Number(args.get('--seconds') ?? 90);
 const kbps = Number(args.get('--kbps') ?? 1600);
 const latency = Number(args.get('--latency') ?? 150);
-const browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader'] });
+const ect = args.get('--ect');
+const browser = await chromium.launch({
+	args: [
+		'--enable-unsafe-swiftshader',
+		...(ect ? [`--force-effective-connection-type=${ect}`] : [])
+	]
+});
 try {
 	const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
 	const page = await context.newPage();
@@ -34,10 +40,32 @@ try {
 		origin ??= e.timestamp;
 		cdpRequests.set(e.requestId, {
 			url: e.request.url,
+			type: e.type,
+			priority: e.request.initialPriority,
 			startMs: (e.timestamp - origin) * 1000,
 			receivedBytes: 0,
-			events: 0
+			events: 0,
+			eventsByName: {},
+			eventPayloadBytes: 0
 		});
+	});
+	cdp.on('Network.responseReceived', (e) => {
+		const r = cdpRequests.get(e.requestId);
+		if (r)
+			Object.assign(r, {
+				responseMs: (e.timestamp - origin) * 1000,
+				protocol: e.response.protocol,
+				connectionId: e.response.connectionId,
+				timing: e.response.timing
+			});
+	});
+	cdp.on('Network.loadingFinished', (e) => {
+		const r = cdpRequests.get(e.requestId);
+		if (r)
+			Object.assign(r, {
+				finishedMs: (e.timestamp - origin) * 1000,
+				completedEncodedBytes: e.encodedDataLength
+			});
 	});
 	cdp.on('Network.dataReceived', (e) => {
 		const r = cdpRequests.get(e.requestId);
@@ -47,6 +75,9 @@ try {
 		const r = cdpRequests.get(e.requestId);
 		if (r) {
 			r.events++;
+			r.eventsByName[e.eventName] = (r.eventsByName[e.eventName] ?? 0) + 1;
+			r.eventPayloadBytes += Buffer.byteLength(e.data);
+			r.firstEventMs ??= (e.timestamp - origin) * 1000;
 			r.lastEventMs = (e.timestamp - origin) * 1000;
 		}
 	});
@@ -124,11 +155,20 @@ try {
 		kbps,
 		latency,
 		browser: browser.version(),
+		forcedEffectiveConnectionType: ect ?? null,
 		state,
 		errors,
 		requests: [...requests.values()],
 		cdpRequests: [...cdpRequests.values()]
 	};
+	report.streams = report.cdpRequests.filter((r) => r.type === 'EventSource');
+	report.streamReceivedBytes = report.streams.reduce((n, r) => n + r.receivedBytes, 0);
+	report.mapDataFinishedMs = Math.max(
+		0,
+		...report.cdpRequests
+			.filter((r) => new URL(r.url).pathname.startsWith('/data/'))
+			.map((r) => r.finishedMs ?? 0)
+	);
 	await mkdir(dirname(output), { recursive: true });
 	await writeFile(output, JSON.stringify(report, null, 2) + '\n');
 	console.log(
