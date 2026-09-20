@@ -146,6 +146,7 @@ pub fn route_template(segments: List(String)) -> String {
     ["api", "v1", "hazards", "stream"] -> "/api/v1/hazards/stream"
     ["api", "v1", "hazards", _source, _id] -> "/api/v1/hazards/:source/:id"
     ["api", "v1", "timeline"] -> "/api/v1/timeline"
+    ["api", "v1", "stream"] -> "/api/v1/stream"
     _ -> "unmatched"
   }
 }
@@ -154,7 +155,8 @@ pub fn is_stream_route(route: String) -> Bool {
   case route {
     "/api/v1/alerts/stream"
     | "/api/v1/earthquakes/stream"
-    | "/api/v1/hazards/stream" -> True
+    | "/api/v1/hazards/stream"
+    | "/api/v1/stream" -> True
     _ -> False
   }
 }

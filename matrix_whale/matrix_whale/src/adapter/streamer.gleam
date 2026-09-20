@@ -3,6 +3,7 @@ import adapter/compression
 import adapter/context.{type Context}
 import adapter/earthquake_hub
 import adapter/hazard_hub
+import adapter/live_stream
 import domain/alert
 import domain/cap_feed_view
 import domain/earthquake
@@ -107,6 +108,12 @@ fn router(
     ["api", "v1", "hazards", hazard_source, hazard_source_id] ->
       hazard_detail_response(hazard_source, hazard_source_id, ctx)
     ["api", "v1", "timeline"] -> timeline_response(req, ctx)
+    ["api", "v1", "stream"] ->
+      case req.method {
+        http.Get -> live_stream.response(req, ctx)
+        _ ->
+          response.new(405) |> response.set_body(mist.Bytes(bytes_tree.new()))
+      }
     _ -> not_found_response()
   }
 
