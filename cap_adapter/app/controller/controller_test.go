@@ -535,8 +535,8 @@ func TestControllerFeedDueTimeComputedFromCycleStart(t *testing.T) {
 	ctrl := NewController(cfg, mwClient, &http.Client{Timeout: 5 * time.Second}, limiter, time.Now)
 	ctx := context.Background()
 
-	// Cycle 1 starts at t0
-	t0 := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
+	// Cycle 1 starts at t0 (uses time.Now() because context.WithDeadline uses system clock and cancels if past)
+	t0 := time.Now()
 	ctrl.pollFeedsCycle(ctx, t0)
 
 	if atomic.LoadInt32(&polls) != 1 {
@@ -1003,8 +1003,8 @@ func TestControllerFeedRetryOnFailedIndexPost(t *testing.T) {
 	ctrl := NewController(cfg, mwClient, &http.Client{Timeout: 5 * time.Second}, limiter, time.Now)
 	ctx := context.Background()
 
-	// Poll 1: SendIndex fails after retries
-	t0 := time.Date(2026, 9, 19, 10, 0, 0, 0, time.UTC)
+	// Poll 1: SendIndex fails after retries (uses time.Now() because context.WithDeadline uses system clock and cancels if past)
+	t0 := time.Now()
 	ctrl.pollFeedsCycle(ctx, t0)
 
 	// Since SendIndex failed, feedETags and feedLastModified MUST NOT be stored
