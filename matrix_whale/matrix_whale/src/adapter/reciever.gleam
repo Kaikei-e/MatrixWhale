@@ -6,6 +6,7 @@ import logs/reciever/usgs_adapter
 import message/reciever/cap_reciever
 import message/reciever/emsc_reciever
 import message/reciever/gdacs_reciever
+import message/reciever/jma_reciever
 import message/reciever/noaa_reciever
 import message/reciever/usgs_reciever
 import metrics
@@ -72,6 +73,11 @@ pub fn reciever_router(request: Request, ctx: Context) -> Response {
     ["api", "v1", "cap_data", "pending"] ->
       cap_reciever.pending_handler(req, ctx)
     ["api", "v1", "cap_data", "alerts"] -> cap_reciever.alerts_handler(req, ctx)
+    ["api", "v1", "jma_data", "index"] -> jma_reciever.index_handler(req, ctx)
+    ["api", "v1", "jma_data", "pending"] ->
+      jma_reciever.pending_handler(req, ctx)
+    ["api", "v1", "jma_data", "messages"] ->
+      jma_reciever.messages_handler(req, ctx)
     _ -> wisp.response(404)
   }
 

@@ -55,7 +55,17 @@ pub const gdacs = Source(
   priority: 80,
 )
 
-pub const all: List(Source) = [noaa, usgs, emsc, gdacs]
+pub const jma = Source(
+  id: "jma",
+  name: "Japan Meteorological Agency",
+  homepage: option.Some("https://www.jma.go.jp/jma/kishou/info/coment.html"),
+  license: "公共データ利用規約（第1.0版）",
+  attribution_text: "気象庁防災情報XMLをもとにMatrixWhaleが加工。編集責任：MatrixWhale。",
+  redistributable: True,
+  priority: 95,
+)
+
+pub const all: List(Source) = [noaa, usgs, emsc, gdacs, jma]
 
 pub fn lookup(id: String) -> Result(Source, Nil) {
   list.find(all, fn(source) { source.id == id })

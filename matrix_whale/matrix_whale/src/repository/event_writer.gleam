@@ -263,7 +263,10 @@ fn create_event(
   ))
 }
 
-fn reproject(event_id: Int, conn: pog.Connection) -> Result(EventView, String) {
+pub fn reproject(
+  event_id: Int,
+  conn: pog.Connection,
+) -> Result(EventView, String) {
   use members <- result.try(load_members(event_id, conn))
   let projected = projection.project(members)
   use event_row <- result.try(update_event(event_id, projected, conn))
@@ -332,7 +335,7 @@ fn select_candidate_scalars(
   conn: pog.Connection,
 ) -> Result(List(#(Int, Int, Float, Float, Option(Float))), String) {
   pog.query(
-    "SELECT id, occurred_at_ms, latitude, longitude, magnitude FROM sea.event WHERE occurred_at_ms BETWEEN $1 AND $2 AND latitude BETWEEN $3 AND $4",
+    "SELECT id, occurred_at_ms, latitude, longitude, magnitude FROM sea.event WHERE occurred_at_ms BETWEEN $1 AND $2 AND latitude BETWEEN $3 AND $4 AND (status IS NULL OR status <> 'deleted')",
   )
   |> pog.parameter(pog.int(lo_ms))
   |> pog.parameter(pog.int(hi_ms))

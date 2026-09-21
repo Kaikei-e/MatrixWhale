@@ -23,12 +23,25 @@
 		selectedId !== null ? (earthquakeStore.earthquakes.get(selectedId) ?? null) : null
 	);
 
+	const JMA_DEFAULT_SOURCE: DataSource = {
+		id: 'jma',
+		name: '気象庁',
+		homepage: 'https://www.jma.go.jp/jma/kishou/info/coment.html',
+		license: '公共データ利用規約（第1.0版）',
+		attribution_text: '気象庁防災情報XMLをもとにMatrixWhaleが加工。編集責任：MatrixWhale。',
+		redistributable: true,
+		priority: 95
+	};
+
 	function magnitudeLabel(magnitude: number | null): string {
 		return magnitude === null ? 'M—' : `M${magnitude.toFixed(1)}`;
 	}
 
 	function sourceName(sourceId: string): string {
-		return earthquakeStore.sources.get(sourceId)?.name ?? sourceId;
+		return (
+			earthquakeStore.sources.get(sourceId)?.name ??
+			(sourceId === 'jma' ? JMA_DEFAULT_SOURCE.name : sourceId)
+		);
 	}
 
 	function memberLabel(member: EarthquakeMember): string {
@@ -45,7 +58,9 @@
 			for (const sourceId of earthquake.sources) ids.add(sourceId);
 		}
 		return [...ids]
-			.map((id) => earthquakeStore.sources.get(id))
+			.map(
+				(id) => earthquakeStore.sources.get(id) ?? (id === 'jma' ? JMA_DEFAULT_SOURCE : undefined)
+			)
 			.filter((source): source is DataSource => source !== undefined)
 			.sort((a, b) => b.priority - a.priority);
 	});
@@ -180,7 +195,9 @@
 			</div>
 			<div data-testid="earthquake-event-sources" class="flex flex-col gap-0.5">
 				{#each selected.sources as sourceId (sourceId)}
-					{@const source = earthquakeStore.sources.get(sourceId)}
+					{@const source =
+						earthquakeStore.sources.get(sourceId) ??
+						(sourceId === 'jma' ? JMA_DEFAULT_SOURCE : undefined)}
 					{#if source}
 						<a
 							href={source.homepage}

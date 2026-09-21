@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { resetSharedLiveStream } from '$lib/api/liveStream';
-import { AlertStore, nextBlinkAfterArrival } from './store.svelte';
+import {
+	AlertStore,
+	nextBlinkAfterArrival,
+	MAX_ACTIVE_ALERTS,
+	DISPLAY_LIMIT
+} from './store.svelte';
 import type { Alert } from './types';
 
 class FakeEventSource {
@@ -209,6 +214,12 @@ describe('AlertStore.subscribeRaw', () => {
 		FakeEventSource.instances = [];
 		vi.stubGlobal('EventSource', FakeEventSource);
 		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([]))));
+		// Flush rAF callbacks via a microtask so settle() drains them.
+		vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+			queueMicrotask(() => cb(performance.now()));
+			return 0;
+		});
+		vi.stubGlobal('cancelAnimationFrame', () => {});
 	});
 
 	afterEach(() => {
@@ -524,6 +535,8 @@ describe('AlertStore.subscribeRaw', () => {
 			store.activeAlerts.set(alert.id, alert);
 
 			stream.emit('alert.ended', { ...alert, ended_at: '2026-09-18T00:00:00Z' });
+			// Advance past the rAF callback (~16ms) to apply the blink state.
+			vi.advanceTimersByTime(50);
 			expect(store.blink.get('fading-1')?.mode).toBe('fading');
 
 			store.acknowledge('fading-1');
@@ -780,5 +793,87 @@ describe('AlertStore.subscribeRaw', () => {
 		expect(store.activeAlerts.has('custom-1')).toBe(true);
 
 		store.disconnect();
+	});
+});
+
+describe('AlertStore burst hardening', () => {
+	beforeEach(() => {
+		resetSharedLiveStream();
+		FakeEventSource.instances = [];
+		vi.stubGlobal('EventSource', FakeEventSource);
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([]))));
+	});
+
+	afterEach(() => {
+		resetSharedLiveStream();
+		vi.unstubAllGlobals();
+	});
+
+	it('caps activeAlerts at MAX_ACTIVE_ALERTS and increments evictionCount when the cap is hit', async () => {
+		vi.useFakeTimers();
+		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			const store = new AlertStore();
+			await store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+			const stream = FakeEventSource.instances[0];
+			stream.open();
+			await settle();
+
+			// Pre-fill activeAlerts directly to one below the cap (fast: bypasses rAF).
+			for (let i = 0; i < MAX_ACTIVE_ALERTS - 1; i++) {
+				store.activeAlerts.set(
+					`prefill-${i}`,
+					makeAlert({ id: `prefill-${i}`, first_seen_at: `2026-09-17T00:00:${String(i % 60).padStart(2, '0')}Z` })
+				);
+			}
+			expect(store.activeAlerts.size).toBe(MAX_ACTIVE_ALERTS - 1);
+			expect(store.evictionCount).toBe(0);
+
+			// Emit 2 new SSE alerts — the second must trigger eviction.
+			stream.emit('alert.new', makeAlert({ id: 'flood-0', source: 'jma', severity: 'Moderate' }));
+			stream.emit('alert.new', makeAlert({ id: 'flood-1', source: 'jma', severity: 'Moderate' }));
+
+			// Advance past the rAF callback (~16ms) without hitting the 60s watchdog.
+			await vi.advanceTimersByTimeAsync(50);
+
+			expect(store.activeAlerts.size).toBeLessThanOrEqual(MAX_ACTIVE_ALERTS);
+			expect(store.evictionCount).toBe(1);
+			expect(warnSpy).toHaveBeenCalledOnce();
+			expect(warnSpy.mock.calls[0][0]).toContain('[AlertStore]');
+			expect(warnSpy.mock.calls[0][0]).toContain('jma');
+			expect(store.displayFiltered.length).toBeLessThanOrEqual(DISPLAY_LIMIT);
+
+			store.disconnect();
+		} finally {
+			warnSpy.mockRestore();
+			vi.useRealTimers();
+		}
+	});
+
+	it('coalesces a burst of events into a single reactive write per animation frame', async () => {
+		vi.useFakeTimers();
+		try {
+			const store = new AlertStore();
+			await store.connect('/api/v1/alerts/active', '/api/v1/alerts/stream');
+			const stream = FakeEventSource.instances[0];
+			stream.open();
+			await settle();
+
+			// Emit 50 events synchronously — all should be pending, none applied yet.
+			for (let i = 0; i < 50; i++) {
+				stream.emit('alert.new', makeAlert({ id: `burst-${i}`, severity: 'Moderate' }));
+			}
+
+			expect(store.activeAlerts.size).toBe(0);
+
+			// Advance past the rAF callback (~16ms) without hitting the 60s watchdog.
+			await vi.advanceTimersByTimeAsync(50);
+
+			expect(store.activeAlerts.size).toBe(50);
+
+			store.disconnect();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

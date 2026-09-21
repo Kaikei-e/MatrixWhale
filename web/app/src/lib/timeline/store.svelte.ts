@@ -10,6 +10,8 @@ import type { TimelineFilters, TimelineItem, TimelineKind, TimelinePage } from '
 
 const PAGE_LIMIT = 50;
 const KIND_ORDER: readonly TimelineKind[] = ['earthquake', 'hazard', 'alert'];
+/** Cap on unread pending arrivals; excess events are silently dropped. */
+const MAX_PENDING = 200;
 
 interface RawSource<E> {
 	subscribeRaw(listener: (event: E) => void): () => void;
@@ -167,7 +169,9 @@ export class TimelineStore {
 		if (type === 'new') {
 			if (this.#hasKey(item.key)) return;
 			if (!passesFilters(item, this.filters)) return;
-			this.pending.push(item);
+			if (this.pending.length < MAX_PENDING) {
+				this.pending.push(item);
+			}
 			return;
 		}
 

@@ -46,7 +46,7 @@ pub fn write_batch(
   }
 }
 
-fn write_batch_tx(
+pub fn write_batch_tx(
   records: List(Incoming(IncomingEarthquake)),
   now_ms: Int,
   conn: pog.Connection,

@@ -7,5 +7,6 @@ use (
 	./gdacs_adapter/app
 	./noaa_adapter/app
 	./usgs_adapter/app
+	./jma_adapter/app
 )
 

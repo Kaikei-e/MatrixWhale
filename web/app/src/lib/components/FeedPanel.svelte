@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { alertStore } from '$lib/alerts/store.svelte';
-	import { SEVERITIES, type Severity } from '$lib/alerts/types';
+	import { SEVERITIES } from '$lib/alerts/types';
 	import FeedItem from './FeedItem.svelte';
 	import SseStatusDot from './SseStatusDot.svelte';
 
@@ -14,12 +14,10 @@
 
 	let now = $state(Date.now());
 
-	const countsBySeverity = $derived.by(() => {
-		const counts = { Extreme: 0, Severe: 0, Moderate: 0, Minor: 0, Unknown: 0 } as Record<
-			Severity,
-			number
-		>;
-		for (const alert of alertStore.filtered) counts[alert.severity]++;
+	// Severity counts over the filtered (user-visible) set, not all active alerts.
+	const filteredCountsBySeverity = $derived.by(() => {
+		const counts = { Extreme: 0, Severe: 0, Moderate: 0, Minor: 0, Unknown: 0 };
+		for (const alert of alertStore.filtered) counts[alert.severity as keyof typeof counts]++;
 		return counts;
 	});
 
@@ -37,8 +35,8 @@
 		</div>
 		<div class="text-ink-2 tabular mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
 			{#each SEVERITIES as severity (severity)}
-				{#if countsBySeverity[severity] > 0}
-					<span>{severity} {countsBySeverity[severity]}</span>
+				{#if filteredCountsBySeverity[severity] > 0}
+					<span>{severity} {filteredCountsBySeverity[severity]}</span>
 				{/if}
 			{/each}
 		</div>
@@ -59,7 +57,7 @@
 	{/if}
 
 	<ul class="min-h-0 flex-1 overflow-y-auto">
-		{#each alertStore.filtered as alert (alert.id)}
+		{#each alertStore.displayFiltered as alert (alert.id)}
 			<li>
 				<FeedItem
 					{alert}
@@ -71,5 +69,10 @@
 		{:else}
 			<li class="text-ink-2 px-3 py-4 text-sm">No active alerts match these filters.</li>
 		{/each}
+		{#if alertStore.filteredOverLimit}
+			<li class="text-ink-2 px-3 py-2 text-xs">
+				Showing {alertStore.displayFiltered.length} of {alertStore.filtered.length} alerts
+			</li>
+		{/if}
 	</ul>
 </div>

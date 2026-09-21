@@ -24,7 +24,7 @@ PATHS = [
 ]
 CONTAINERS = ["matrixwhale-" + name + "-1" for name in [
     "db", "matrix_whale", "cap_adapter", "noaa_adapter", "usgs_adapter",
-    "emsc_adapter", "gdacs_adapter", "web", "proxy",
+    "emsc_adapter", "gdacs_adapter", "jma_adapter", "web", "proxy",
     "federation_orchestrator", "rss_feed_adapter",
 ]]
 

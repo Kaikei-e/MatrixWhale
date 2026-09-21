@@ -273,3 +273,52 @@ CREATE INDEX idx_hazard_first_seen_at ON sea.hazard (first_seen_at DESC);
 CREATE INDEX idx_hazard_type_level ON sea.hazard (hazard_type, alert_level);
 CREATE INDEX idx_hazard_centroid ON sea.hazard USING GIST (centroid);
 CREATE INDEX idx_hazard_primary_geometry ON sea.hazard USING GIST (primary_geometry);
+
+CREATE TABLE sea.jma_item (
+  item_url TEXT PRIMARY KEY,
+  feed_url TEXT NOT NULL,
+  guid TEXT,
+  title TEXT,
+  published_at TIMESTAMPTZ,
+  state TEXT NOT NULL DEFAULT 'pending',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at TIMESTAMPTZ,
+  http_status INTEGER,
+  error TEXT,
+  identifier TEXT,
+  raw_xml TEXT,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_jma_item_state_first_seen ON sea.jma_item (state, first_seen_at DESC);
+
+CREATE TABLE sea.jma_message (
+  identifier TEXT PRIMARY KEY,
+  item_url TEXT NOT NULL REFERENCES sea.jma_item(item_url),
+  feed_url TEXT NOT NULL,
+  control_title TEXT NOT NULL,
+  status TEXT NOT NULL,
+  info_type TEXT NOT NULL,
+  event_id TEXT,
+  series_key TEXT,
+  sent TIMESTAMPTZ NOT NULL,
+  headline TEXT,
+  description TEXT,
+  raw_xml TEXT NOT NULL,
+  normalized BOOLEAN NOT NULL DEFAULT false,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_jma_message_sent ON sea.jma_message (sent DESC);
+CREATE INDEX idx_jma_message_event_id ON sea.jma_message (event_id) WHERE event_id IS NOT NULL;
+CREATE INDEX idx_jma_message_series_key ON sea.jma_message (series_key) WHERE series_key IS NOT NULL;
+
+CREATE TABLE sea.jma_series (
+  series_key TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  latest_sent TIMESTAMPTZ NOT NULL,
+  is_cancelled BOOLEAN NOT NULL DEFAULT false,
+  latest_identifier TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_jma_series_updated_at ON sea.jma_series (updated_at DESC);

@@ -23,7 +23,7 @@ Live NWS alerts, national CAP alerts from about 130 countries (followed from the
 
 ## Architecture
 
-The diagram below reflects the live data paths across all integrated sources: NOAA alerts, national CAP alerts, USGS earthquakes, EMSC earthquakes, and GDACS multi-hazards flow from upstream services through Go adapters into the Gleam/BEAM core, which normalizes, deduplicates, and merges records into PostgreSQL 18 + PostGIS 3.6, streaming them out to the browser through the Plecto reverse proxy.
+The diagram below reflects the live data paths across all integrated sources: NOAA alerts, national CAP alerts, USGS earthquakes, EMSC earthquakes, GDACS multi-hazards, and JMA disaster prevention XML flow from upstream services through Go adapters into the Gleam/BEAM core, which normalizes, deduplicates, and merges records into PostgreSQL 18 + PostGIS 3.6, streaming them out to the browser through the Plecto reverse proxy.
 
 ```mermaid
 flowchart LR
@@ -33,6 +33,7 @@ flowchart LR
     EMSCFeed["EMSC SeismicPortal<br/>WebSocket + FDSN backfill"]
     GDACSFeed["GDACS API<br/>polled 5m + geometry on-demand"]
     RAA["WMO RAA rss.xml<br/>~200 national CAP feeds"]
+    JMAFeed["JMA XML feeds<br/>extra / eqvol PULL"]
   end
 
   subgraph Adapters["Adapters (Go) & Common"]
@@ -41,6 +42,7 @@ flowchart LR
     EmscAdapter["emsc_adapter"]
     GdacsAdapter["gdacs_adapter"]
     CapAdapter["cap_adapter"]
+    JmaAdapter["jma_adapter"]
     CommonPkg["adapters/common"]
   end
 
@@ -54,6 +56,7 @@ flowchart LR
     SourceReg[("sea.source")]
     AlertTbl[("sea.alert (multi-source CAP)")]
     CapTbls[("sea.cap_authority / cap_feed / cap_item / cap_message")]
+    JmaTbls[("sea.jma_item / jma_message / jma_series")]
     EqTbl[("sea.earthquake & revision")]
     CanonicalTbl[("sea.event & event_member")]
     GdacsTbl[("sea.gdacs_event (raw episodes)")]
@@ -72,16 +75,19 @@ flowchart LR
   EMSCFeed -->|"WebSocket push + FDSN queries"| EmscAdapter
   GDACSFeed -->|"GET geteventlist, polled 5m"| GdacsAdapter
   RAA -->|"registry daily, feed indexes 5m, CAP docs on demand"| CapAdapter
+  JMAFeed -->|"Atom feeds 1m/1h, XML telegrams"| JmaAdapter
 
   NoaaAdapter -->|"POST /api/v1/noaa_data/send"| Receiver
   UsgsAdapter -->|"POST /api/v1/usgs_data/send"| Receiver
   EmscAdapter -->|"POST /api/v1/emsc_data/send"| Receiver
   GdacsAdapter -->|"POST /api/v1/gdacs_data/send"| Receiver
   CapAdapter -->|"POST /api/v1/cap_data/registry, index, alerts"| Receiver
+  JmaAdapter -->|"POST /api/v1/jma_data/index, messages"| Receiver
 
   Receiver -->|"GET /api/v1/gdacs_data/geometry/pending"| GdacsAdapter
   GdacsAdapter -->|"POST /api/v1/gdacs_data/geometry"| Receiver
   Receiver -->|"GET /api/v1/cap_data/feeds, pending"| CapAdapter
+  Receiver -->|"GET /api/v1/jma_data/pending"| JmaAdapter
 
   Receiver -->|"upsert, diff, merge, normalize"| DB
   Receiver -.->|"fan-out events"| Hubs
@@ -99,6 +105,7 @@ flowchart LR
   - `emsc_adapter`: Subscribes to real-time WebSocket push (`standing_order`), backfills via FDSN query, and runs gap-fill queries on reconnects.
   - `gdacs_adapter`: Polls multi-hazard events every 5 minutes (with a 10s minimum request interval), and pulls pending episode geometries in the background driven by the core's pending queue.
   - `cap_adapter`: Reads the WMO Register of Alerting Authorities daily, polls each subscribed national CAP feed index every 5 minutes with conditional GET (one request per host at a time, 2s apart), and fetches the CAP documents the core lists as pending, converting CAP XML into a lossless JSON mirror.
+  - `jma_adapter`: Polls JMA (気象庁) disaster prevention XML pull feeds (`extra.xml` warnings/advisories, `eqvol.xml` earthquakes) on a 1-minute cycle (`extra_l`, `eqvol_l` on 1 hour), strictly enforces a voluntary 1GiB/day safety cap (against JMA's published 10GB/day IP blocking policy), persists deduplication and spool state in `/var/lib/jma`, and respects attribution/editing responsibility terms (no EEW claims). See [docs/jma-xml.md](docs/jma-xml.md) and [ADR 0015](docs/ADR/0015-ingest-jma-xml-feeds-with-safe-polling-and-attribution.md).
 - **Core (`matrix_whale`)**: Built in Gleam on the Erlang/BEAM VM:
   - **Receiver (`:6000`)**: Classifies revisions and deduplicates incoming payloads in pure Gleam functions (`domain/` and `intake/`). Merges earthquakes from USGS, EMSC, and GDACS into canonical events (`sea.event`), normalizes GDACS raw episodes into `sea.hazard` with PostGIS geometry in the same database transaction, and normalizes national CAP messages into the multi-source `sea.alert` (one transaction per message, Update/Cancel chains applied).
   - **Streamer (`:8080`)**: Serves REST endpoints (`/api/v1/alerts/*` incl. `/api/v1/alerts/detail`, `/api/v1/cap/feeds`, `/api/v1/earthquakes/recent`, `/api/v1/hazards/recent`, `/api/v1/hazards/{source}/{source_id}`, `/api/v1/timeline`, `/api/v1/sources`, `/api/v1/pipeline/status`) and real-time SSE streams (`/api/v1/alerts/stream`, `/api/v1/earthquakes/stream`, `/api/v1/hazards/stream`).

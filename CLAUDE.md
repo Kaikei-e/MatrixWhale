@@ -19,6 +19,7 @@ The project follows a microservices architecture with the following components:
 - **emsc_adapter** (No exposed port) - Go service adapter for EMSC real-time WebSocket feed (`wss://www.seismicportal.eu/standing_order/websocket`) and FDSN backfill/gap-fill
 - **gdacs_adapter** (No exposed port) - Go service adapter for GDACS multi-hazard polling (5-minute cycle) and core-driven pending geometry fetching (10s rate limiter)
 - **cap_adapter** (No exposed port) - Go service adapter that follows the WMO Register of Alerting Authorities (daily) to ~200 national CAP feeds, polls feed indexes every 5 minutes with conditional GET and a per-host limiter, and fetches CAP documents from the core's pending list
+- **jma_adapter** (No exposed port) - Go service adapter for JMA (気象庁) disaster prevention XML pull feeds (1m poll for extra/eqvol, 1h for long feeds, 1GiB daily safety budget, volume state persistence in `/var/lib/jma`)
 - **rss_feed_adapter** (Port 8086:8085) - Go service for RSS feed processing
 - **web** (Port 4174:4173) - SvelteKit frontend application with TypeScript, MapLibre nautical chart (`/globe`), tabbed side pane (Timeline, Earthquakes, Hazards, Alerts, Feed), `/feeds` CAP feed health page
 - **proxy** (Port 8180:80, 9190:9090) - Plecto reverse proxy routing `/api` to streamer and `/` to web

@@ -74,6 +74,19 @@
 	const current = $derived(detail?.alert ? { ...detail.alert, ...alert } : alert);
 	const description = $derived(detail?.alert?.description ?? null);
 	const instruction = $derived(detail?.alert?.instruction ?? null);
+	const attributionUrl = $derived.by(() => {
+		if (current.web && isHttpUrl(current.web)) return current.web;
+		if (current.source === 'jma') return 'https://www.jma.go.jp/jma/kishou/info/coment.html';
+		return null;
+	});
+	const attributionText = $derived.by(() => {
+		if (current.source === 'jma') {
+			return (
+				current.attribution || '気象庁防災情報XMLをもとにMatrixWhaleが加工。編集責任：MatrixWhale。'
+			);
+		}
+		return current.attribution || current.source_name;
+	});
 
 	function formatTime(iso: string | null | undefined): string | null {
 		if (!iso) return null;
@@ -180,20 +193,18 @@
 	{/if}
 
 	<div class="border-ink-2/30 mt-1 flex flex-col gap-1 border-t pt-2 text-xs">
-		{#if current.web && isHttpUrl(current.web)}
+		{#if attributionUrl}
 			<a
-				href={current.web}
+				href={attributionUrl}
 				target="_blank"
 				rel="external noopener noreferrer"
 				class="text-ink-2 hover:text-ink hover:underline"
 				data-testid="alert-detail-attribution"
 			>
-				{current.attribution || current.source_name}
+				{attributionText}
 			</a>
 		{:else}
-			<span class="text-ink-2" data-testid="alert-detail-attribution"
-				>{current.attribution || current.source_name}</span
-			>
+			<span class="text-ink-2" data-testid="alert-detail-attribution">{attributionText}</span>
 		{/if}
 	</div>
 

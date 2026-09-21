@@ -181,6 +181,32 @@ services:
       matrix_network:
         ipv4_address: 10.254.100.45
 
+  jma_adapter:
+    build:
+      context: .
+      dockerfile: jma_adapter/Dockerfile
+    environment:
+      MATRIX_WHALE_URL: http://matrix_whale:6000/api/v1
+      JMA_CONTACT_EMAIL: ${JMA_CONTACT_EMAIL:-}
+      JMA_STATE_DIR: /var/lib/jma
+      JMA_POLL_INTERVAL: 1m
+      JMA_LONG_POLL_INTERVAL: 1h
+      JMA_REQUEST_INTERVAL: 1s
+      JMA_DAILY_BYTE_LIMIT: 1073741824
+      JMA_MAX_ITEM_BYTES: 8388608
+      JMA_FEEDS: https://www.data.jma.go.jp/developer/xml/feed/eqvol.xml,https://www.data.jma.go.jp/developer/xml/feed/extra.xml
+      JMA_LONG_FEEDS: https://www.data.jma.go.jp/developer/xml/feed/eqvol_l.xml,https://www.data.jma.go.jp/developer/xml/feed/extra_l.xml
+    tty: true
+    restart: always
+    volumes:
+      - jma_state:/var/lib/jma
+      - ./jma_adapter/app:/app
+    depends_on:
+      - matrix_whale
+    networks:
+      matrix_network:
+        ipv4_address: 10.254.100.46
+
 
   db:
     build:
@@ -282,3 +308,4 @@ networks:
 volumes:
   prometheus_data:
   grafana_data:
+  jma_state:

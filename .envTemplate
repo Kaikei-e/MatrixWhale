@@ -22,3 +22,6 @@ EMSC_CONTACT_EMAIL=
 
 # Optional User-Agent contact for the GDACS multi-hazard feed
 GDACS_CONTACT_EMAIL=
+
+# Optional User-Agent contact for the JMA XML disaster prevention feed
+JMA_CONTACT_EMAIL=

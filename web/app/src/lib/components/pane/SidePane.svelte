@@ -161,6 +161,16 @@
 		return country || alert.source_name || alert.source;
 	}
 
+	const JMA_DEFAULT_SOURCE: DataSource = {
+		id: 'jma',
+		name: '気象庁',
+		homepage: 'https://www.jma.go.jp/jma/kishou/info/coment.html',
+		license: '公共データ利用規約（第1.0版）',
+		attribution_text: '気象庁防災情報XMLをもとにMatrixWhaleが加工。編集責任：MatrixWhale。',
+		redistributable: true,
+		priority: 95
+	};
+
 	// EMSC's CC BY 4.0 license requires attribution whenever its events are on
 	// screen, not only when one is selected, so this covers the whole loaded set.
 	const earthquakeSources = $derived.by((): DataSource[] => {
@@ -169,7 +179,9 @@
 			for (const sourceId of earthquake.sources) ids.add(sourceId);
 		}
 		return [...ids]
-			.map((id) => earthquakeStore.sources.get(id))
+			.map(
+				(id) => earthquakeStore.sources.get(id) ?? (id === 'jma' ? JMA_DEFAULT_SOURCE : undefined)
+			)
 			.filter((source): source is DataSource => source !== undefined)
 			.sort((a, b) => b.priority - a.priority);
 	});
@@ -186,7 +198,10 @@
 	});
 
 	function sourceName(sourceId: string): string {
-		return earthquakeStore.sources.get(sourceId)?.name ?? sourceId;
+		return (
+			earthquakeStore.sources.get(sourceId)?.name ??
+			(sourceId === 'jma' ? JMA_DEFAULT_SOURCE.name : sourceId)
+		);
 	}
 
 	function memberLabel(member: EarthquakeMember): string {
@@ -445,7 +460,9 @@
 		{/if}
 		<div data-testid="earthquake-event-sources" class="flex flex-col gap-0.5">
 			{#each earthquake.sources as sourceId (sourceId)}
-				{@const source = earthquakeStore.sources.get(sourceId)}
+				{@const source =
+					earthquakeStore.sources.get(sourceId) ??
+					(sourceId === 'jma' ? JMA_DEFAULT_SOURCE : undefined)}
 				{#if source}
 					<a
 						href={source.homepage}
@@ -851,7 +868,7 @@
 							scrollMemory.remember('alerts', (event.currentTarget as HTMLElement).scrollTop)}
 						class="min-h-0 flex-1 overflow-y-auto"
 					>
-						{#each alertStore.filtered as alert (alert.id)}
+						{#each alertStore.displayFiltered as alert (alert.id)}
 							<ListRow
 								testid="alert-feed-item"
 								rowId={alert.id}
@@ -865,6 +882,11 @@
 						{:else}
 							<li class="text-ink-2 px-3 py-4 text-sm">No active alerts match these filters.</li>
 						{/each}
+						{#if alertStore.filteredOverLimit}
+							<li class="text-ink-2 px-3 py-2 text-xs">
+								Showing {alertStore.displayFiltered.length} of {alertStore.filtered.length} alerts
+							</li>
+						{/if}
 					</ul>
 				{/if}
 				{#if alertSourcesSummary.totalUnique > 0}

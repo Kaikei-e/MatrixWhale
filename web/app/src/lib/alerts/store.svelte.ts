@@ -26,6 +26,18 @@ export const SNAPSHOT_IDLE_TIMEOUT_MS = 10000;
 export const SNAPSHOT_DEADLINE_MS = 120000;
 
 /**
+ * Hard cap on retained active alerts. Normal steady-state after the JMA backend
+ * deduplication fix is ~2469 (2361 non-JMA + ~108 merged JMA); NOAA severe-weather
+ * peaks historically reach ~4000–5000. 10 000 provides 4× headroom before eviction
+ * triggers, so the cap acts as a runaway-source safety valve rather than a routine
+ * traffic limit. Any eviction means a source is misbehaving and will be logged.
+ */
+export const MAX_ACTIVE_ALERTS = 10_000;
+
+/** Maximum number of filtered alerts rendered as DOM rows at once. */
+export const DISPLAY_LIMIT = 200;
+
+/**
  * Reads a JSON response while resetting an inactivity (idle) timeout whenever
  * incoming data chunks arrive. This prevents slow connections (such as 1.6 Mbps
  * / 150 ms RTT) from being cut off during a steady download while still guarding
@@ -50,7 +62,6 @@ export async function fetchSnapshotWithIdleTimeout<T>(
 	}
 
 	let idleTimer: ReturnType<typeof setTimeout> | undefined;
-	let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const resetIdleTimer = () => {
 		if (idleTimer) clearTimeout(idleTimer);
@@ -61,7 +72,7 @@ export async function fetchSnapshotWithIdleTimeout<T>(
 		}, idleTimeoutMs);
 	};
 
-	deadlineTimer = setTimeout(() => {
+	const deadlineTimer = setTimeout(() => {
 		internalAc.abort(
 			new DOMException('The operation exceeded the overall deadline.', 'TimeoutError')
 		);
@@ -139,6 +150,11 @@ export class AlertStore {
 	reducedMotion = $state(false);
 	connected: 'connecting' | 'open' | 'closed' = $state('closed');
 	snapshotError: string | null = $state(null);
+	/**
+	 * Increments each time an alert is evicted because activeAlerts reached
+	 * MAX_ACTIVE_ALERTS. Non-zero means a source is flooding the pipeline.
+	 */
+	evictionCount = $state(0);
 
 	severityFilter = new SvelteSet<Severity>(['Extreme', 'Severe', 'Moderate']);
 	countryFilter = $state<string>('all');
@@ -155,6 +171,9 @@ export class AlertStore {
 	#rawListeners = new SvelteSet<(event: RawAlertEvent) => void>();
 	#streamBuffer: Array<BufferedEvent> | null = null;
 	#snapshotAbortController: AbortController | undefined;
+	/** Coalescing queue for post-snapshot SSE events; drained once per animation frame. */
+	#pendingApply: Array<BufferedEvent> = [];
+	#rafHandle: number | undefined;
 
 	get stopAll(): boolean {
 		return this.#stopAll;
@@ -224,6 +243,14 @@ export class AlertStore {
 
 	filtered = $derived.by(() => filterAlerts(this.sorted, this.severityFilter, this.countryFilter));
 
+	/** Whether filtered exceeds the display cap. */
+	filteredOverLimit = $derived(this.filtered.length > DISPLAY_LIMIT);
+
+	/** Priority-sorted, filter-matching alerts capped for DOM rendering. */
+	displayFiltered = $derived(
+		this.filteredOverLimit ? this.filtered.slice(0, DISPLAY_LIMIT) : this.filtered
+	);
+
 	async connect(snapshotUrl: string = '/api/v1/alerts/active', streamUrl?: string): Promise<void> {
 		if (this.#es) return;
 		this.#snapshotUrl = snapshotUrl;
@@ -245,6 +272,11 @@ export class AlertStore {
 		}
 		this.#snapshotInFlight = null;
 		this.#streamBuffer = null;
+		this.#pendingApply = [];
+		if (this.#rafHandle !== undefined) {
+			cancelAnimationFrame(this.#rafHandle);
+			this.#rafHandle = undefined;
+		}
 		this.#es?.close();
 		this.#es = undefined;
 		if (this.#watchdog) clearTimeout(this.#watchdog);
@@ -383,6 +415,30 @@ export class AlertStore {
 	}
 
 	#applyNew(alert: Alert): void {
+		if (!this.activeAlerts.has(alert.id) && this.activeAlerts.size >= MAX_ACTIVE_ALERTS) {
+			// Evict the alert seen least recently to keep memory bounded.
+			let oldestId: string | undefined;
+			let oldestTs = '';
+			for (const [id, a] of this.activeAlerts) {
+				if (oldestTs === '' || a.first_seen_at < oldestTs) {
+					oldestTs = a.first_seen_at;
+					oldestId = id;
+				}
+			}
+			if (oldestId !== undefined) {
+				this.activeAlerts.delete(oldestId);
+				this.blink.delete(oldestId);
+				this.#clearAlertTimer(oldestId);
+				this.evictionCount += 1;
+				console.warn(
+					`[AlertStore] Cap of ${MAX_ACTIVE_ALERTS.toLocaleString()} reached — ` +
+						`evicted ${oldestId} (first_seen ${oldestTs}) to admit ` +
+						`${alert.id} from source "${alert.source}". ` +
+						`Total evictions: ${this.evictionCount}. ` +
+						`A source may be flooding the pipeline.`
+				);
+			}
+		}
 		this.activeAlerts.set(alert.id, alert);
 		this.blink.set(alert.id, { mode: 'arrival', until: performance.now() + ARRIVAL_MS });
 		this.#clearAlertTimer(alert.id);
@@ -434,6 +490,29 @@ export class AlertStore {
 		this.#alertTimers.set(alert.id, timer);
 	}
 
+	#scheduleFlush(): void {
+		if (this.#rafHandle !== undefined) return;
+		this.#rafHandle = requestAnimationFrame(() => {
+			this.#rafHandle = undefined;
+			this.#flushPendingApply();
+		});
+	}
+
+	#flushPendingApply(): void {
+		const batch = this.#pendingApply;
+		if (batch.length === 0) return;
+		this.#pendingApply = [];
+		for (const item of batch) {
+			if (item.type === 'new') {
+				this.#applyNew(item.alert);
+			} else if (item.type === 'update') {
+				this.#applyUpdate(item.alert);
+			} else if (item.type === 'ended') {
+				this.#applyEnded(item.alert);
+			}
+		}
+	}
+
 	#handleNew = (event: MessageEvent<string>): void => {
 		let raw: unknown;
 		try {
@@ -447,7 +526,8 @@ export class AlertStore {
 		if (this.#streamBuffer) {
 			this.#streamBuffer.push({ type: 'new', alert });
 		} else {
-			this.#applyNew(alert);
+			this.#pendingApply.push({ type: 'new', alert });
+			this.#scheduleFlush();
 		}
 	};
 
@@ -464,7 +544,8 @@ export class AlertStore {
 		if (this.#streamBuffer) {
 			this.#streamBuffer.push({ type: 'update', alert });
 		} else {
-			this.#applyUpdate(alert);
+			this.#pendingApply.push({ type: 'update', alert });
+			this.#scheduleFlush();
 		}
 	};
 
@@ -481,9 +562,9 @@ export class AlertStore {
 			this.#emitRaw({ type: 'ended', record: alert });
 			this.#streamBuffer.push({ type: 'ended', alert });
 		} else {
-			if (!this.activeAlerts.has(alert.id)) return;
 			this.#emitRaw({ type: 'ended', record: alert });
-			this.#applyEnded(alert);
+			this.#pendingApply.push({ type: 'ended', alert });
+			this.#scheduleFlush();
 		}
 	};
 

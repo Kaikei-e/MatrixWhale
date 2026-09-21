@@ -6,6 +6,7 @@ pub type Source {
   Emsc
   Gdacs
   Cap
+  Jma
   Unknown
 }
 
@@ -28,6 +29,8 @@ fn classify_name(name: String) -> Source {
     "gdacs_adapter" -> Gdacs
     "cap" -> Cap
     "cap_adapter" -> Cap
+    "jma" -> Jma
+    "jma_adapter" -> Jma
     _ -> Unknown
   }
 }
@@ -39,6 +42,7 @@ pub fn source_name(source: Source) -> String {
     Emsc -> "emsc"
     Gdacs -> "gdacs"
     Cap -> "cap"
+    Jma -> "jma"
     Unknown -> "unknown"
   }
 }

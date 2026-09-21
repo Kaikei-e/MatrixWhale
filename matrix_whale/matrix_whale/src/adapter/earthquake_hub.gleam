@@ -33,6 +33,7 @@ pub type EarthquakeHubMsg {
     backfill: Bool,
     published_at: Int,
   )
+  ResyncAll
   Tick
 }
 
@@ -86,11 +87,25 @@ pub fn publish(
   process.send(h, Publish(new, updated, backfill, published_at))
 }
 
+pub fn resync_all(h: Subject(EarthquakeHubMsg)) -> Nil {
+  process.send(h, ResyncAll)
+}
+
 fn handle(
   state: State,
   msg: EarthquakeHubMsg,
 ) -> actor.Next(State, EarthquakeHubMsg) {
   case msg {
+    ResyncAll -> {
+      let #(sec, nsec) =
+        timestamp.to_unix_seconds_and_nanoseconds(timestamp.system_time())
+      let new_epoch = int.to_string(sec) <> ":" <> int.to_string(nsec / 1000)
+      let new_state = State(..state, epoch: new_epoch, next_event: 1)
+      let id = last_id(new_state)
+      dict.values(new_state.subscribers)
+      |> list.each(fn(subject) { process.send(subject, Resync(id)) })
+      actor.continue(new_state)
+    }
     Subscribe(subject, since, reply) -> {
       let id = state.next_subscriber
       // IDs include a process epoch. No event survives restart, therefore a
