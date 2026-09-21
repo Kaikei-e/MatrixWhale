@@ -994,11 +994,12 @@ const upsert_alert_sql = "
   WITH written AS (
     INSERT INTO sea.alert (
       source, source_id, identifier, message_type, event, category, severity, urgency, certainty,
-      headline, description, language, area_desc, geocodes, countries, reference_keys,
+      headline, description, language, area_desc, geocodes, countries, geom, reference_keys,
       sent, effective, expires, active_until, first_seen_at, last_seen_at
     ) VALUES (
-      'jma', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ja', $11, $12::jsonb, ARRAY['JPN'], $13,
-      $14, $15, $16, $17, $18, $18
+      'jma', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ja', $11, $12::jsonb, ARRAY['JPN'],
+      (SELECT ST_Multi(ST_Union(ja.geom)) FROM sea.jma_area ja WHERE ja.code = ANY($19)),
+      $13, $14, $15, $16, $17, $18, $18
     )
     ON CONFLICT (source, source_id) DO UPDATE SET
       identifier = EXCLUDED.identifier,
@@ -1012,6 +1013,7 @@ const upsert_alert_sql = "
       description = EXCLUDED.description,
       area_desc = EXCLUDED.area_desc,
       geocodes = EXCLUDED.geocodes,
+      geom = EXCLUDED.geom,
       reference_keys = EXCLUDED.reference_keys,
       sent = EXCLUDED.sent,
       effective = EXCLUDED.effective,
@@ -1117,6 +1119,9 @@ fn handle_alert_live(
                     }),
                   ),
                 )
+              let geocodes =
+                list.map(active_items, fn(a) { a.geocode })
+                |> list.unique
               let area_desc =
                 list.map(active_items, fn(a) { a.area_name })
                 |> list.unique
@@ -1153,6 +1158,7 @@ fn handle_alert_live(
               |> pog.parameter(pog.nullable(pog.timestamp, expires_ts))
               |> pog.parameter(pog.timestamp(active_until))
               |> pog.parameter(pog.timestamp(now))
+              |> pog.parameter(pog.array(pog.text, geocodes))
               |> pog.returning(alert.row_decoder())
               |> pog.execute(tx)
               |> result.map(fn(res) {

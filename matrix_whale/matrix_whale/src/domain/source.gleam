@@ -60,7 +60,7 @@ pub const jma = Source(
   name: "Japan Meteorological Agency",
   homepage: option.Some("https://www.jma.go.jp/jma/kishou/info/coment.html"),
   license: "公共データ利用規約（第1.0版）",
-  attribution_text: "気象庁防災情報XMLをもとにMatrixWhaleが加工。編集責任：MatrixWhale。",
+  attribution_text: "出典：気象庁防災情報XMLおよび気象庁ホームページ「予報区等GISデータ」をもとにMatrixWhaleが加工・作成。編集責任：MatrixWhale。",
   redistributable: True,
   priority: 95,
 )

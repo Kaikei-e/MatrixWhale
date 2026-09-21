@@ -322,3 +322,10 @@ CREATE TABLE sea.jma_series (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_jma_series_updated_at ON sea.jma_series (updated_at DESC);
+
+CREATE TABLE sea.jma_area (
+  code TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  geom geometry(MultiPolygon, 4326) NOT NULL
+);
+CREATE INDEX idx_jma_area_geom ON sea.jma_area USING GIST (geom);

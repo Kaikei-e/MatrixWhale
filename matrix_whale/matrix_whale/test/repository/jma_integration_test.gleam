@@ -2598,3 +2598,334 @@ pub fn jma_vpww53_full_cancellation_test() {
     |> pog.execute(conn)
   alert_check.rows |> should.equal([Some("cancelled")])
 }
+
+pub fn jma_alert_geometry_single_area_test() {
+  use conn <- test_db.with_test_db
+  let now = timestamp.system_time()
+
+  let assert Ok(_) =
+    pog.query(
+      "INSERT INTO sea.jma_area (code, name, geom)
+       VALUES ('140010', '横浜市', ST_Multi(ST_GeomFromText('POLYGON((139.6 35.4, 139.7 35.4, 139.7 35.5, 139.6 35.5, 139.6 35.4))', 4326)))
+       ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, geom = EXCLUDED.geom",
+    )
+    |> pog.returning(decode.success(Nil))
+    |> pog.execute(conn)
+
+  let alert_item =
+    models_jma.JmaAlertItem(
+      lifecycle_key: "140010:大雨警報",
+      area_name: "横浜市",
+      geocode: "140010",
+      event: "大雨警報",
+      category: Some("Met"),
+      status: "発表",
+      severity: "Severe",
+      urgency: "Expected",
+      certainty: "Observed",
+    )
+
+  let msg =
+    models_jma.JmaMessageContent(
+      identifier: "20260921060000_VPWW53_single",
+      control_title: "気象警報・注意報",
+      status: "通常",
+      info_type: "発表",
+      event_id: None,
+      series_key: Some("気象警報・注意報:横浜地方気象台:140010"),
+      sent: "2026-09-21T06:00:00+09:00",
+      effective: Some("2026-09-21T06:00:00+09:00"),
+      expires: None,
+      headline: Some("大雨警報"),
+      description: Some("横浜市に大雨警報"),
+      areas: [models_jma.JmaArea(area_name: "横浜市", geocode: "140010")],
+      alerts: [alert_item],
+      cleared_areas: [],
+      earthquake: None,
+    )
+
+  let res =
+    models_jma.JmaFetchResult(
+      item_url: "https://example.com/xml/alert_geom_single.xml",
+      feed_url: "https://example.com/feed/extra.xml",
+      fetched_at: "2026-09-21T06:00:05Z",
+      http_status: 200,
+      error: None,
+      raw_xml: Some("<xml/>"),
+      message: Some(msg),
+    )
+
+  let assert Ok(batch_res) = jma_message_writer.write_batch([res], now, conn)
+  batch_res.written |> should.equal(1)
+  let assert [written_alert] = batch_res.alert_diff.new
+
+  written_alert.geom |> should.not_equal(None)
+
+  let assert Ok(check_geom) =
+    pog.query(
+      "SELECT ST_GeometryType(a.geom), ST_Equals(a.geom, ja.geom)
+       FROM sea.alert a
+       JOIN sea.jma_area ja ON ja.code = '140010'
+       WHERE a.source = 'jma' AND a.source_id = '気象警報・注意報:横浜地方気象台:140010:大雨警報'",
+    )
+    |> pog.returning({
+      use geom_type <- decode.field(0, decode.optional(decode.string))
+      use is_equal <- decode.field(1, decode.bool)
+      decode.success(#(geom_type, is_equal))
+    })
+    |> pog.execute(conn)
+
+  check_geom.rows |> should.equal([#(Some("ST_MultiPolygon"), True)])
+}
+
+pub fn jma_alert_geometry_multi_area_union_test() {
+  use conn <- test_db.with_test_db
+  let now = timestamp.system_time()
+
+  let assert Ok(_) =
+    pog.query(
+      "INSERT INTO sea.jma_area (code, name, geom)
+       VALUES
+         ('140010', '横浜市', ST_Multi(ST_GeomFromText('POLYGON((139.6 35.4, 139.7 35.4, 139.7 35.5, 139.6 35.5, 139.6 35.4))', 4326))),
+         ('140020', '川崎市', ST_Multi(ST_GeomFromText('POLYGON((139.7 35.5, 139.8 35.5, 139.8 35.6, 139.7 35.6, 139.7 35.5))', 4326))),
+         ('140030', '相模原市', ST_Multi(ST_GeomFromText('POLYGON((139.3 35.5, 139.4 35.5, 139.4 35.6, 139.3 35.6, 139.3 35.5))', 4326)))
+       ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, geom = EXCLUDED.geom",
+    )
+    |> pog.returning(decode.success(Nil))
+    |> pog.execute(conn)
+
+  let alert_rain_yokohama =
+    models_jma.JmaAlertItem(
+      lifecycle_key: "140010:大雨警報",
+      area_name: "横浜市",
+      geocode: "140010",
+      event: "大雨警報",
+      category: Some("Met"),
+      status: "発表",
+      severity: "Severe",
+      urgency: "Expected",
+      certainty: "Observed",
+    )
+  let alert_rain_kawasaki =
+    models_jma.JmaAlertItem(
+      lifecycle_key: "140020:大雨警報",
+      area_name: "川崎市",
+      geocode: "140020",
+      event: "大雨警報",
+      category: Some("Met"),
+      status: "発表",
+      severity: "Severe",
+      urgency: "Expected",
+      certainty: "Observed",
+    )
+  let alert_flood_sagamihara =
+    models_jma.JmaAlertItem(
+      lifecycle_key: "140030:洪水警報",
+      area_name: "相模原市",
+      geocode: "140030",
+      event: "洪水警報",
+      category: Some("Met"),
+      status: "発表",
+      severity: "Severe",
+      urgency: "Expected",
+      certainty: "Observed",
+    )
+
+  let msg1 =
+    models_jma.JmaMessageContent(
+      identifier: "20260921070000_VPWW53_multi1",
+      control_title: "気象警報・注意報",
+      status: "通常",
+      info_type: "発表",
+      event_id: None,
+      series_key: Some("気象警報・注意報:横浜地方気象台:神奈川県"),
+      sent: "2026-09-21T07:00:00+09:00",
+      effective: Some("2026-09-21T07:00:00+09:00"),
+      expires: None,
+      headline: Some("大雨・洪水警報"),
+      description: Some("警報発表"),
+      areas: [
+        models_jma.JmaArea(area_name: "横浜市", geocode: "140010"),
+        models_jma.JmaArea(area_name: "川崎市", geocode: "140020"),
+        models_jma.JmaArea(area_name: "相模原市", geocode: "140030"),
+      ],
+      alerts: [alert_rain_yokohama, alert_rain_kawasaki, alert_flood_sagamihara],
+      cleared_areas: [],
+      earthquake: None,
+    )
+
+  let res1 =
+    models_jma.JmaFetchResult(
+      item_url: "https://example.com/xml/alert_geom_multi1.xml",
+      feed_url: "https://example.com/feed/extra.xml",
+      fetched_at: "2026-09-21T07:00:05Z",
+      http_status: 200,
+      error: None,
+      raw_xml: Some("<xml/>"),
+      message: Some(msg1),
+    )
+
+  let assert Ok(batch1) = jma_message_writer.write_batch([res1], now, conn)
+  list.length(batch1.alert_diff.new) |> should.equal(2)
+
+  let assert Ok(check_rain) =
+    pog.query(
+      "SELECT ST_GeometryType(a.geom),
+              ST_Equals(a.geom, (SELECT ST_Multi(ST_Union(geom)) FROM sea.jma_area WHERE code IN ('140010', '140020')))
+       FROM sea.alert a
+       WHERE a.source_id = '気象警報・注意報:横浜地方気象台:神奈川県:大雨警報'",
+    )
+    |> pog.returning({
+      use geom_type <- decode.field(0, decode.optional(decode.string))
+      use is_equal <- decode.field(1, decode.bool)
+      decode.success(#(geom_type, is_equal))
+    })
+    |> pog.execute(conn)
+
+  check_rain.rows |> should.equal([#(Some("ST_MultiPolygon"), True)])
+
+  let assert Ok(check_flood) =
+    pog.query(
+      "SELECT ST_GeometryType(a.geom),
+              ST_Equals(a.geom, (SELECT geom FROM sea.jma_area WHERE code = '140030'))
+       FROM sea.alert a
+       WHERE a.source_id = '気象警報・注意報:横浜地方気象台:神奈川県:洪水警報'",
+    )
+    |> pog.returning({
+      use geom_type <- decode.field(0, decode.optional(decode.string))
+      use is_equal <- decode.field(1, decode.bool)
+      decode.success(#(geom_type, is_equal))
+    })
+    |> pog.execute(conn)
+
+  check_flood.rows |> should.equal([#(Some("ST_MultiPolygon"), True)])
+
+  let alert_rain_sagamihara =
+    models_jma.JmaAlertItem(
+      lifecycle_key: "140030:大雨警報",
+      area_name: "相模原市",
+      geocode: "140030",
+      event: "大雨警報",
+      category: Some("Met"),
+      status: "発表",
+      severity: "Severe",
+      urgency: "Expected",
+      certainty: "Observed",
+    )
+
+  let msg2 =
+    models_jma.JmaMessageContent(
+      identifier: "20260921073000_VPWW53_multi2",
+      control_title: "気象警報・注意報",
+      status: "通常",
+      info_type: "発表",
+      event_id: None,
+      series_key: Some("気象警報・注意報:横浜地方気象台:神奈川県"),
+      sent: "2026-09-21T07:30:00+09:00",
+      effective: Some("2026-09-21T07:30:00+09:00"),
+      expires: None,
+      headline: Some("大雨警報拡大"),
+      description: Some("相模原市にも大雨警報"),
+      areas: [
+        models_jma.JmaArea(area_name: "横浜市", geocode: "140010"),
+        models_jma.JmaArea(area_name: "川崎市", geocode: "140020"),
+        models_jma.JmaArea(area_name: "相模原市", geocode: "140030"),
+      ],
+      alerts: [alert_rain_yokohama, alert_rain_kawasaki, alert_rain_sagamihara],
+      cleared_areas: [],
+      earthquake: None,
+    )
+
+  let res2 =
+    models_jma.JmaFetchResult(
+      item_url: "https://example.com/xml/alert_geom_multi2.xml",
+      feed_url: "https://example.com/feed/extra.xml",
+      fetched_at: "2026-09-21T07:30:05Z",
+      http_status: 200,
+      error: None,
+      raw_xml: Some("<xml/>"),
+      message: Some(msg2),
+    )
+
+  let assert Ok(batch2) = jma_message_writer.write_batch([res2], now, conn)
+  list.length(batch2.alert_diff.updated) |> should.equal(1)
+
+  let assert Ok(check_updated_rain) =
+    pog.query(
+      "SELECT ST_GeometryType(a.geom),
+              ST_Equals(a.geom, (SELECT ST_Multi(ST_Union(geom)) FROM sea.jma_area WHERE code IN ('140010', '140020', '140030')))
+       FROM sea.alert a
+       WHERE a.source_id = '気象警報・注意報:横浜地方気象台:神奈川県:大雨警報'",
+    )
+    |> pog.returning({
+      use geom_type <- decode.field(0, decode.optional(decode.string))
+      use is_equal <- decode.field(1, decode.bool)
+      decode.success(#(geom_type, is_equal))
+    })
+    |> pog.execute(conn)
+
+  check_updated_rain.rows |> should.equal([#(Some("ST_MultiPolygon"), True)])
+}
+
+pub fn jma_alert_geometry_unknown_geocode_test() {
+  use conn <- test_db.with_test_db
+  let now = timestamp.system_time()
+
+  let alert_unknown =
+    models_jma.JmaAlertItem(
+      lifecycle_key: "9999999:大雨警報",
+      area_name: "架空自治体",
+      geocode: "9999999",
+      event: "大雨警報",
+      category: Some("Met"),
+      status: "発表",
+      severity: "Severe",
+      urgency: "Expected",
+      certainty: "Observed",
+    )
+
+  let msg =
+    models_jma.JmaMessageContent(
+      identifier: "20260921080000_VPWW53_unknown",
+      control_title: "気象警報・注意報",
+      status: "通常",
+      info_type: "発表",
+      event_id: None,
+      series_key: Some("気象警報・注意報:気象庁:9999999"),
+      sent: "2026-09-21T08:00:00+09:00",
+      effective: Some("2026-09-21T08:00:00+09:00"),
+      expires: None,
+      headline: Some("大雨警報"),
+      description: Some("架空自治体に大雨警報"),
+      areas: [models_jma.JmaArea(area_name: "架空自治体", geocode: "9999999")],
+      alerts: [alert_unknown],
+      cleared_areas: [],
+      earthquake: None,
+    )
+
+  let res =
+    models_jma.JmaFetchResult(
+      item_url: "https://example.com/xml/alert_geom_unknown.xml",
+      feed_url: "https://example.com/feed/extra.xml",
+      fetched_at: "2026-09-21T08:00:05Z",
+      http_status: 200,
+      error: None,
+      raw_xml: Some("<xml/>"),
+      message: Some(msg),
+    )
+
+  let assert Ok(batch_res) = jma_message_writer.write_batch([res], now, conn)
+  batch_res.written |> should.equal(1)
+  let assert [written_alert] = batch_res.alert_diff.new
+
+  written_alert.geom |> should.equal(None)
+
+  let assert Ok(check_null) =
+    pog.query(
+      "SELECT geom IS NULL FROM sea.alert WHERE source_id = '気象警報・注意報:気象庁:9999999:大雨警報'",
+    )
+    |> pog.returning(decode.at([0], decode.bool))
+    |> pog.execute(conn)
+
+  check_null.rows |> should.equal([True])
+}

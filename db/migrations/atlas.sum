@@ -1,4 +1,4 @@
-h1:iF6X/dOHKaHWkVL9uzjcCEF6luvEJvqorg81bZhhf10=
+h1:8/mQKB3MNX7ywv185kO+bdO7+i+kf00zdIr8X83zA1w=
 20260917165144_init.sql h1:KHW18aGO2inWm60d7O9m2cCCND68LERQFzNxBk9VMHE=
 20260917173206_earthquake_source_fk.sql h1:w9YsYBFkP0c2kHthMwwfyNaVkDitGf9u1orZdQUYSZI=
 20260917180345_canonical_events.sql h1:zWnF6FdgW3rCFhsd4i0V3HxShlSfOOj4wFj9fwYy5gQ=
@@ -7,3 +7,4 @@ h1:iF6X/dOHKaHWkVL9uzjcCEF6luvEJvqorg81bZhhf10=
 20260918121737_timeline_first_seen.sql h1:45EjyfZd/a3MV773qyV2YOz7wZaM1eb8Sxvbq6T2JjM=
 20260919000000_multi_source_alerts.sql h1:X9zeM4xop/rTTCoKcHjHGUgESpz+rxgleZZr8Ws950U=
 20260921000000_jma_tables.sql h1:Mz/WeHola32zMNPz5waCBz9k/rJGA5fpePh1E9b+WOE=
+20260921004526_add_jma_area.sql h1:4fV2I6Oq0dNJdQOrVXP1JbgIpYMlqE/Hj91ngFTCCkg=
