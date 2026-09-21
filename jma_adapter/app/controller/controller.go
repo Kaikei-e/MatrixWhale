@@ -411,7 +411,10 @@ func (c *Controller) processFeed(ctx context.Context, feedURL string, isLongFeed
 
 		ack, err := c.coreClient.SendIndex(ctx, meta, newItems)
 		if err != nil {
-			slog.Warn("Core rejected feed index, withholding validator update to retry next cycle", "feed_url", feedURL, "err", err)
+			slog.Warn("Core rejected feed index, falling back to immediate direct acquisition", "feed_url", feedURL, "err", err)
+			for _, item := range newItems {
+				c.fetchAndIngestItem(ctx, item.ItemURL, item.FeedURL)
+			}
 			delay := floor
 			if res.NextDelay > delay {
 				delay = res.NextDelay
@@ -447,12 +450,6 @@ func (c *Controller) processFeed(ctx context.Context, feedURL string, isLongFeed
 		c.setFatal(err)
 		return
 	}
-}
-
-// processPendingQueue is a backward-compatible wrapper around drainPending with PollInterval deadline.
-func (c *Controller) processPendingQueue(ctx context.Context) {
-	deadline := time.Now().Add(c.cfg.PollInterval)
-	c.drainPending(ctx, deadline)
 }
 
 // drainPending repeatedly drains pending XML documents from Core until empty or deadline is reached.
@@ -500,7 +497,7 @@ func (c *Controller) drainPending(ctx context.Context, deadline time.Time) {
 
 		slog.Info("Retrieved pending items to fetch from JMA", "depth", len(pending), "total_drained", totalDrained)
 
-		newItemsInBatch := 0
+		newItemsOrFirstSeen := 0
 
 		for _, item := range pending {
 			select {
@@ -514,25 +511,26 @@ func (c *Controller) drainPending(ctx context.Context, deadline time.Time) {
 				return
 			}
 
-			if !time.Now().Before(deadline) {
-				slog.Info("Cycle deadline reached while draining pending queue", "total_drained", totalDrained)
-				return
-			}
-
 			if time.Now().Before(c.store.GetGlobalBackoffUntil()) {
 				slog.Info("Global backoff triggered during queue intake, halting pending queue")
 				return
 			}
 
-			// Invariant: never re-fetch an item that is already in local spool,
-			// already in durable fetched history, or already processed in this drain cycle.
-			if seenInDrain[item.ItemURL] || c.store.HasSpool(item.ItemURL) || c.store.IsFetched(item.ItemURL) {
+			// Invariant: track items seen in this specific drain cycle to prevent spinning
+			// on transient failures or core outages where the same items are repeatedly returned.
+			if !seenInDrain[item.ItemURL] {
 				seenInDrain[item.ItemURL] = true
+				newItemsOrFirstSeen++
+			} else {
+				// We have already seen this item in THIS drain cycle.
 				continue
 			}
 
-			seenInDrain[item.ItemURL] = true
-			newItemsInBatch++
+			// Invariant: never re-fetch an item that is already in local spool,
+			// or already in durable fetched history.
+			if c.store.HasSpool(item.ItemURL) || c.store.IsFetched(item.ItemURL) {
+				continue
+			}
 
 			c.fetchAndIngestItem(ctx, item.ItemURL, item.FeedURL)
 			totalDrained++
@@ -543,10 +541,11 @@ func (c *Controller) drainPending(ctx context.Context, deadline time.Time) {
 			}
 		}
 
-		// If no items in this batch required fetching (e.g. all were already fetched,
-		// spooled, or seen in this cycle), stop draining to prevent busy-spinning.
-		if newItemsInBatch == 0 {
-			slog.Debug("No new items to fetch in pending batch; exiting drain cycle", "batch_size", len(pending))
+		// If we didn't see any new URLs in this batch (meaning all returned items
+		// were already processed in earlier iterations of THIS drain cycle), we are
+		// spinning on the same queue front. Stop draining.
+		if newItemsOrFirstSeen == 0 {
+			slog.Debug("No new items seen in pending batch; exiting drain cycle", "batch_size", len(pending))
 			return
 		}
 	}
