@@ -1,25 +1,29 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.9"
+# dependencies = [
+#     "pyshp>=2.3.1",
+# ]
+# ///
+
 """
 JMA Forecast Area GIS Data Loader
 
 Prepares and loads JMA (Japan Meteorological Agency) municipality-level weather
 alert forecast areas (市町村等（気象警報等）) into the `sea.jma_area` table.
 
-Prerequisites:
-    pip install pyshp
-
 Usage:
     # 1. Pipe SQL directly to psql via URL:
-    python3 db/scripts/load_jma_areas.py https://www.data.jma.go.jp/developer/gis/20260226_AreaInformationCity_weather_GIS.zip | psql "$DATABASE_URL"
+    uv run db/scripts/load_jma_areas.py https://www.data.jma.go.jp/developer/gis/20260226_AreaInformationCity_weather_GIS.zip | psql "$DATABASE_URL"
 
     # 2. From a locally downloaded zip file:
-    python3 db/scripts/load_jma_areas.py /path/to/20260226_AreaInformationCity_weather_GIS.zip | psql "$DATABASE_URL"
+    uv run db/scripts/load_jma_areas.py /path/to/20260226_AreaInformationCity_weather_GIS.zip | psql "$DATABASE_URL"
 
     # 3. Save to a SQL file:
-    python3 db/scripts/load_jma_areas.py 20260226_AreaInformationCity_weather_GIS.zip -o jma_areas.sql
+    uv run db/scripts/load_jma_areas.py 20260226_AreaInformationCity_weather_GIS.zip -o jma_areas.sql
 
     # 4. Direct load into database (uses psycopg/psycopg2 or psql subprocess):
-    python3 db/scripts/load_jma_areas.py 20260226_AreaInformationCity_weather_GIS.zip --db-url "$DATABASE_URL"
+    uv run db/scripts/load_jma_areas.py 20260226_AreaInformationCity_weather_GIS.zip --db-url "$DATABASE_URL"
 
 Options:
     --tolerance   Simplification tolerance for ST_SimplifyPreserveTopology in degrees
@@ -36,14 +40,7 @@ import tempfile
 import urllib.request
 import zipfile
 
-try:
-    import shapefile
-except ImportError:
-    sys.stderr.write(
-        "Error: 'pyshp' is required. Please install it with:\n"
-        "    pip install pyshp\n"
-    )
-    sys.exit(1)
+import shapefile
 
 
 def log(msg: str) -> None:
