@@ -225,11 +225,10 @@ def generate_sql_statements(areas: dict, tolerance: float, batch_size: int = 100
             wkt = f"MULTIPOLYGON ({poly_wkts})"
 
             if tolerance > 0:
-                geom_expr = (
-                    f"ST_Multi(ST_SimplifyPreserveTopology(ST_GeomFromText('{wkt}', 4326), {tolerance}))"
-                )
+                base_geom = f"ST_SimplifyPreserveTopology(ST_GeomFromText('{wkt}', 4326), {tolerance})"
             else:
-                geom_expr = f"ST_Multi(ST_GeomFromText('{wkt}', 4326))"
+                base_geom = f"ST_GeomFromText('{wkt}', 4326)"
+            geom_expr = f"ST_Multi(ST_CollectionExtract(ST_MakeValid({base_geom}), 3))"
 
             values.append(f"  ('{code}', '{name}', {geom_expr})")
 
