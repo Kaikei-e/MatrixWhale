@@ -67,9 +67,11 @@ def download_url(url: str, dest_path: str) -> None:
             downloaded += len(chunk)
             if total_bytes:
                 percent = (downloaded / total_bytes) * 100
-                sys.stderr.write(f"\r[load_jma_areas] Downloaded {downloaded // (1024*1024)}MB / {total_bytes // (1024*1024)}MB ({percent:.1f}%)")
-                sys.stderr.flush()
-    sys.stderr.write("\n")
+                if sys.stderr.isatty():
+                    sys.stderr.write(f"\r[load_jma_areas] Downloaded {downloaded // (1024*1024)}MB / {total_bytes // (1024*1024)}MB ({percent:.1f}%)")
+                    sys.stderr.flush()
+    if sys.stderr.isatty():
+        sys.stderr.write("\n")
     log("Download complete.")
 
 
