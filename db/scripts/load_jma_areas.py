@@ -127,7 +127,7 @@ def find_field(field_names: list, candidates: list) -> str:
 
 def read_shapefile_areas(shp_path: str) -> dict:
     log(f"Reading shapefile from {shp_path}...")
-    
+
     encodings = []
     cpg_path = os.path.splitext(shp_path)[0] + ".cpg"
     if os.path.exists(cpg_path):
@@ -158,17 +158,17 @@ def read_shapefile_areas(shp_path: str) -> dict:
             # records to ensure the encoding is valid for the entire file.
             for _ in reader.iterRecords():
                 pass
-            
+
             sf = shapefile.Reader(shp_path, encoding=enc)
             log(f"Opened shapefile with encoding '{enc}'")
             break
-        except Exception as e:
+        except (UnicodeDecodeError, shapefile.ShapefileException):
             # pyshp can raise shapefile.dbfFileException on decode failures,
-            # not just UnicodeDecodeError. Catch Exception to ensure we fail over.
+            # not just UnicodeDecodeError. Catch only decode-related exceptions.
             continue
 
     if sf is None:
-        sf = shapefile.Reader(shp_path)
+        raise ValueError(f"Failed to open shapefile {shp_path} with encodings: {encodings}")
 
     fields = [f[0].lower() for f in sf.fields if f[0] != "DeletionFlag"]
     log(f"Found fields: {fields}")
