@@ -13,16 +13,16 @@ Prepares and loads JMA (Japan Meteorological Agency) municipality-level weather
 alert forecast areas (市町村等（気象警報等）) into the `sea.jma_area` table.
 
 Usage:
-    # 1. Pipe SQL directly to psql via URL:
-    uv run db/scripts/load_jma_areas.py https://www.data.jma.go.jp/developer/gis/20260226_AreaInformationCity_weather_GIS.zip | psql "$DATABASE_URL"
+    # 1. Pipe SQL directly to the container (recommended):
+    uv run db/scripts/load_jma_areas.py https://www.data.jma.go.jp/developer/gis/20260226_AreaInformationCity_weather_GIS.zip | docker compose exec -T db psql -U user1 -d sea
 
     # 2. From a locally downloaded zip file:
-    uv run db/scripts/load_jma_areas.py /path/to/20260226_AreaInformationCity_weather_GIS.zip | psql "$DATABASE_URL"
+    uv run db/scripts/load_jma_areas.py /path/to/20260226_AreaInformationCity_weather_GIS.zip | docker compose exec -T db psql -U user1 -d sea
 
     # 3. Save to a SQL file:
     uv run db/scripts/load_jma_areas.py 20260226_AreaInformationCity_weather_GIS.zip -o jma_areas.sql
 
-    # 4. Direct load into database (uses psycopg/psycopg2 or psql subprocess):
+    # 4. Direct load into database (requires psycopg/psycopg2 driver or host psql client):
     uv run db/scripts/load_jma_areas.py 20260226_AreaInformationCity_weather_GIS.zip --db-url "$DATABASE_URL"
 
 Options:
@@ -127,16 +127,44 @@ def find_field(field_names: list, candidates: list) -> str:
 
 def read_shapefile_areas(shp_path: str) -> dict:
     log(f"Reading shapefile from {shp_path}...")
+    
+    encodings = []
+    cpg_path = os.path.splitext(shp_path)[0] + ".cpg"
+    if os.path.exists(cpg_path):
+        try:
+            with open(cpg_path, "r", encoding="ascii", errors="ignore") as f:
+                cpg_enc = f.read().strip()
+                if cpg_enc:
+                    if cpg_enc.lower() == "system":
+                        encodings.append("cp932")
+                    else:
+                        encodings.append(cpg_enc)
+        except Exception as e:
+            log(f"Failed to read .cpg file: {e}")
+
+    # UTF-8 is first in the fallback list, as JMA datasets use it.
+    encodings.extend(["utf-8", "cp932", "shift_jis"])
+
+    # Remove duplicates preserving order
+    seen = set()
+    encodings = [x for x in encodings if not (x.lower() in seen or seen.add(x.lower()))]
+
     sf = None
-    for enc in ("cp932", "shift_jis", "utf-8"):
+    for enc in encodings:
         try:
             reader = shapefile.Reader(shp_path, encoding=enc)
-            if len(reader) > 0:
-                _ = reader.record(0)
-            sf = reader
+            # A single record might happen to decode under the wrong encoding
+            # (e.g. if it contains only ASCII). To be robust, we read all DBF
+            # records to ensure the encoding is valid for the entire file.
+            for _ in reader.iterRecords():
+                pass
+            
+            sf = shapefile.Reader(shp_path, encoding=enc)
             log(f"Opened shapefile with encoding '{enc}'")
             break
-        except UnicodeDecodeError:
+        except Exception as e:
+            # pyshp can raise shapefile.dbfFileException on decode failures,
+            # not just UnicodeDecodeError. Catch Exception to ensure we fail over.
             continue
 
     if sf is None:
