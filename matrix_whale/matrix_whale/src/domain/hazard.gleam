@@ -669,7 +669,9 @@ pub type Hazard {
   )
 }
 
-pub const columns = "source, source_id, source_episode_id, episode_count, hazard_type, hazard_codes, glide, alert_level, alert_score, cap_severity, severity_value, severity_unit, severity_label, estimate_type, title, description, countries, report_url, external_ids, onset_at, onset_at_ms, expires_at, expires_at_ms, modified_at, modified_at_ms, is_current, ST_X(centroid), ST_Y(centroid), ST_XMin(bbox), ST_YMin(bbox), ST_XMax(bbox), ST_YMax(bbox), ST_AsGeoJSON(primary_geometry), geometries::text, first_seen_at, last_seen_at"
+pub const columns = "source, source_id, source_episode_id, episode_count, hazard_type, hazard_codes, glide, alert_level, alert_score, cap_severity, severity_value, severity_unit, severity_label, estimate_type, title, description, countries, report_url, external_ids, onset_at, onset_at_ms, expires_at, expires_at_ms, modified_at, modified_at_ms, is_current, ST_X(centroid), ST_Y(centroid), ST_XMin(bbox), ST_YMin(bbox), ST_XMax(bbox), ST_YMax(bbox), ST_AsGeoJSON(ST_SimplifyPreserveTopology(primary_geometry, 0.01), 4), geometries::text, first_seen_at, last_seen_at"
+
+pub const detail_columns = "source, source_id, source_episode_id, episode_count, hazard_type, hazard_codes, glide, alert_level, alert_score, cap_severity, severity_value, severity_unit, severity_label, estimate_type, title, description, countries, report_url, external_ids, onset_at, onset_at_ms, expires_at, expires_at_ms, modified_at, modified_at_ms, is_current, ST_X(centroid), ST_Y(centroid), ST_XMin(bbox), ST_YMin(bbox), ST_XMax(bbox), ST_YMax(bbox), ST_AsGeoJSON(primary_geometry, 6), geometries::text, first_seen_at, last_seen_at"
 
 pub fn row_decoder() -> decode.Decoder(Hazard) {
   use source <- decode.field(0, decode.string)

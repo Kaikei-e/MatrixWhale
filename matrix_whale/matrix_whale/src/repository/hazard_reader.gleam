@@ -89,7 +89,7 @@ fn select_hazard(
 ) -> Result(Option(Hazard), String) {
   pog.query(
     "SELECT "
-    <> hazard.columns
+    <> hazard.detail_columns
     <> " FROM sea.hazard WHERE source = $1 AND source_id = $2",
   )
   |> pog.parameter(pog.text(source))

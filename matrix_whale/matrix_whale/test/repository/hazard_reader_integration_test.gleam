@@ -4,9 +4,11 @@
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/string
 import gleeunit/should
 import intake/record
 import message/reciever/models/gdacs
+import pog
 import repository/gdacs_event_writer
 import repository/hazard_reader
 import support/test_db
@@ -118,6 +120,48 @@ pub fn detail_returns_hazard_with_episodes_integration_test() {
     list.all(episodes, fn(e) { e.has_geometry == False }) |> should.equal(True)
 
     let assert Ok(None) = hazard_reader.detail("gdacs", "EQ-999999", conn)
+    Nil
+  })
+}
+
+pub fn recent_geometry_is_simplified_but_detail_is_full_integration_test() {
+  test_db.with_test_db(fn(conn) {
+    let now = test_db.now_ms()
+    let assert Ok(_) =
+      gdacs_event_writer.write_batch(
+        [
+          incoming(sample_feature(
+            event_type: "EQ",
+            event_id: 999,
+            episode_id: 1,
+            modified_at_ms: now,
+            alert_level: "Green",
+          )),
+        ],
+        now,
+        conn,
+      )
+
+    let assert Ok(_) =
+      pog.query(
+        "UPDATE sea.hazard SET primary_geometry = ST_GeomFromGeoJSON('{\"type\":\"Point\",\"coordinates\":[1.1234567,2.1234567]}') WHERE source_id = 'EQ-999'",
+      )
+      |> pog.execute(conn)
+
+    let assert Ok([recent_hazard]) = hazard_reader.recent(336, ["EQ"], [], conn)
+    recent_hazard.source_id |> should.equal("EQ-999")
+    let assert Some(recent_geom) = recent_hazard.primary_geometry
+
+    string.contains(recent_geom, "1.1235") |> should.equal(True)
+
+    let assert Ok(Some(#(detail_hazard, _))) =
+      hazard_reader.detail("gdacs", "EQ-999", conn)
+    detail_hazard.source_id |> should.equal("EQ-999")
+    let assert Some(detail_geom) = detail_hazard.primary_geometry
+
+    string.contains(detail_geom, "1.123457") |> should.equal(True)
+
+    recent_geom |> should.not_equal(detail_geom)
     Nil
   })
 }
