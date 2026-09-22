@@ -7,5 +7,7 @@ db/data18/
 docs/internal
 .serena/
 .mcp.json
+.codex/
+.claude/settings.local.json
 perf/results/
 docs/reviews/
