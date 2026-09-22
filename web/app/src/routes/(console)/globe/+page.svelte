@@ -9,14 +9,7 @@
 	import BottomSheet from '$lib/components/BottomSheet.svelte';
 	import EarthquakePanel from '$lib/components/EarthquakePanel.svelte';
 	import SidePane from '$lib/components/pane/SidePane.svelte';
-	import {
-		ZONE_CENTROIDS,
-		LAND_50M,
-		FORECAST_ZONES,
-		COUNTY_ZONES,
-		MARINE_COASTAL_ZONES,
-		MARINE_OFFSHORE_ZONES
-	} from '$lib/chart/dataFiles';
+	import { ZONE_CENTROIDS } from '$lib/chart/dataFiles';
 	import { bboxOfAlerts, initialViewBbox, type Bbox } from '$lib/chart/presets';
 	import { alertStore } from '$lib/alerts/store.svelte';
 	import { BlinkEngine } from '$lib/alerts/blinkEngine.svelte';
@@ -252,15 +245,6 @@
 		fitToBbox(bbox, alertStore.reducedMotion ? 0 : 600);
 	}
 </script>
-
-<svelte:head>
-	<link rel="preload" as="fetch" crossorigin="anonymous" href={LAND_50M} />
-	<link rel="preload" as="fetch" crossorigin="anonymous" href={FORECAST_ZONES} />
-	<link rel="preload" as="fetch" crossorigin="anonymous" href={COUNTY_ZONES} />
-	<link rel="preload" as="fetch" crossorigin="anonymous" href={MARINE_COASTAL_ZONES} />
-	<link rel="preload" as="fetch" crossorigin="anonymous" href={MARINE_OFFSHORE_ZONES} />
-	<link rel="preload" as="fetch" crossorigin="anonymous" href={ZONE_CENTROIDS} />
-</svelte:head>
 
 <div class="relative h-full w-full overflow-hidden">
 	{#if GlobeMap}

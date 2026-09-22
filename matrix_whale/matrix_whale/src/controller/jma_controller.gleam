@@ -99,7 +99,6 @@ pub fn process_messages(
       ),
     )
 
-    // Broadcast live alert updates to frontend SSE
     case
       res.alert_diff.new != []
       || res.alert_diff.updated != []
@@ -112,7 +111,6 @@ pub fn process_messages(
       False -> Nil
     }
 
-    // Broadcast live earthquake updates to frontend SSE
     case
       res.earthquake_diff.events.new != []
       || res.earthquake_diff.events.updated != []

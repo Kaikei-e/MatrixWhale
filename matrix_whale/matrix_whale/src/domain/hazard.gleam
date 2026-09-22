@@ -114,8 +114,7 @@ pub fn episode_row_decoder() -> decode.Decoder(GdacsEpisodeRow) {
   ))
 }
 
-/// Picks the episode a hazard row should reflect: highest `modified_at_ms`,
-/// ties broken by the highest `episode_id`.
+/// GDACS flags preliminary episodes `istemporary` and may withdraw them, so they never drive a hazard row.
 pub fn active_episodes(rows: List(GdacsEpisodeRow)) -> List(GdacsEpisodeRow) {
   list.filter(rows, fn(r) { !r.is_temporary })
 }
@@ -314,7 +313,7 @@ pub fn primary_geometry_from(
 ) -> Option(String) {
   case json.parse(feature_collection_json, feature_collection_decoder()) {
     Ok(features) ->
-      pick_primary_geometry(features) |> option.map(geometry_to_text)
+      pick_primary_geometry(features) |> option.then(geometry_to_text)
     Error(_) -> None
   }
 }
@@ -454,10 +453,10 @@ fn ring_area(points: List(#(Float, Float))) -> Float {
   }
 }
 
-fn geometry_to_text(geometry: Dynamic) -> String {
+fn geometry_to_text(geometry: Dynamic) -> Option(String) {
   case raw_json.encode(geometry) {
-    Ok(text) -> text
-    Error(Nil) -> "null"
+    Ok(text) -> Some(text)
+    Error(Nil) -> None
   }
 }
 

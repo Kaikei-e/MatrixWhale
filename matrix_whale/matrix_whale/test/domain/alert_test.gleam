@@ -222,4 +222,8 @@ pub fn raw_json_geocodes_array_test() {
 pub fn raw_json_empty_geocodes_test() {
   let obj = json.object([#("geocodes", alert.raw_json_or_empty_array(""))])
   json.to_string(obj) |> should.equal("{\"geocodes\":[]}")
+
+  let null_obj =
+    json.object([#("geocodes", alert.raw_json_or_empty_array("null"))])
+  json.to_string(null_obj) |> should.equal("{\"geocodes\":[]}")
 }

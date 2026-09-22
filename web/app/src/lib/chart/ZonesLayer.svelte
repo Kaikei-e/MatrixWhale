@@ -156,6 +156,16 @@
 
 	let zoneData = $state.raw<Record<string, GeoJSON.FeatureCollection>>({});
 	let decoded: Record<string, GeoJSON.FeatureCollection> = {};
+	let publishZones = $state(false);
+
+	$effect(() => {
+		if (alertStore.snapshotSettled) publishZones = true;
+	});
+
+	$effect(() => {
+		const timer = setTimeout(() => (publishZones = true), 5000);
+		return () => clearTimeout(timer);
+	});
 
 	$effect(() => {
 		let active = true;
@@ -164,7 +174,7 @@
 				.then((data) => {
 					if (!active) return;
 					decoded = { ...decoded, [src.id]: data };
-					if (alertStore.snapshotSettled) zoneData = decoded;
+					if (publishZones) zoneData = decoded;
 				})
 				.catch(() => {});
 		}
@@ -174,9 +184,9 @@
 	});
 
 	// Tiles are built for the current view, so publishing zones before the
-	// initial fit to the alert snapshot would build every zone tile twice.
+	// initial fit to the alert snapshot (or the 5 s fallback) would build every zone tile twice.
 	$effect(() => {
-		if (alertStore.snapshotSettled) zoneData = decoded;
+		if (publishZones) zoneData = decoded;
 	});
 
 	// FeatureState calls setFeatureState as soon as it mounts, which MapLibre

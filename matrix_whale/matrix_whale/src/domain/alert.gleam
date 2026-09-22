@@ -317,7 +317,7 @@ pub fn nullable_raw_json(text: Option(String)) -> json.Json {
 
 pub fn raw_json_or_empty_array(text: String) -> json.Json {
   case text {
-    "" -> raw_json.json("[]")
+    "" | "null" -> raw_json.json("[]")
     t -> raw_json.json(t)
   }
 }

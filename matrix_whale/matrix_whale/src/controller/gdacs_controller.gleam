@@ -104,6 +104,7 @@ pub fn process_geometry(
   })
   |> result.map(fn(outcome) {
     hazard_hub.publish(ctx.hazard_hub, [], outcome.changed_hazards)
+    response_cache.invalidate(ctx.hazard_cache)
     run_geometry_earthquake_path(outcome.applied, backfill, ctx)
     GdacsGeometryResultAck(
       written: outcome.written,

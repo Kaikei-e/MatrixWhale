@@ -1,4 +1,7 @@
 import adapter/response_cache.{CacheEntry}
+import gleam/erlang/process
+import gleam/int
+import gleam/list
 import gleam/option.{None, Some}
 import gleeunit/should
 
@@ -43,4 +46,26 @@ pub fn put_tagged_with_old_generation_is_ignored_test() {
   let result = response_cache.get(cache.data, "my_key")
   // The cache should still be empty (and generation 1)
   result |> should.equal(#(None, 1))
+}
+
+pub fn evicts_oldest_when_full_test() {
+  let assert Ok(cache) = response_cache.start()
+  let entry = CacheEntry("etag", "body", <<1, 2, 3>>)
+
+  list.each([1, 2, 3, 4, 5, 6, 7, 8, 9], fn(i) {
+    let key = "key_" <> int.to_string(i)
+    response_cache.put(cache.data, key, 0, entry)
+  })
+
+  response_cache.get(cache.data, "key_1") |> should.equal(#(None, 0))
+  list.each([2, 3, 4, 5, 6, 7, 8, 9], fn(i) {
+    let key = "key_" <> int.to_string(i)
+    response_cache.get(cache.data, key) |> should.equal(#(Some(entry), 0))
+  })
+}
+
+pub fn get_returns_none_negative_generation_on_timeout_test() {
+  let dead_subject = process.new_subject()
+  let result = response_cache.get(dead_subject, "key")
+  result |> should.equal(#(None, -1))
 }

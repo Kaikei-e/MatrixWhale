@@ -38,7 +38,12 @@ pub fn get(
   cache: Subject(CacheMsg),
   key: String,
 ) -> #(Option(CacheEntry), Int) {
-  process.call(cache, call_timeout, fn(reply_to) { Get(key, reply_to) })
+  let reply_to = process.new_subject()
+  process.send(cache, Get(key, reply_to))
+  case process.receive(reply_to, call_timeout) {
+    Ok(reply) -> reply
+    Error(_) -> #(None, -1)
+  }
 }
 
 pub fn put(
@@ -75,10 +80,14 @@ fn handle(state: State, message: CacheMsg) -> actor.Next(State, CacheMsg) {
         False -> actor.continue(state)
         True -> {
           let stored = #(entry, generation, now_seconds())
-          let entries = case dict.size(state.entries) >= max_entries {
-            True -> dict.new() |> dict.insert(key, stored)
-            False -> dict.insert(state.entries, key, stored)
+          let entries = case
+            !dict.has_key(state.entries, key)
+            && dict.size(state.entries) >= max_entries
+          {
+            True -> evict_oldest(state.entries)
+            False -> state.entries
           }
+          let entries = dict.insert(entries, key, stored)
           actor.continue(State(..state, entries:))
         }
       }
@@ -97,4 +106,25 @@ fn now_seconds() -> Int {
   let #(s, _) =
     timestamp.system_time() |> timestamp.to_unix_seconds_and_nanoseconds
   s
+}
+
+fn evict_oldest(
+  entries: Dict(String, #(CacheEntry, Int, Int)),
+) -> Dict(String, #(CacheEntry, Int, Int)) {
+  let oldest =
+    dict.fold(entries, None, fn(acc, key, value) {
+      let #(_, _, stored_at) = value
+      case acc {
+        None -> Some(#(key, stored_at))
+        Some(#(_, min_at)) ->
+          case stored_at < min_at {
+            True -> Some(#(key, stored_at))
+            False -> acc
+          }
+      }
+    })
+  case oldest {
+    Some(#(key, _)) -> dict.delete(entries, key)
+    None -> entries
+  }
 }
