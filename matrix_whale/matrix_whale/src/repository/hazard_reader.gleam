@@ -33,7 +33,7 @@ pub fn recent(
   pog.query(
     "SELECT "
     <> snapshot_columns
-    <> " FROM sea.hazard WHERE modified_at >= now() - ($1 || ' hours')::interval AND ($2::text[] IS NULL OR hazard_type = ANY($2)) AND ($3::text[] IS NULL OR alert_level = ANY($3)) ORDER BY modified_at_ms DESC",
+    <> " FROM sea.hazard WHERE is_current AND modified_at >= now() - ($1 || ' hours')::interval AND ($2::text[] IS NULL OR hazard_type = ANY($2)) AND ($3::text[] IS NULL OR alert_level = ANY($3)) ORDER BY modified_at_ms DESC",
   )
   |> pog.parameter(pog.text(string.inspect(hours)))
   |> pog.parameter(type_filter)

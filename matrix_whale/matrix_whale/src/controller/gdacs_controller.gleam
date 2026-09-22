@@ -1,5 +1,6 @@
 import adapter/context.{type Context}
 import adapter/hazard_hub
+import adapter/response_cache
 import controller/earthquake_controller
 import domain/source
 import gleam/int
@@ -73,6 +74,7 @@ pub fn process(
     let updated_hazards =
       list.flat_map(outcome.results, fn(r) { r.updated_hazards })
     hazard_hub.publish(ctx.hazard_hub, new_hazards, updated_hazards)
+    response_cache.invalidate(ctx.hazard_cache)
 
     GdacsResult(
       new: outcome.new,

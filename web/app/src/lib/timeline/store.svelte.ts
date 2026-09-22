@@ -35,10 +35,10 @@ function buildQuery(baseUrl: string, before: string | null, filters: TimelineFil
 	return `${baseUrl}?${params}`;
 }
 
-function insertSorted(items: TimelineItem[], item: TimelineItem): void {
+function insertSorted(items: TimelineItem[], item: TimelineItem): TimelineItem[] {
 	let index = 0;
 	while (index < items.length && compareItems(items[index], item) < 0) index += 1;
-	items.splice(index, 0, item);
+	return [...items.slice(0, index), item, ...items.slice(index)];
 }
 
 /**
@@ -47,8 +47,8 @@ function insertSorted(items: TimelineItem[], item: TimelineItem): void {
  * safe to splice into `items` without moving the reader's scroll position.
  */
 export class TimelineStore {
-	items = $state<TimelineItem[]>([]);
-	pending = $state<TimelineItem[]>([]);
+	items = $state.raw<TimelineItem[]>([]);
+	pending = $state.raw<TimelineItem[]>([]);
 	updatedKeys = new SvelteSet<string>();
 	nextCursor = $state<string | null>(null);
 	loading = $state(false);
@@ -93,7 +93,8 @@ export class TimelineStore {
 		try {
 			const page = await this.#fetchPage(this.nextCursor);
 			if (generation !== this.#generation) return;
-			for (const item of page.items) if (!this.#hasKey(item.key)) this.items.push(item);
+			for (const item of page.items)
+				if (!this.#hasKey(item.key)) this.items = [...this.items, item];
 			this.nextCursor = page.next_cursor;
 			this.error = null;
 		} catch (error) {
@@ -161,8 +162,8 @@ export class TimelineStore {
 
 	#upsertHead(item: TimelineItem): void {
 		const index = this.items.findIndex((existing) => existing.key === item.key);
-		if (index !== -1) this.items[index] = item;
-		else insertSorted(this.items, item);
+		if (index !== -1) this.items = this.items.with(index, item);
+		else this.items = insertSorted(this.items, item);
 	}
 
 	#applyRaw(type: 'new' | 'update' | 'ended', item: TimelineItem): void {
@@ -170,7 +171,7 @@ export class TimelineStore {
 			if (this.#hasKey(item.key)) return;
 			if (!passesFilters(item, this.filters)) return;
 			if (this.pending.length < MAX_PENDING) {
-				this.pending.push(item);
+				this.pending = [...this.pending, item];
 			}
 			return;
 		}
@@ -180,17 +181,17 @@ export class TimelineStore {
 		if (itemsIndex === -1 && pendingIndex === -1) return;
 
 		if (!passesFilters(item, this.filters)) {
-			if (itemsIndex !== -1) this.items.splice(itemsIndex, 1);
-			if (pendingIndex !== -1) this.pending.splice(pendingIndex, 1);
+			if (itemsIndex !== -1) this.items = this.items.toSpliced(itemsIndex, 1);
+			if (pendingIndex !== -1) this.pending = this.pending.toSpliced(pendingIndex, 1);
 			this.updatedKeys.delete(item.key);
 			return;
 		}
 
 		if (itemsIndex !== -1) {
-			this.items[itemsIndex] = item;
+			this.items = this.items.with(itemsIndex, item);
 			this.updatedKeys.add(item.key);
 		}
-		if (pendingIndex !== -1) this.pending[pendingIndex] = item;
+		if (pendingIndex !== -1) this.pending = this.pending.with(pendingIndex, item);
 	}
 
 	#hasKey(key: string): boolean {

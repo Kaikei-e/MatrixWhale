@@ -3,6 +3,7 @@ import adapter/context
 import adapter/earthquake_hub
 import adapter/hazard_hub
 import adapter/reciever
+import adapter/response_cache
 import adapter/streamer
 import dot_env/env
 import gleam/erlang/process
@@ -45,11 +46,13 @@ pub fn main() {
   let assert Ok(hub) = alert_hub.start()
   let assert Ok(earthquake_hub) = earthquake_hub.start()
   let assert Ok(hazard_hub) = hazard_hub.start()
+  let assert Ok(alert_cache) = response_cache.start()
+  let assert Ok(hazard_cache) = response_cache.start()
 
-  sweep_and_clean_alerts(db, hub.data)
+  sweep_and_clean_alerts(db, hub.data, alert_cache.data)
   let _ =
     repeatedly.call(60_000, Nil, fn(_, _) {
-      sweep_and_clean_alerts(db, hub.data)
+      sweep_and_clean_alerts(db, hub.data, alert_cache.data)
       Nil
     })
 
@@ -61,6 +64,8 @@ pub fn main() {
       earthquake_hub: earthquake_hub.data,
       hazard_hub: hazard_hub.data,
       seen: seen,
+      alert_cache: alert_cache.data,
+      hazard_cache: hazard_cache.data,
     )
 
   // Start both servers - they run in their own processes
@@ -74,6 +79,7 @@ pub fn main() {
 fn sweep_and_clean_alerts(
   db: pog.Connection,
   hub: process.Subject(alert_hub.HubMsg),
+  cache: process.Subject(response_cache.CacheMsg),
 ) -> Nil {
   let now = timestamp.system_time()
   case
@@ -86,6 +92,7 @@ fn sweep_and_clean_alerts(
         hub,
         alert_writer.AlertDiff(new: [], updated: [], ended: rows),
       )
+      response_cache.invalidate(cache)
     }
     Error(error) -> wisp.log_error("Alert expiry sweep failed: " <> error)
   }

@@ -2,6 +2,7 @@ import adapter/alert_hub
 import adapter/context
 import adapter/earthquake_hub
 import adapter/hazard_hub
+import adapter/response_cache
 import adapter/streamer
 import domain/earthquake
 import domain/event
@@ -203,6 +204,8 @@ fn sample_row() -> event.EventView {
 }
 
 fn test_context() -> context.Context {
+  let assert Ok(alert_c) = response_cache.start()
+  let assert Ok(hazard_c) = response_cache.start()
   let assert Ok(alert) = alert_hub.start()
   let assert Ok(earthquake) = earthquake_hub.start()
   let assert Ok(hazard) = hazard_hub.start()
@@ -213,5 +216,7 @@ fn test_context() -> context.Context {
     earthquake_hub: earthquake.data,
     hazard_hub: hazard.data,
     seen: seen_set.new("streamer_earthquake_test_seen", 3_600_000),
+    alert_cache: alert_c.data,
+    hazard_cache: hazard_c.data,
   )
 }

@@ -1,5 +1,6 @@
 import gleam/bit_array
 import gleam/dynamic.{type Dynamic}
+import gleam/json
 
 @external(erlang, "json", "encode")
 fn raw_encode(data: Dynamic) -> Dynamic
@@ -15,3 +16,8 @@ pub fn encode(data: Dynamic) -> Result(String, Nil) {
   |> iolist_to_binary
   |> bit_array.to_string
 }
+
+/// Injects a pre-serialized JSON string directly into a json.Json value.
+/// gleam_json represents Json as iodata on the BEAM, so a binary is valid as-is.
+@external(erlang, "raw_json_ffi", "raw")
+pub fn json(text: String) -> json.Json

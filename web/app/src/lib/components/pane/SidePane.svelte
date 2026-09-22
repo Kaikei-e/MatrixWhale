@@ -495,7 +495,7 @@
 			Onset <time datetime={hazard.onset_at} title={hazard.onset_at}
 				>{formatLocalDateTime(hazard.onset_at)}</time
 			>
-			· Expires
+			· Through
 			<time datetime={hazard.expires_at} title={hazard.expires_at}
 				>{formatLocalDateTime(hazard.expires_at)}</time
 			>

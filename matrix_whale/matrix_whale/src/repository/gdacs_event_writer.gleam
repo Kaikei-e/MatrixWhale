@@ -82,14 +82,14 @@ fn write_batch_tx(
     list.filter_map(hazards, fn(h) {
       case h {
         New(hazard) -> Ok(hazard)
-        Updated(_) -> Error(Nil)
+        Updated(_) | Skipped -> Error(Nil)
       }
     })
   let updated_hazards =
     list.filter_map(hazards, fn(h) {
       case h {
         Updated(hazard) -> Ok(hazard)
-        New(_) -> Error(Nil)
+        New(_) | Skipped -> Error(Nil)
       }
     })
 
@@ -109,6 +109,7 @@ fn write_batch_tx(
 pub type HazardRecompute {
   New(Hazard)
   Updated(Hazard)
+  Skipped
 }
 
 fn is_updated(pair: #(Incoming(GdacsFeature), Verdict)) -> Bool {
@@ -327,13 +328,11 @@ pub fn recompute_hazard(
   conn: pog.Connection,
 ) -> Result(HazardRecompute, String) {
   use rows <- result.try(load_episodes(event_type, event_id, conn))
-  case hazard.latest_episode(rows) {
-    option.None ->
-      Error(
-        "no episodes found for " <> event_type <> "-" <> int.to_string(event_id),
-      )
+  let active_rows = hazard.active_episodes(rows)
+  case hazard.latest_episode(active_rows) {
+    option.None -> Ok(Skipped)
     option.Some(latest) -> {
-      let normalized = hazard.normalize(latest, list.length(rows))
+      let normalized = hazard.normalize(latest, list.length(active_rows))
       write_hazard(normalized, now_ms, conn)
     }
   }

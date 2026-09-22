@@ -609,6 +609,7 @@ describe('AlertStore.subscribeRaw', () => {
 			await connectPromise;
 
 			expect(store.snapshotError).toBeNull();
+			expect(store.snapshotSettled).toBe(true);
 			expect(store.activeAlerts.has('slow-1')).toBe(true);
 			store.disconnect();
 		} finally {
@@ -643,6 +644,7 @@ describe('AlertStore.subscribeRaw', () => {
 			await connectPromise;
 
 			expect(store.snapshotError).toContain('timed out due to inactivity');
+			expect(store.snapshotSettled).toBe(true);
 			expect(store.activeAlerts.size).toBe(0);
 			store.disconnect();
 		} finally {
@@ -823,7 +825,10 @@ describe('AlertStore burst hardening', () => {
 			for (let i = 0; i < MAX_ACTIVE_ALERTS - 1; i++) {
 				store.activeAlerts.set(
 					`prefill-${i}`,
-					makeAlert({ id: `prefill-${i}`, first_seen_at: `2026-09-17T00:00:${String(i % 60).padStart(2, '0')}Z` })
+					makeAlert({
+						id: `prefill-${i}`,
+						first_seen_at: `2026-09-17T00:00:${String(i % 60).padStart(2, '0')}Z`
+					})
 				);
 			}
 			expect(store.activeAlerts.size).toBe(MAX_ACTIVE_ALERTS - 1);

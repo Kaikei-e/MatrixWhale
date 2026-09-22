@@ -254,6 +254,7 @@ fn sample_episode_row(
       "https://www.gdacs.org/report.aspx?eventid=1565193&episodeid=1732972&eventtype=EQ",
     ),
     geometry: None,
+    is_temporary: False,
   )
 }
 
@@ -375,4 +376,18 @@ pub fn to_polyline_json_handles_none_geometry_test() {
   let default_json = hazard.to_json(h) |> json.to_string
   let polyline_json = hazard.to_polyline_json(h) |> json.to_string
   polyline_json |> should.equal(default_json)
+}
+
+pub fn active_episodes_filters_out_temporary_test() {
+  let temp_row = sample_episode_row(episode_id: 1, modified_at_ms: 100)
+  let temp_row = hazard.GdacsEpisodeRow(..temp_row, is_temporary: True)
+  let normal_row = sample_episode_row(episode_id: 2, modified_at_ms: 200)
+  let normal_row = hazard.GdacsEpisodeRow(..normal_row, is_temporary: False)
+
+  let rows = [temp_row, normal_row]
+  let active = hazard.active_episodes(rows)
+
+  list.length(active) |> should.equal(1)
+  let assert [remaining] = active
+  remaining.episode_id |> should.equal(2)
 }

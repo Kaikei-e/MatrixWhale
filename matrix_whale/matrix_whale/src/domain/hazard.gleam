@@ -1,6 +1,6 @@
 import domain/earthquake
 import domain/geometry_transport
-import gleam/dict
+import erlang_tools/raw_json
 import gleam/dynamic.{type Dynamic}
 import gleam/dynamic/decode
 import gleam/float
@@ -45,10 +45,11 @@ pub type GdacsEpisodeRow {
     affected_countries: List(String),
     report_url: Option(String),
     geometry: Option(String),
+    is_temporary: Bool,
   )
 }
 
-pub const episode_columns = "event_type, event_id, episode_id, alert_level, alert_score, name, description, country, iso3, glide, origin_source, origin_source_id, severity_value, severity_unit, severity_text, from_at_ms, to_at_ms, modified_at_ms, is_current, longitude, latitude, bbox_west, bbox_south, bbox_east, bbox_north, affected_countries, report_url, geometry::text"
+pub const episode_columns = "event_type, event_id, episode_id, alert_level, alert_score, name, description, country, iso3, glide, origin_source, origin_source_id, severity_value, severity_unit, severity_text, from_at_ms, to_at_ms, modified_at_ms, is_current, longitude, latitude, bbox_west, bbox_south, bbox_east, bbox_north, affected_countries, report_url, geometry::text, is_temporary"
 
 pub fn episode_row_decoder() -> decode.Decoder(GdacsEpisodeRow) {
   use event_type <- decode.field(0, decode.string)
@@ -79,6 +80,7 @@ pub fn episode_row_decoder() -> decode.Decoder(GdacsEpisodeRow) {
   use affected_countries <- decode.field(25, decode.list(decode.string))
   use report_url <- decode.field(26, decode.optional(decode.string))
   use geometry <- decode.field(27, decode.optional(decode.string))
+  use is_temporary <- decode.field(28, decode.bool)
   decode.success(GdacsEpisodeRow(
     event_type:,
     event_id:,
@@ -108,11 +110,16 @@ pub fn episode_row_decoder() -> decode.Decoder(GdacsEpisodeRow) {
     affected_countries:,
     report_url:,
     geometry:,
+    is_temporary:,
   ))
 }
 
 /// Picks the episode a hazard row should reflect: highest `modified_at_ms`,
 /// ties broken by the highest `episode_id`.
+pub fn active_episodes(rows: List(GdacsEpisodeRow)) -> List(GdacsEpisodeRow) {
+  list.filter(rows, fn(r) { !r.is_temporary })
+}
+
 pub fn latest_episode(rows: List(GdacsEpisodeRow)) -> Option(GdacsEpisodeRow) {
   list.fold(rows, None, fn(acc, row) { keep_latest(acc, row) })
 }
@@ -448,77 +455,15 @@ fn ring_area(points: List(#(Float, Float))) -> Float {
 }
 
 fn geometry_to_text(geometry: Dynamic) -> String {
-  json.to_string(json_value_of(geometry))
-}
-
-/// A JSON value decoded via `gleam/json` retains its Erlang shape (map,
-/// list, binary, number, bool, the `null` atom); this walks that shape back
-/// into a `gleam/json` builder value so previously-stored JSON text (a
-/// GeoJSON geometry or FeatureCollection) can be embedded as a real nested
-/// value in an outgoing response instead of a re-escaped string.
-fn json_value_of(data: Dynamic) -> json.Json {
-  case decode.run(data, decode.optional(decode.dynamic)) {
-    Ok(None) -> json.null()
-    _ -> json_value_of_present(data)
-  }
-}
-
-fn json_value_of_present(data: Dynamic) -> json.Json {
-  case decode.run(data, decode.string) {
-    Ok(value) -> json.string(value)
-    Error(_) -> json_value_of_bool(data)
-  }
-}
-
-fn json_value_of_bool(data: Dynamic) -> json.Json {
-  case decode.run(data, decode.bool) {
-    Ok(value) -> json.bool(value)
-    Error(_) -> json_value_of_int(data)
-  }
-}
-
-fn json_value_of_int(data: Dynamic) -> json.Json {
-  case decode.run(data, decode.int) {
-    Ok(value) -> json.int(value)
-    Error(_) -> json_value_of_float(data)
-  }
-}
-
-fn json_value_of_float(data: Dynamic) -> json.Json {
-  case decode.run(data, decode.float) {
-    Ok(value) -> json.float(value)
-    Error(_) -> json_value_of_list(data)
-  }
-}
-
-fn json_value_of_list(data: Dynamic) -> json.Json {
-  case decode.run(data, decode.list(decode.dynamic)) {
-    Ok(items) -> json.array(items, json_value_of)
-    Error(_) -> json_value_of_object(data)
-  }
-}
-
-fn json_value_of_object(data: Dynamic) -> json.Json {
-  case decode.run(data, decode.dict(decode.string, decode.dynamic)) {
-    Ok(fields) ->
-      json.object(
-        dict.to_list(fields)
-        |> list.map(fn(kv) { #(kv.0, json_value_of(kv.1)) }),
-      )
-    Error(_) -> json.null()
-  }
-}
-
-fn json_of_text(text: String) -> json.Json {
-  case json.parse(text, decode.dynamic) {
-    Ok(data) -> json_value_of(data)
-    Error(_) -> json.null()
+  case raw_json.encode(geometry) {
+    Ok(text) -> text
+    Error(Nil) -> "null"
   }
 }
 
 fn nullable_raw_json(text: Option(String)) -> json.Json {
   case text {
-    Some(t) -> json_of_text(t)
+    Some(t) -> raw_json.json(t)
     None -> json.null()
   }
 }

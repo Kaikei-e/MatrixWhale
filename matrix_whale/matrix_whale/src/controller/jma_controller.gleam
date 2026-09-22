@@ -1,6 +1,7 @@
 import adapter/alert_hub
 import adapter/context.{type Context}
 import adapter/earthquake_hub
+import adapter/response_cache
 import gleam/int
 import gleam/option.{type Option}
 import gleam/result
@@ -104,7 +105,10 @@ pub fn process_messages(
       || res.alert_diff.updated != []
       || res.alert_diff.ended != []
     {
-      True -> alert_hub.publish(ctx.hub, res.alert_diff)
+      True -> {
+        alert_hub.publish(ctx.hub, res.alert_diff)
+        response_cache.invalidate(ctx.alert_cache)
+      }
       False -> Nil
     }
 

@@ -4,6 +4,7 @@ import adapter/context.{type Context}
 import adapter/earthquake_hub
 import adapter/hazard_hub
 import adapter/live_stream
+import adapter/response_cache
 import domain/alert
 import domain/cap_feed_view
 import domain/earthquake
@@ -267,64 +268,120 @@ pub fn etag_json_response(
   tagged_json_response(req, text, text, "")
 }
 
+fn cached_json_response(
+  req: Request(connection),
+  cache: Subject(response_cache.CacheMsg),
+  weakness: String,
+  build: fn() -> Result(#(String, String), String),
+) -> Response(mist.ResponseData) {
+  let key = cache_key(req)
+  let #(cached, generation) = response_cache.get(cache, key)
+  case cached {
+    option.Some(entry) -> entry_response(req, entry)
+    option.None ->
+      case build() {
+        Error(message) -> error_response(message)
+        Ok(#(text, validator_text)) -> {
+          let entry =
+            response_cache.CacheEntry(
+              etag: weakness <> "\"" <> sha256_hex(validator_text) <> "\"",
+              body: text,
+              gzip: compression.gzip(bit_array.from_string(text)),
+            )
+          response_cache.put(cache, key, generation, entry)
+          entry_response(req, entry)
+        }
+      }
+  }
+}
+
+fn cache_key(req: Request(connection)) -> String {
+  let query =
+    request.get_query(req)
+    |> result.unwrap([])
+    |> list.sort(fn(a, b) { string.compare(a.0, b.0) })
+    |> list.map(fn(pair) { pair.0 <> "=" <> pair.1 })
+    |> string.join("&")
+  case query {
+    "" -> req.path
+    _ -> req.path <> "?" <> query
+  }
+}
+
+fn entry_response(
+  req: Request(connection),
+  entry: response_cache.CacheEntry,
+) -> Response(mist.ResponseData) {
+  let gzip = case compression.request_accepts_gzip(req) {
+    True -> option.Some(entry.gzip)
+    False -> option.None
+  }
+  tagged_response(req, entry.etag, entry.body, gzip)
+}
+
 fn tagged_json_response(
   req: Request(connection),
   text: String,
   validator_text: String,
   weakness: String,
 ) -> Response(mist.ResponseData) {
-  let raw_hash =
-    crypto.hash(crypto.Sha256, bit_array.from_string(validator_text))
-    |> bit_array.base16_encode
-  let base_etag = weakness <> "\"" <> raw_hash <> "\""
-  let gzip_etag = weakness <> "\"" <> raw_hash <> "-gzip\""
-  let will_gzip = compression.request_accepts_gzip(req)
-  let response_etag = case will_gzip {
-    True -> gzip_etag
-    False -> base_etag
+  let base_etag = weakness <> "\"" <> sha256_hex(validator_text) <> "\""
+  let gzip = case compression.request_accepts_gzip(req) {
+    True -> option.Some(compression.gzip(bit_array.from_string(text)))
+    False -> option.None
   }
+  tagged_response(req, base_etag, text, gzip)
+}
 
-  case request.get_header(req, "if-none-match") {
-    Ok(value) ->
-      case if_none_match_matches(value, response_etag) {
-        True ->
-          response.new(304)
-          |> response.set_header("etag", response_etag)
-          |> response.set_header("cache-control", "no-cache")
-          |> compression.add_vary_accept_encoding
-          |> response.set_body(mist.Bytes(bytes_tree.new()))
-        False -> etag_body_response(response_etag, text, will_gzip)
+fn tagged_response(
+  req: Request(connection),
+  base_etag: String,
+  text: String,
+  gzip: option.Option(BitArray),
+) -> Response(mist.ResponseData) {
+  let response_etag = case gzip {
+    option.Some(_) -> string.drop_end(base_etag, 1) <> "-gzip\""
+    option.None -> base_etag
+  }
+  let not_modified = case request.get_header(req, "if-none-match") {
+    Ok(value) -> if_none_match_matches(value, response_etag)
+    Error(Nil) -> False
+  }
+  case not_modified {
+    True ->
+      response.new(304)
+      |> response.set_header("etag", response_etag)
+      |> response.set_header("cache-control", "no-cache")
+      |> compression.add_vary_accept_encoding
+      |> response.set_body(mist.Bytes(bytes_tree.new()))
+    False -> {
+      let res =
+        response.new(200)
+        |> response.set_header("content-type", "application/json")
+        |> response.set_header("etag", response_etag)
+        |> response.set_header("cache-control", "no-cache")
+        |> compression.add_vary_accept_encoding
+      case gzip {
+        option.Some(compressed) ->
+          res
+          |> response.set_header("content-encoding", "gzip")
+          |> response.set_header(
+            "content-length",
+            int.to_string(bit_array.byte_size(compressed)),
+          )
+          |> response.set_body(
+            mist.Bytes(bytes_tree.from_bit_array(compressed)),
+          )
+        option.None ->
+          res |> response.set_body(mist.Bytes(bytes_tree.from_string(text)))
       }
-    _ -> etag_body_response(response_etag, text, will_gzip)
+    }
   }
 }
 
-fn etag_body_response(
-  etag: String,
-  text: String,
-  will_gzip: Bool,
-) -> Response(mist.ResponseData) {
-  let res =
-    response.new(200)
-    |> response.set_header("content-type", "application/json")
-    |> response.set_header("etag", etag)
-    |> response.set_header("cache-control", "no-cache")
-    |> compression.add_vary_accept_encoding
-
-  case will_gzip {
-    True -> {
-      let compressed = compression.gzip(bit_array.from_string(text))
-      let compressed_size = bit_array.byte_size(compressed)
-      res
-      |> response.set_header("content-encoding", "gzip")
-      |> response.set_header("content-length", int.to_string(compressed_size))
-      |> response.set_body(mist.Bytes(bytes_tree.from_bit_array(compressed)))
-    }
-    False -> {
-      res
-      |> response.set_body(mist.Bytes(bytes_tree.from_string(text)))
-    }
-  }
+fn sha256_hex(text: String) -> String {
+  crypto.hash(crypto.Sha256, bit_array.from_string(text))
+  |> bit_array.base16_encode
 }
 
 pub fn if_none_match_matches(value: String, etag: String) -> Bool {
@@ -346,10 +403,13 @@ pub fn active_response(
         query |> list.key_find("sources") |> result.unwrap("") |> comma_list
       let countries =
         query |> list.key_find("countries") |> result.unwrap("") |> comma_list
-      case alert_reader.list_active(sources, countries, severities, ctx.db) {
-        Ok(rows) -> etag_json_response(req, json.array(rows, alert.to_json))
-        Error(err) -> error_response(err)
-      }
+      cached_json_response(req, ctx.alert_cache, "", fn() {
+        alert_reader.list_active(sources, countries, severities, ctx.db)
+        |> result.map(fn(rows) {
+          let text = json.to_string(json.array(rows, alert.to_json))
+          #(text, text)
+        })
+      })
     }
   }
 }
@@ -521,10 +581,10 @@ fn hazards_get_response(
   let levels =
     query |> list.key_find("levels") |> result.unwrap("") |> comma_list
 
-  case hazard_reader.recent(hours, types, levels, ctx.db) {
-    Error(error) -> error_response(error)
-    Ok(rows) -> hazard_snapshot_response(req, rows, now_rfc3339())
-  }
+  cached_json_response(req, ctx.hazard_cache, "W/", fn() {
+    hazard_reader.recent(hours, types, levels, ctx.db)
+    |> result.map(fn(rows) { hazard_snapshot_texts(query, rows, now_rfc3339()) })
+  })
 }
 
 /// Collection contents determine freshness; the response generation clock is
@@ -536,6 +596,15 @@ pub fn hazard_snapshot_response(
   generated_at: String,
 ) -> Response(mist.ResponseData) {
   let query = request.get_query(req) |> result.unwrap([])
+  let #(text, validator) = hazard_snapshot_texts(query, rows, generated_at)
+  tagged_json_response(req, text, validator, "W/")
+}
+
+fn hazard_snapshot_texts(
+  query: List(#(String, String)),
+  rows: List(hazard.Hazard),
+  generated_at: String,
+) -> #(String, String) {
   let serializer = case list.key_find(query, "geometry") {
     Ok("polyline") -> hazard.to_polyline_json
     _ -> hazard.to_json
@@ -548,7 +617,7 @@ pub fn hazard_snapshot_response(
   let text =
     json.object([#("generated_at", json.string(generated_at)), ..fields])
     |> json.to_string
-  tagged_json_response(req, text, validator, "W/")
+  #(text, validator)
 }
 
 fn comma_list(value: String) -> List(String) {

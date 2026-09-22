@@ -3,6 +3,7 @@ import adapter/context
 import adapter/earthquake_hub
 import adapter/hazard_hub
 import adapter/reciever
+import adapter/response_cache
 import controller/earthquake_controller
 import domain/earthquake
 import gleam/erlang/process
@@ -20,6 +21,8 @@ import repository/alert_writer
 import wisp/simulate
 
 fn test_context() -> context.Context {
+  let assert Ok(alert_c) = response_cache.start()
+  let assert Ok(hazard_c) = response_cache.start()
   let assert Ok(alert) = alert_hub.start()
   let assert Ok(earthquake) = earthquake_hub.start()
   let assert Ok(hazard) = hazard_hub.start()
@@ -30,6 +33,8 @@ fn test_context() -> context.Context {
     earthquake_hub: earthquake.data,
     hazard_hub: hazard.data,
     seen: seen_set.new("metrics_test_seen", 3_600_000),
+    alert_cache: alert_c.data,
+    hazard_cache: hazard_c.data,
   )
 }
 

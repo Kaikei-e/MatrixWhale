@@ -155,21 +155,28 @@
 	}
 
 	let zoneData = $state.raw<Record<string, GeoJSON.FeatureCollection>>({});
+	let decoded: Record<string, GeoJSON.FeatureCollection> = {};
 
 	$effect(() => {
 		let active = true;
 		for (const src of ZONE_SOURCES) {
 			fetchGeoJson(src.data)
 				.then((data) => {
-					if (active) {
-						zoneData = { ...zoneData, [src.id]: data };
-					}
+					if (!active) return;
+					decoded = { ...decoded, [src.id]: data };
+					if (alertStore.snapshotSettled) zoneData = decoded;
 				})
 				.catch(() => {});
 		}
 		return () => {
 			active = false;
 		};
+	});
+
+	// Tiles are built for the current view, so publishing zones before the
+	// initial fit to the alert snapshot would build every zone tile twice.
+	$effect(() => {
+		if (alertStore.snapshotSettled) zoneData = decoded;
 	});
 
 	// FeatureState calls setFeatureState as soon as it mounts, which MapLibre

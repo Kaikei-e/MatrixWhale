@@ -4,7 +4,6 @@ import { bucketFor, bucketRank } from '$lib/alerts/blinkBucket';
 import { NWS_EVENT_COLORS, DEFAULT_NWS_COLOR } from '$lib/alerts/nwsEventStyle';
 import { extractUgc } from '$lib/alerts/geocodes';
 import { decodeGeometry } from './geometryTransport';
-import { waitForSnapshots } from '$lib/api/snapshotPriority';
 
 export interface ZoneState {
 	[key: string]: unknown;
@@ -99,13 +98,12 @@ async function downloadGeoJson(
 	url: string,
 	fetchFn: typeof fetch
 ): Promise<GeoJSON.FeatureCollection> {
-	if (activeDownloads >= 2) {
+	if (activeDownloads >= 4) {
 		await new Promise<void>((resolve) => waitingDownloads.push(resolve));
 	} else {
 		activeDownloads++;
 	}
 	try {
-		await waitForSnapshots();
 		const response = await fetchFn(url, { priority: 'low' });
 		if (!response.ok) {
 			throw new Error(`Failed to fetch GeoJSON from ${url}: HTTP ${response.status}`);

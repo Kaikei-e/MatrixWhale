@@ -1,5 +1,4 @@
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { withSnapshotPriority } from '$lib/api/snapshotPriority';
 import type { DataSource } from '$lib/earthquakes/types';
 import { fetchSourcesShared } from '$lib/sources/fetch';
 import { decodeHazard } from '$lib/chart/geometryTransport';
@@ -159,7 +158,7 @@ export class HazardStore {
 	async #loadSnapshot(): Promise<void> {
 		if (!this.#snapshotBaseUrl) return;
 		if (this.#snapshotInFlight) return this.#snapshotInFlight;
-		const promise = withSnapshotPriority(() => this.#doLoadSnapshot());
+		const promise = this.#doLoadSnapshot();
 		this.#snapshotInFlight = promise;
 		try {
 			await promise;

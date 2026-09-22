@@ -185,3 +185,41 @@ pub fn alert_to_detail_json_fields_test() {
   |> string.contains("\"contact\":\"helpdesk@weather.gov\"")
   |> should.equal(True)
 }
+
+pub fn raw_json_geometry_pass_through_test() {
+  let geojson =
+    "{\"type\":\"MultiPolygon\",\"coordinates\":[[[[1.5,2.5],[3.5,4.5],[1.5,2.5]]]]}"
+  let obj =
+    json.object([
+      #("geometry", alert.nullable_raw_json(Some(geojson))),
+      #("name", json.string("test")),
+    ])
+  let text = json.to_string(obj)
+  // The geometry JSON is spliced verbatim, not re-escaped
+  text
+  |> string.contains(
+    "\"geometry\":{\"type\":\"MultiPolygon\",\"coordinates\":[[[[1.5,2.5],[3.5,4.5],[1.5,2.5]]]]}",
+  )
+  |> should.equal(True)
+  text |> string.contains("\"name\":\"test\"") |> should.equal(True)
+}
+
+pub fn raw_json_null_geometry_test() {
+  let obj = json.object([#("geometry", alert.nullable_raw_json(None))])
+  json.to_string(obj) |> should.equal("{\"geometry\":null}")
+}
+
+pub fn raw_json_geocodes_array_test() {
+  let geocodes = "[{\"name\":\"UGC\",\"value\":\"VAZ053\"}]"
+  let obj =
+    json.object([#("geocodes", alert.raw_json_or_empty_array(geocodes))])
+  let text = json.to_string(obj)
+  text
+  |> string.contains("\"geocodes\":[{\"name\":\"UGC\",\"value\":\"VAZ053\"}]")
+  |> should.equal(True)
+}
+
+pub fn raw_json_empty_geocodes_test() {
+  let obj = json.object([#("geocodes", alert.raw_json_or_empty_array(""))])
+  json.to_string(obj) |> should.equal("{\"geocodes\":[]}")
+}

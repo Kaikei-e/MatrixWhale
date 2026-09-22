@@ -1,5 +1,4 @@
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { withSnapshotPriority } from '$lib/api/snapshotPriority';
 import { fetchSourcesShared } from '$lib/sources/fetch';
 import { openStreamChannel, type LiveStreamSubscription } from '$lib/api/liveStream';
 import type {
@@ -170,7 +169,7 @@ export class EarthquakeStore {
 	async #loadSnapshot(): Promise<void> {
 		if (!this.#snapshotBaseUrl) return;
 		if (this.#snapshotInFlight) return this.#snapshotInFlight;
-		const promise = withSnapshotPriority(() => this.#doLoadSnapshot());
+		const promise = this.#doLoadSnapshot();
 		this.#snapshotInFlight = promise;
 		try {
 			await promise;

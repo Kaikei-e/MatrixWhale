@@ -8,6 +8,7 @@ import adapter/alert_hub
 import adapter/context
 import adapter/earthquake_hub
 import adapter/hazard_hub
+import adapter/response_cache
 import dot_env/env
 import exception
 import gleam/dynamic/decode
@@ -86,6 +87,8 @@ fn teardown_test_schema(conn: pog.Connection) -> Nil {
 /// A distinct, per-call seen-set name keeps one test's dedupe state from
 /// bleeding into another's within the same suite run.
 pub fn integration_context(conn: pog.Connection) -> context.Context {
+  let assert Ok(alert_c) = response_cache.start()
+  let assert Ok(hazard_c) = response_cache.start()
   let assert Ok(alert) = alert_hub.start()
   let assert Ok(earthquake) = earthquake_hub.start()
   let assert Ok(hazard) = hazard_hub.start()
@@ -96,6 +99,8 @@ pub fn integration_context(conn: pog.Connection) -> context.Context {
     earthquake_hub: earthquake.data,
     hazard_hub: hazard.data,
     seen: seen_set.new("test_seen_" <> wisp.random_string(16), 3_600_000),
+    alert_cache: alert_c.data,
+    hazard_cache: hazard_c.data,
   )
 }
 

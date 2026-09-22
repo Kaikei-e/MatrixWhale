@@ -1,15 +1,19 @@
-import gleam/dict
-import gleam/dynamic.{type Dynamic}
+import erlang_tools/raw_json
 import gleam/dynamic/decode
 import gleam/float
 import gleam/int
 import gleam/json
-import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/time/calendar
 import gleam/time/timestamp.{type Timestamp}
 
-pub const columns = "a.source, a.source_id, s.name AS source_name, s.attribution_text AS attribution, a.sender, a.sender_name, a.identifier, a.message_type, a.event, a.category, a.severity, a.urgency, a.certainty, a.headline, a.description, a.instruction, a.web, a.contact, a.language, a.area_desc, a.geocodes::text, a.countries, ST_AsGeoJSON(ST_Multi(ST_SimplifyPreserveTopology(a.geom, 0.01)), 4), a.reference_keys, a.sent, a.effective, a.onset, a.expires, a.ends, a.active_until, a.first_seen_at, a.last_seen_at, a.ended_at, a.end_reason, a.superseded_by"
+pub const columns = "a.source, a.source_id, s.name AS source_name, s.attribution_text AS attribution, a.sender, a.sender_name, a.identifier, a.message_type, a.event, a.category, a.severity, a.urgency, a.certainty, a.headline, a.description, a.instruction, a.web, a.contact, a.language, a.area_desc, a.geocodes::text, a.countries, "
+  <> geom_expr
+  <> ", a.reference_keys, a.sent, a.effective, a.onset, a.expires, a.ends, a.active_until, a.first_seen_at, a.last_seen_at, a.ended_at, a.end_reason, a.superseded_by"
+
+/// Filters out tiny polygon parts (< 1e-5 deg²) before simplification to
+/// avoid transferring thousands of invisible island slivers from JMA alerts.
+const geom_expr = "(SELECT ST_AsGeoJSON(ST_Multi(ST_SimplifyPreserveTopology(ST_CollectionExtract(ST_Collect(d.geom), 3), 0.01)), 4) FROM (SELECT g.geom, row_number() OVER (ORDER BY ST_Area(g.geom) DESC) AS rn FROM ST_Dump(a.geom) g) d WHERE ST_Area(d.geom) >= 1e-5 OR d.rn = 1)"
 
 pub const detail_columns = "a.source, a.source_id, s.name AS source_name, s.attribution_text AS attribution, a.sender, a.sender_name, a.identifier, a.message_type, a.event, a.category, a.severity, a.urgency, a.certainty, a.headline, a.description, a.instruction, a.web, a.contact, a.language, a.area_desc, a.geocodes::text, a.countries, ST_AsGeoJSON(a.geom, 6), a.reference_keys, a.sent, a.effective, a.onset, a.expires, a.ends, a.active_until, a.first_seen_at, a.last_seen_at, a.ended_at, a.end_reason, a.superseded_by"
 
@@ -304,76 +308,20 @@ fn timestamp_to_json(value: Timestamp) -> json.Json {
   json.string(timestamp.to_rfc3339(value, calendar.utc_offset))
 }
 
-fn json_value_of(data: Dynamic) -> json.Json {
-  case decode.run(data, decode.optional(decode.dynamic)) {
-    Ok(None) -> json.null()
-    _ -> json_value_of_present(data)
-  }
-}
-
-fn json_value_of_present(data: Dynamic) -> json.Json {
-  case decode.run(data, decode.string) {
-    Ok(value) -> json.string(value)
-    Error(_) -> json_value_of_bool(data)
-  }
-}
-
-fn json_value_of_bool(data: Dynamic) -> json.Json {
-  case decode.run(data, decode.bool) {
-    Ok(value) -> json.bool(value)
-    Error(_) -> json_value_of_int(data)
-  }
-}
-
-fn json_value_of_int(data: Dynamic) -> json.Json {
-  case decode.run(data, decode.int) {
-    Ok(value) -> json.int(value)
-    Error(_) -> json_value_of_float(data)
-  }
-}
-
-fn json_value_of_float(data: Dynamic) -> json.Json {
-  case decode.run(data, decode.float) {
-    Ok(value) -> json.float(value)
-    Error(_) -> json_value_of_list(data)
-  }
-}
-
-fn json_value_of_list(data: Dynamic) -> json.Json {
-  case decode.run(data, decode.list(decode.dynamic)) {
-    Ok(items) -> json.array(items, json_value_of)
-    Error(_) -> json_value_of_object(data)
-  }
-}
-
-fn json_value_of_object(data: Dynamic) -> json.Json {
-  case decode.run(data, decode.dict(decode.string, decode.dynamic)) {
-    Ok(fields) ->
-      json.object(
-        dict.to_list(fields)
-        |> list.map(fn(kv) { #(kv.0, json_value_of(kv.1)) }),
-      )
-    Error(_) -> json.null()
-  }
-}
-
-pub fn json_of_text(text: String) -> json.Json {
-  case json.parse(text, decode.dynamic) {
-    Ok(data) -> json_value_of(data)
-    Error(_) -> json.null()
-  }
-}
-
 pub fn nullable_raw_json(text: Option(String)) -> json.Json {
   case text {
-    Some(t) -> json_of_text(t)
+    Some(t) -> raw_json.json(t)
     None -> json.null()
   }
 }
 
 pub fn raw_json_or_empty_array(text: String) -> json.Json {
-  case json.parse(text, decode.dynamic) {
-    Ok(data) -> json_value_of(data)
-    Error(_) -> json.preprocessed_array([])
+  case text {
+    "" -> raw_json.json("[]")
+    t -> raw_json.json(t)
   }
+}
+
+pub fn json_of_text(text: String) -> json.Json {
+  raw_json.json(text)
 }

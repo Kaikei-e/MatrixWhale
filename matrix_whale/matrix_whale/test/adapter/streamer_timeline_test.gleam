@@ -2,6 +2,7 @@ import adapter/alert_hub
 import adapter/context
 import adapter/earthquake_hub
 import adapter/hazard_hub
+import adapter/response_cache
 import adapter/streamer
 import gleam/erlang/process
 import gleam/http
@@ -61,6 +62,8 @@ pub fn timeline_returns_400_on_malformed_cursor_test() {
 }
 
 fn test_context() -> context.Context {
+  let assert Ok(alert_c) = response_cache.start()
+  let assert Ok(hazard_c) = response_cache.start()
   let assert Ok(alert) = alert_hub.start()
   let assert Ok(earthquake) = earthquake_hub.start()
   let assert Ok(hazard) = hazard_hub.start()
@@ -71,5 +74,7 @@ fn test_context() -> context.Context {
     earthquake_hub: earthquake.data,
     hazard_hub: hazard.data,
     seen: seen_set.new("streamer_timeline_test_seen", 3_600_000),
+    alert_cache: alert_c.data,
+    hazard_cache: hazard_c.data,
   )
 }

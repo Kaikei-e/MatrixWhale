@@ -122,13 +122,17 @@ fn apply_one(
         now_ms,
         conn,
       ))
-      let hazard_row = case recompute {
-        gdacs_event_writer.New(h) -> h
-        gdacs_event_writer.Updated(h) -> h
-      }
-      case hazard_row.source_episode_id == Some(int.to_string(r.episode_id)) {
-        True -> Ok(Applied(Some(hazard_row)))
-        False -> Ok(Applied(None))
+      case recompute {
+        gdacs_event_writer.Skipped -> Ok(Applied(None))
+        gdacs_event_writer.New(hazard_row)
+        | gdacs_event_writer.Updated(hazard_row) -> {
+          case
+            hazard_row.source_episode_id == Some(int.to_string(r.episode_id))
+          {
+            True -> Ok(Applied(Some(hazard_row)))
+            False -> Ok(Applied(None))
+          }
+        }
       }
     }
     None -> {

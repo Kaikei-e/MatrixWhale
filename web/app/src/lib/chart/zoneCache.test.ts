@@ -190,13 +190,15 @@ describe('fetchGeoJson (deduplication, data sharing, and error retry)', () => {
 		const failed = expect(first).rejects.toThrow('HTTP 500');
 		const second = fetchGeoJson('/two.json', mockFetch);
 		const third = fetchGeoJson('/three.json', mockFetch);
-		await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+		const fourth = fetchGeoJson('/four.json', mockFetch);
+		const fifth = fetchGeoJson('/five.json', mockFetch);
+		await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(4));
 		replies[0](new Response(null, { status: 500 }));
 		await failed;
-		await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(3));
+		await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(5));
 		for (const resolve of replies.slice(1)) {
 			resolve(new Response(JSON.stringify({ type: 'FeatureCollection', features: [] })));
 		}
-		await Promise.all([second, third]);
+		await Promise.all([second, third, fourth, fifth]);
 	});
 });

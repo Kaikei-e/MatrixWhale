@@ -1,5 +1,4 @@
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { withSnapshotPriority } from '$lib/api/snapshotPriority';
 import {
 	type Alert,
 	type BlinkMode,
@@ -150,6 +149,7 @@ export class AlertStore {
 	reducedMotion = $state(false);
 	connected: 'connecting' | 'open' | 'closed' = $state('closed');
 	snapshotError: string | null = $state(null);
+	snapshotSettled = $state(false);
 	/**
 	 * Increments each time an alert is evicted because activeAlerts reached
 	 * MAX_ACTIVE_ALERTS. Non-zero means a source is flooding the pipeline.
@@ -315,7 +315,7 @@ export class AlertStore {
 
 	#loadSnapshot(url: string): Promise<void> {
 		if (this.#snapshotInFlight) return this.#snapshotInFlight;
-		const promise = withSnapshotPriority(() => this.#doLoadSnapshot(url));
+		const promise = this.#doLoadSnapshot(url);
 		this.#snapshotInFlight = promise;
 		return promise.finally(() => {
 			if (this.#snapshotInFlight === promise) {
@@ -348,6 +348,7 @@ export class AlertStore {
 					until: null
 				});
 			}
+
 			this.snapshotError = null;
 			this.#checkCountryReset();
 		} catch (error) {
@@ -356,6 +357,7 @@ export class AlertStore {
 		} finally {
 			if (this.#snapshotAbortController === ac) {
 				this.#snapshotAbortController = undefined;
+				this.snapshotSettled = true;
 				this.#streamBuffer = null;
 				for (const item of buffer) {
 					const existing = this.activeAlerts.get(item.alert.id);

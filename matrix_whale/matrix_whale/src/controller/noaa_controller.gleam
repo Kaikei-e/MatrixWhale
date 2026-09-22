@@ -1,5 +1,6 @@
 import adapter/alert_hub
 import adapter/context.{type Context}
+import adapter/response_cache
 import domain/source
 import gleam/list
 import gleam/option.{Some}
@@ -105,6 +106,7 @@ pub fn noaa_controller(
         ended_count,
       )
       alert_hub.publish(ctx.hub, diff)
+      response_cache.invalidate(ctx.alert_cache)
 
       Ok(NoaaResult(
         new: outcome.new,
