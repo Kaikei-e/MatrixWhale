@@ -3,10 +3,14 @@ services:
     build:
       context: ./proxy
     ports:
-      - "8180:80"
+      - "8180:8080"
       - "9190:9090"
-    tty: true
     restart: always
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/plecto", "healthz", "/etc/plecto/plecto.toml"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     networks:
       matrix_network:
         ipv4_address: 10.254.100.5

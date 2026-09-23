@@ -1,6 +1,9 @@
 # proxy/plecto.toml -- replaces proxy/conf/nginx.conf + proxy/conf/conf.d/default.conf.
-# Plain HTTP/1.1 on :80; no [[tls]], no [[filter]], no [trust] -- TLS, WASM filters, and
-# CORS/security-header parity are explicitly deferred for this milestone.
+# Plain HTTP/1.1 on :8080; no [[tls]], no [[filter]], no [trust] -- TLS and WASM filters
+# remain deferred for this milestone; edge security headers are now declared in [route.headers].
+
+[listen]
+addr = "0.0.0.0:8080"
 
 [observability]
 admin_addr = "0.0.0.0:9090"
@@ -8,20 +11,27 @@ access_log = true
 
 [[upstream]]
 name = "web"
-addresses = ["10.254.100.10:4173"]
+addresses = ["web:4173"]
+resolve_interval_ms = 5000
 
 [upstream.health]
 path = "/"
 
 [[upstream]]
 name = "matrix_whale"
-addresses = ["10.254.100.30:8080"]
+addresses = ["matrix_whale:8080"]
+resolve_interval_ms = 5000
 
-# Probes the reciever listener's dedicated health port (6000), separate from the traffic port
+# Probes the receiver listener's dedicated health port (6000), separate from the traffic port
 # (8080) this upstream forwards to -- matrix_whale's own /api/v1/health lives there, not on 8080.
 [upstream.health]
 path = "/api/v1/health"
 port = 6000
+
+[upstream.outlier_detection]
+consecutive_gateway_failures = 3
+base_ejection_time_ms = 30000
+max_ejection_percent = 100
 
 [[route]]
 upstream = "matrix_whale"
@@ -34,8 +44,35 @@ rate = 5
 burst = 10
 key = "client-ip"
 
+[route.headers]
+set = { "Referrer-Policy" = "strict-origin-when-cross-origin", "X-Content-Type-Options" = "nosniff", "X-Frame-Options" = "DENY" }
+
+[route.compression]
+algorithms = ["zstd", "br", "gzip"]
+min_length = 1024
+
+[[route]]
+upstream = "web"
+
+[route.match]
+path_prefix = "/data/"
+
+[route.headers]
+set = { "Cache-Control" = "public, max-age=31536000, immutable", "Referrer-Policy" = "strict-origin-when-cross-origin", "X-Content-Type-Options" = "nosniff", "X-Frame-Options" = "DENY" }
+
+[route.compression]
+algorithms = ["zstd", "br", "gzip"]
+min_length = 1024
+
 [[route]]
 upstream = "web"
 
 [route.match]
 path_prefix = "/"
+
+[route.headers]
+set = { "Referrer-Policy" = "strict-origin-when-cross-origin", "X-Content-Type-Options" = "nosniff", "X-Frame-Options" = "DENY" }
+
+[route.compression]
+algorithms = ["zstd", "br", "gzip"]
+min_length = 1024

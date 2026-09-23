@@ -64,7 +64,7 @@ flowchart LR
   end
 
   subgraph Edge["Edge"]
-    Proxy["Plecto proxy :80 / :8180"]
+    Proxy["Plecto proxy :8080 / :8180"]
     Web["web (SvelteKit) :4173 / :4174"]
   end
 
@@ -94,7 +94,7 @@ flowchart LR
   Hubs -.->|"push new/updates"| Streamer
   Streamer -->|"query events, hazards, timeline"| DB
 
-  Browser -->|"HTTP :80"| Proxy
+  Browser -->|"HTTP :8180"| Proxy
   Proxy -->|"REST + SSE via /api"| Streamer
   Proxy -->|"static app /"| Web
 ```
@@ -119,7 +119,7 @@ flowchart LR
   - `sea.alert`: Multi-source CAP-shaped alerts (NOAA and every national alerting authority) keyed by `(source, source_id)`, with PostGIS `MultiPolygon` geometry, `active_until`, and `ended_at`/`end_reason` (`expired`, `cancelled`, `superseded`, `withdrawn`).
   - `sea.cap_authority`, `sea.cap_feed`, `sea.cap_item`, `sea.cap_message`: The RAA registry, per-feed health, feed index items (the pending queue), and raw CAP messages (JSON mirror + raw XML).
 - **Edge**:
-  - **Plecto reverse proxy (`:80` / `:8180`)**: Single entry point routing `/api` to the Gleam streamer and everything else to the SvelteKit frontend, enforcing rate limits.
+  - **Plecto reverse proxy (`:8080` / `:8180`)**: Single entry point routing `/api` to the Gleam streamer and everything else to the SvelteKit frontend, enforcing rate limits, edge security headers, and response compression.
   - **Web (`:4173` / `:4174`)**: SvelteKit application with MapLibre GL rendering nautical charts (`/globe`), earthquake flasher markers, hazard polygons, a 5-tab side pane (Timeline, Earthquakes, Hazards, Alerts, Feed), and a `/feeds` page with per-feed CAP health.
 
 ## Database migrations

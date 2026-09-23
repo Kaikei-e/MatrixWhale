@@ -41,6 +41,22 @@ groups:
         annotations:
           summary: "Proxy HTTP 5xx error ratio is above 5%"
 
+      - alert: PlectoUpstreamUnavailable
+        expr: sum by (upstream) (plecto_upstream_instances{state="healthy"}) == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Plecto upstream {{ $labels.upstream }} has no healthy instances"
+
+      - alert: PlectoRateLimiting
+        expr: sum(rate(plecto_rate_limited_total[10m])) > 1
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Plecto rate limiting is sustained >1/s for 10m (informational: k6 hits core directly)"
+
       # Provisional thresholds (≈ 2x poll interval); to be retuned after a few days of data.
       - alert: IngestLagHigh
         expr: >-

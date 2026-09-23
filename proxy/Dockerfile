@@ -28,9 +28,13 @@ RUN curl -fsSLO "https://github.com/Kaikei-e/PlectoProxy/releases/download/${PLE
 # dependency at all.
 FROM debian:bookworm-slim AS runtime
 
+RUN useradd -r -u 10001 -s /usr/sbin/nologin plecto
+
 COPY --from=fetcher /dl/plecto /usr/local/bin/plecto
 COPY plecto.toml /etc/plecto/plecto.toml
 
-EXPOSE 80 9090
+USER plecto
 
-CMD ["plecto", "/etc/plecto/plecto.toml", "0.0.0.0:80"]
+EXPOSE 8080 9090
+
+CMD ["plecto", "/etc/plecto/plecto.toml"]

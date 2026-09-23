@@ -25,10 +25,6 @@ export const handle: Handle = async ({ event, resolve }) => {
 		"connect-src 'self'; worker-src 'self'; img-src 'self' data: blob:"
 	);
 
-	if (event.url.pathname.startsWith('/data/')) {
-		response.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
-	}
-
 	if (event.url.pathname === '/globe') {
 		for (const url of GLOBE_PRELOADS) {
 			response.headers.append(

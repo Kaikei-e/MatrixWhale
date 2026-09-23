@@ -22,7 +22,7 @@ The project follows a microservices architecture with the following components:
 - **jma_adapter** (No exposed port) - Go service adapter for JMA (気象庁) disaster prevention XML pull feeds (1m poll for extra/eqvol, 1h for long feeds, 1GiB daily safety budget, volume state persistence in `/var/lib/jma`)
 - **rss_feed_adapter** (Port 8086:8085) - Go service for RSS feed processing
 - **web** (Port 4174:4173) - SvelteKit frontend application with TypeScript, MapLibre nautical chart (`/globe`), tabbed side pane (Timeline, Earthquakes, Hazards, Alerts, Feed), `/feeds` CAP feed health page
-- **proxy** (Port 8180:80, 9190:9090) - Plecto reverse proxy routing `/api` to streamer and `/` to web
+- **proxy** (Port 8180:8080, 9190:9090) - Plecto reverse proxy routing `/api` to streamer and `/` to web; adds edge security headers, compression, and passive health for the core
 - **db** (Port 5440:5432) - PostgreSQL 18 + PostGIS 3.6 database (`postgis/postgis:18-3.6`, storage `./db/data18`)
 - **migrate** - Atlas runner applying versioned migrations from `db/migrations/` before `matrix_whale` starts
 - **prometheus** (127.0.0.1:9290) - Scrapes the core (`:6000/metrics`), every adapter (`:2112/metrics`), Plecto and postgres_exporter; 30-day retention; alert rules in `monitoring/prometheus/rules.yml` (no Alertmanager, shown in Grafana only)
