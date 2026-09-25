@@ -247,6 +247,7 @@ func decodeUncompressed(descriptors []Descriptor, numSubsets int, bitReader *Bit
 		state.dataWidthChange = 0
 		state.scaleChange = 0
 		state.newRefWidth = 0
+		state.newRefValues = make(map[int]int64)
 		state.assocFieldWidth = 0
 		state.stringWidthOverride = 0
 		state.scaleRefWidthExtra = 0
@@ -319,12 +320,16 @@ func decodeDescriptorsUncompressed(descriptors []Descriptor, bitReader *BitReade
 					state.scaleChange = y - 128
 				}
 			case 3:
-				if y == 0 || y == 255 {
+				if y == 0 {
 					state.newRefWidth = 0
 					state.newRefValues = make(map[int]int64)
+				} else if y == 255 {
+					state.newRefWidth = 0
 				} else {
 					state.newRefWidth = y
-					state.newRefValues = make(map[int]int64)
+					if state.newRefValues == nil {
+						state.newRefValues = make(map[int]int64)
+					}
 				}
 			case 4:
 				if y == 0 {
@@ -485,6 +490,22 @@ func decodeDescriptorsUncompressed(descriptors []Descriptor, bitReader *BitReade
 				return nil, ErrUnknownDescriptor{Descriptor: desc}
 			}
 
+			if state.newRefWidth > 0 {
+				if !state.streamExhausted {
+					if bitReader.BitsRemaining() < state.newRefWidth {
+						state.streamExhausted = true
+					} else {
+						newRef, err := bitReader.ReadSignedBits(state.newRefWidth)
+						if err != nil {
+							return nil, err
+						}
+						state.newRefValues[desc.Code()] = newRef
+					}
+				}
+				i++
+				continue
+			}
+
 			if state.bitmapRemaining > 0 {
 				bitPresent := state.bitmapBits[len(state.bitmapBits)-state.bitmapRemaining]
 				state.bitmapRemaining--
@@ -499,7 +520,7 @@ func decodeDescriptorsUncompressed(descriptors []Descriptor, bitReader *BitReade
 				}
 			}
 
-			if state.assocFieldWidth > 0 && !state.streamExhausted {
+			if state.assocFieldWidth > 0 && desc.Code() != 31021 && !state.streamExhausted {
 				if bitReader.BitsRemaining() < state.assocFieldWidth {
 					state.streamExhausted = true
 				} else {
@@ -510,18 +531,7 @@ func decodeDescriptorsUncompressed(descriptors []Descriptor, bitReader *BitReade
 			}
 
 			effRef := entry.Reference
-			if state.newRefWidth > 0 && !state.streamExhausted {
-				if bitReader.BitsRemaining() < state.newRefWidth {
-					state.streamExhausted = true
-				} else {
-					newRef, err := bitReader.ReadSignedBits(state.newRefWidth)
-					if err != nil {
-						return nil, err
-					}
-					effRef = newRef
-					state.newRefValues[desc.Code()] = newRef
-				}
-			} else if state.newRefValues != nil {
+			if state.newRefValues != nil {
 				if prevRef, exists := state.newRefValues[desc.Code()]; exists {
 					effRef = prevRef
 				}
@@ -668,12 +678,16 @@ func decodeDescriptorsCompressed(descriptors []Descriptor, bitReader *BitReader,
 					state.scaleChange = y - 128
 				}
 			case 3:
-				if y == 0 || y == 255 {
+				if y == 0 {
 					state.newRefWidth = 0
 					state.newRefValues = make(map[int]int64)
+				} else if y == 255 {
+					state.newRefWidth = 0
 				} else {
 					state.newRefWidth = y
-					state.newRefValues = make(map[int]int64)
+					if state.newRefValues == nil {
+						state.newRefValues = make(map[int]int64)
+					}
 				}
 			case 4:
 				if y == 0 {
@@ -860,7 +874,28 @@ func decodeDescriptorsCompressed(descriptors []Descriptor, bitReader *BitReader,
 				return ErrUnknownDescriptor{Descriptor: desc}
 			}
 
+			if state.newRefWidth > 0 {
+				if !state.streamExhausted {
+					if bitReader.BitsRemaining() < state.newRefWidth {
+						state.streamExhausted = true
+					} else {
+						newRef, err := bitReader.ReadSignedBits(state.newRefWidth)
+						if err != nil {
+							return err
+						}
+						state.newRefValues[desc.Code()] = newRef
+					}
+				}
+				i++
+				continue
+			}
+
 			effRef := entry.Reference
+			if state.newRefValues != nil {
+				if prevRef, exists := state.newRefValues[desc.Code()]; exists {
+					effRef = prevRef
+				}
+			}
 			effScale := entry.Scale + state.scaleChange + state.scaleRefWidthExtra
 			if state.scaleRefWidthExtra > 0 {
 				effRef = effRef * int64(math.Pow10(state.scaleRefWidthExtra))

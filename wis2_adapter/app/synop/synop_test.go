@@ -214,7 +214,7 @@ func TestExtractObservationsGoldenSamples(t *testing.T) {
 			for _, msg := range msgs {
 				feats, rej := ExtractObservations(msg, "data-id-1", "test-centre", "2026-09-25T12:00:00Z")
 				allFeatures = append(allFeatures, feats...)
-				totalRejected += rej
+				totalRejected += len(rej)
 			}
 
 			if len(allFeatures) != tt.expectFeatures {
@@ -511,8 +511,8 @@ func TestExtractObservationSyntheticEdgeCases(t *testing.T) {
 			t.Fatalf("bufr.Decode failed: %v", errs)
 		}
 		feats, rej := ExtractObservations(msgs[0], wnm.Properties.DataID, "kz-kazhydromet", wnm.Properties.PubTime)
-		if len(feats) != 1 || rej != 0 {
-			t.Fatalf("expected 1 feature, 0 rejected, got feats=%d rej=%d", len(feats), rej)
+		if len(feats) != 1 || len(rej) != 0 {
+			t.Fatalf("expected 1 feature, 0 rejected, got feats=%d rej=%d", len(feats), len(rej))
 		}
 		f := feats[0]
 		if f.StationID != "0-20000-0-35793" {
@@ -520,6 +520,92 @@ func TestExtractObservationSyntheticEdgeCases(t *testing.T) {
 		}
 		if !approxEqual(f.Lat, 47.2167) || !approxEqual(f.Lon, 73.35) {
 			t.Errorf("lat/lon mismatch: %f, %f", f.Lat, f.Lon)
+		}
+	})
+}
+
+func TestSynopExtractionRegressionCyDomAndIlIms(t *testing.T) {
+	t.Run("cy-dom sample extraction", func(t *testing.T) {
+		data, err := os.ReadFile(filepath.Join("testdata", "cy_dom.bufr"))
+		if err != nil {
+			t.Fatalf("failed reading testdata cy_dom.bufr: %v", err)
+		}
+		msgs, errs := bufr.Decode(data)
+		if len(msgs) != 1 || errs[0] != nil {
+			t.Fatalf("decode failed: msgs=%d, errs=%v", len(msgs), errs)
+		}
+		if len(msgs[0].Subsets) != 54 {
+			t.Fatalf("expected 54 subsets, got %d", len(msgs[0].Subsets))
+		}
+		feats, rejections := ExtractObservations(msgs[0], "test-cy-id", "cy-dom", "2026-09-25T12:00:00Z")
+		if len(rejections) != 0 {
+			t.Errorf("expected 0 rejected subsets, got %d: %v", len(rejections), rejections)
+		}
+		if len(feats) != 54 {
+			t.Fatalf("expected 54 extracted features, got %d", len(feats))
+		}
+		// Verify first feature
+		f0 := feats[0]
+		if f0.StationID != "0-196-0-01727" {
+			t.Errorf("f0 StationID mismatch: got %s, want 0-196-0-01727", f0.StationID)
+		}
+		if f0.StationName == nil || *f0.StationName != "FANEROMENI" {
+			t.Errorf("f0 StationName mismatch: got %v, want FANEROMENI", f0.StationName)
+		}
+		if !approxEqual(f0.Lat, 34.9116) || !approxEqual(f0.Lon, 33.63006) {
+			t.Errorf("f0 Lat/Lon mismatch: got (%f, %f), want (34.9116, 33.63006)", f0.Lat, f0.Lon)
+		}
+		if f0.ObservedAt != "2026-09-25T11:50:00Z" {
+			t.Errorf("f0 ObservedAt mismatch: got %s, want 2026-09-25T11:50:00Z", f0.ObservedAt)
+		}
+		// Verify second feature
+		f1 := feats[1]
+		if f1.StationID != "0-196-0-01101" {
+			t.Errorf("f1 StationID mismatch: got %s, want 0-196-0-01101", f1.StationID)
+		}
+		if f1.StationName == nil || *f1.StationName != "AMARGETI" {
+			t.Errorf("f1 StationName mismatch: got %v, want AMARGETI", f1.StationName)
+		}
+		if !approxEqual(f1.Lat, 34.82612) || !approxEqual(f1.Lon, 32.5889) {
+			t.Errorf("f1 Lat/Lon mismatch: got (%f, %f), want (34.82612, 32.5889)", f1.Lat, f1.Lon)
+		}
+	})
+
+	t.Run("il-ims sample extraction", func(t *testing.T) {
+		data, err := os.ReadFile(filepath.Join("testdata", "il_ims.bufr"))
+		if err != nil {
+			t.Fatalf("failed reading testdata il_ims.bufr: %v", err)
+		}
+		msgs, errs := bufr.Decode(data)
+		if len(msgs) != 1 || errs[0] != nil {
+			t.Fatalf("decode failed: msgs=%d, errs=%v", len(msgs), errs)
+		}
+		if len(msgs[0].Subsets) != 82 {
+			t.Fatalf("expected 82 subsets, got %d", len(msgs[0].Subsets))
+		}
+		feats, rejections := ExtractObservations(msgs[0], "test-il-id", "il-ims", "2026-09-25T12:00:00Z")
+		if len(rejections) != 0 {
+			t.Errorf("expected 0 rejected subsets, got %d: %v", len(rejections), rejections)
+		}
+		if len(feats) != 82 {
+			t.Fatalf("expected 82 extracted features, got %d", len(feats))
+		}
+		// Verify first feature
+		f0 := feats[0]
+		if f0.StationID != "0-376-0-511" {
+			t.Errorf("f0 StationID mismatch: got %s, want 0-376-0-511", f0.StationID)
+		}
+		if f0.StationName == nil || *f0.StationName != "Afeq" {
+			t.Errorf("f0 StationName mismatch: got %v, want Afeq", f0.StationName)
+		}
+		if !approxEqual(f0.Lat, 32.8466) || !approxEqual(f0.Lon, 35.1123) {
+			t.Errorf("f0 Lat/Lon mismatch: got (%f, %f), want (32.8466, 35.1123)", f0.Lat, f0.Lon)
+		}
+		if f0.ObservedAt != "2026-09-25T12:00:00Z" {
+			t.Errorf("f0 ObservedAt mismatch: got %s, want 2026-09-25T12:00:00Z", f0.ObservedAt)
+		}
+		if f0.ElevationM == nil || !approxEqual(*f0.ElevationM, 10.0) {
+			t.Errorf("f0 ElevationM mismatch: got %v, want 10.0", f0.ElevationM)
 		}
 	})
 }

@@ -142,15 +142,32 @@ pub fn is_plausible_precip_1h(r: Float) -> Bool {
 }
 
 pub fn is_plausible_precip_24h(r: Float) -> Bool {
-  r >=. 0.0 && r <=. 2000.0
+  r >=. 0.0 && r <=. 1850.0
 }
 
 pub fn is_plausible_mslp_hpa(p: Float) -> Bool {
-  p >=. 850.0 && p <=. 1090.0
+  p >=. 870.0 && p <=. 1090.0
 }
 
 pub fn is_plausible_gust_period(m: Int) -> Bool {
   m >= 1 && m <= 1440
+}
+
+pub fn is_corrupt_station_name(name: String) -> Bool {
+  let codepoints =
+    string.to_utf_codepoints(name)
+    |> list.map(string.utf_codepoint_to_int)
+
+  list.any(codepoints, fn(cp) {
+    cp == 65_533 || cp < 32 || cp == 127 || { cp >= 128 && cp <= 159 }
+  })
+}
+
+pub fn is_plausible_station_name(name: Option(String)) -> Bool {
+  case name {
+    Some(n) -> !is_corrupt_station_name(n)
+    None -> True
+  }
 }
 
 pub fn is_plausible_precip_period(period_h: Float) -> Bool {
@@ -171,12 +188,13 @@ pub fn is_plausible_precip_amount(period_h: Float, mm: Float) -> Bool {
     True ->
       case period_h == 1.0 {
         True -> mm <=. 400.0
-        False -> mm <=. 2000.0
+        False -> mm <=. 1850.0
       }
   }
 }
 
 pub fn is_plausible_observation(feature: Wis2ObservationFeature) -> Bool {
+  let station_name_ok = is_plausible_station_name(feature.station_name)
   let wind_ok = case feature.wind_speed_ms {
     Some(w) -> is_plausible_wind(w)
     None -> True
@@ -199,7 +217,12 @@ pub fn is_plausible_observation(feature: Wis2ObservationFeature) -> Bool {
     None -> True
   }
 
-  wind_ok && gust_ok && gust_period_ok && precip_ok && mslp_ok
+  station_name_ok
+  && wind_ok
+  && gust_ok
+  && gust_period_ok
+  && precip_ok
+  && mslp_ok
 }
 
 pub type PlausibleObservation {
@@ -279,7 +302,7 @@ pub fn detect_exceedances(
     Some(w) if w >=. thresholds.wind_ms -> [
       Exceedance(
         subtype: SubtypeWind,
-        value: w,
+        value: round_to_one_decimal(w),
         unit: "m/s",
         label: "Wind Speed",
       ),
@@ -289,7 +312,12 @@ pub fn detect_exceedances(
 
   let gust_exceedance = case obs.gust_ms {
     Some(g) if g >=. thresholds.gust_ms -> [
-      Exceedance(subtype: SubtypeGust, value: g, unit: "m/s", label: "Gust"),
+      Exceedance(
+        subtype: SubtypeGust,
+        value: round_to_one_decimal(g),
+        unit: "m/s",
+        label: "Gust",
+      ),
     ]
     _ -> []
   }
@@ -298,7 +326,7 @@ pub fn detect_exceedances(
     Some(r) if r >=. thresholds.rain_1h_mm -> [
       Exceedance(
         subtype: SubtypeRain1h,
-        value: r,
+        value: round_to_one_decimal(r),
         unit: "mm",
         label: "1h Precipitation",
       ),
@@ -310,7 +338,7 @@ pub fn detect_exceedances(
     Some(r) if r >=. thresholds.rain_24h_mm -> [
       Exceedance(
         subtype: SubtypeRain24h,
-        value: r,
+        value: round_to_one_decimal(r),
         unit: "mm",
         label: "24h Precipitation",
       ),
@@ -322,7 +350,7 @@ pub fn detect_exceedances(
     Some(p) if p <=. thresholds.mslp_hpa -> [
       Exceedance(
         subtype: SubtypeLowPressure,
-        value: p,
+        value: round_to_one_decimal(p),
         unit: "hPa",
         label: "Mean Sea Level Pressure",
       ),
@@ -447,15 +475,36 @@ pub fn can_merge(hazard: Hazard, obs_time_ms: Int) -> Bool {
   && obs_time_ms >= hazard.onset_at_ms - three_hours_ms
 }
 
+pub fn round_to_one_decimal(val: Float) -> Float {
+  let rounded_int = float.round(val *. 10.0)
+  int.to_float(rounded_int) /. 10.0
+}
+
+pub fn format_one_decimal(val: Float) -> String {
+  let scaled = float.round(val *. 10.0)
+  let whole = int.absolute_value(scaled) / 10
+  let frac = int.absolute_value(scaled) % 10
+  let sign = case scaled < 0 {
+    True -> "-"
+    False -> ""
+  }
+  sign <> int.to_string(whole) <> "." <> int.to_string(frac)
+}
+
+pub fn format_float(val: Float) -> String {
+  format_one_decimal(val)
+}
+
 pub fn merge_severity_value(
   subtype: ObservationSubtype,
   current: Float,
   new: Float,
 ) -> Float {
-  case subtype {
+  let v = case subtype {
     SubtypeLowPressure -> float.min(current, new)
     _ -> float.max(current, new)
   }
+  round_to_one_decimal(v)
 }
 
 pub fn format_station_label(
@@ -474,14 +523,6 @@ pub fn format_station_label(
   }
 }
 
-pub fn format_float(val: Float) -> String {
-  let s = float.to_string(val)
-  case string.contains(s, ".") {
-    True -> s
-    False -> s <> ".0"
-  }
-}
-
 pub fn format_title(
   subtype: ObservationSubtype,
   value: Float,
@@ -489,13 +530,125 @@ pub fn format_title(
   station_name: Option(String),
 ) -> String {
   let target = format_station_label(station_id, station_name)
-  let val_str = format_float(value)
   case subtype {
-    SubtypeWind -> "Wind " <> val_str <> " m/s at " <> target
-    SubtypeGust -> "Gust " <> val_str <> " m/s at " <> target
-    SubtypeRain1h -> "Rain 1h " <> val_str <> " mm at " <> target
-    SubtypeRain24h -> "Rain 24h " <> val_str <> " mm at " <> target
-    SubtypeLowPressure -> "MSLP " <> val_str <> " hPa at " <> target
+    SubtypeWind -> "Wind " <> format_one_decimal(value) <> " m/s at " <> target
+    SubtypeGust -> "Gust " <> format_one_decimal(value) <> " m/s at " <> target
+    SubtypeRain1h ->
+      "Rain 1h " <> format_one_decimal(value) <> " mm at " <> target
+    SubtypeRain24h ->
+      "Rain 24h " <> format_one_decimal(value) <> " mm at " <> target
+    SubtypeLowPressure ->
+      "MSLP " <> int.to_string(float.round(value)) <> " hPa at " <> target
+  }
+}
+
+pub type EpisodeAction {
+  ActionIgnore
+  ActionEndExisting
+  ActionExtend(merged_value: Float, title: String, confirmed: Bool)
+  ActionEndAndCreate(title: String, confirmed: Bool)
+  ActionCreate(title: String, confirmed: Bool)
+}
+
+pub fn decide_episode_action(
+  subtype: ObservationSubtype,
+  obs_value: Float,
+  obs_time_ms: Int,
+  station_id: String,
+  station_name: Option(String),
+  is_confirmed: Bool,
+  active_opt: Option(Hazard),
+) -> EpisodeAction {
+  case subtype, is_confirmed {
+    SubtypeLowPressure, False ->
+      case active_opt {
+        Some(active) ->
+          case option.unwrap(active.confirmed, False) {
+            False -> ActionEndExisting
+            True ->
+              case can_merge(active, obs_time_ms) {
+                True -> {
+                  let current_val =
+                    option.unwrap(active.severity_value, obs_value)
+                  let merged_val =
+                    merge_severity_value(subtype, current_val, obs_value)
+                  let title =
+                    format_title(subtype, merged_val, station_id, station_name)
+                  ActionExtend(
+                    merged_value: merged_val,
+                    title: title,
+                    confirmed: True,
+                  )
+                }
+                False -> ActionEndExisting
+              }
+          }
+        None -> ActionIgnore
+      }
+
+    SubtypeLowPressure, True ->
+      case active_opt {
+        Some(active) ->
+          case can_merge(active, obs_time_ms) {
+            True -> {
+              let current_val = option.unwrap(active.severity_value, obs_value)
+              let merged_val =
+                merge_severity_value(subtype, current_val, obs_value)
+              let title =
+                format_title(subtype, merged_val, station_id, station_name)
+              ActionExtend(
+                merged_value: merged_val,
+                title: title,
+                confirmed: True,
+              )
+            }
+            False -> {
+              let rounded_val = round_to_one_decimal(obs_value)
+              let title =
+                format_title(subtype, rounded_val, station_id, station_name)
+              ActionEndAndCreate(title: title, confirmed: True)
+            }
+          }
+        None -> {
+          let rounded_val = round_to_one_decimal(obs_value)
+          let title =
+            format_title(subtype, rounded_val, station_id, station_name)
+          ActionCreate(title: title, confirmed: True)
+        }
+      }
+
+    _, _ ->
+      case active_opt {
+        Some(active) ->
+          case can_merge(active, obs_time_ms) {
+            True -> {
+              let current_val = option.unwrap(active.severity_value, obs_value)
+              let merged_val =
+                merge_severity_value(subtype, current_val, obs_value)
+              let title =
+                format_title(subtype, merged_val, station_id, station_name)
+              let confirmed =
+                option.unwrap(active.confirmed, False) || is_confirmed
+              ActionExtend(
+                merged_value: merged_val,
+                title: title,
+                confirmed: confirmed,
+              )
+            }
+            False -> {
+              let rounded_val = round_to_one_decimal(obs_value)
+              let title =
+                format_title(subtype, rounded_val, station_id, station_name)
+              ActionEndAndCreate(title: title, confirmed: is_confirmed)
+            }
+          }
+        None -> {
+          let rounded_val = round_to_one_decimal(obs_value)
+          let title =
+            format_title(subtype, rounded_val, station_id, station_name)
+          ActionCreate(title: title, confirmed: is_confirmed)
+        }
+      }
   }
 }
 

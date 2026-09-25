@@ -661,9 +661,9 @@ func (c *Controller) handleSynop(
 	}
 
 	for _, msg := range msgs {
-		features, rejectedCount := synop.ExtractObservations(msg, wnmMsg.Properties.DataID, centreID, pubTime)
-		for i := 0; i < rejectedCount; i++ {
-			stats.recordDecodeFailed()
+		features, rejections := synop.ExtractObservations(msg, wnmMsg.Properties.DataID, centreID, pubTime)
+		for _, reason := range rejections {
+			wis2metrics.RecordSubsetRejected(centreID, reason)
 		}
 		for _, feat := range features {
 			c.enqueueObservationFeature(ctx, feat)

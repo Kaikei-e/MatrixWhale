@@ -160,6 +160,7 @@ func TestSynopGoldenMessages(t *testing.T) {
 		"synop_uk_metoffice",
 		"synop_ru_roshydromet",
 		"synop_sg_mss",
+		"synop_il_ims",
 	}
 
 	totalVals := 0

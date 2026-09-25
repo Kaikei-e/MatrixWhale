@@ -1,6 +1,7 @@
 import domain/hazard.{type Hazard, Hazard}
+import domain/wis2.{type ForecastTrack, ForecastPoint, ForecastTrack}
 import domain/wis2_matcher
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/time/timestamp
 import gleeunit/should
 
@@ -154,4 +155,234 @@ pub fn match_by_distance_and_time_test() {
       [h1],
     )
   too_late |> should.equal(None)
+}
+
+fn make_test_track(
+  centre_id: String,
+  storm_id: String,
+  storm_name: Option(String),
+  analysis_time: String,
+  lat: Float,
+  lon: Float,
+) -> ForecastTrack {
+  ForecastTrack(
+    source: "wis2-" <> centre_id,
+    centre_id: centre_id,
+    storm_id: storm_id,
+    storm_name: storm_name,
+    analysis_time: analysis_time,
+    points: [
+      ForecastPoint(
+        lead_hours: 0,
+        time: analysis_time,
+        lat: lat,
+        lon: lon,
+        mslp_pa: None,
+        max_wind_ms: None,
+        max_wind_lat: None,
+        max_wind_lon: None,
+        wind_radii: [],
+      ),
+    ],
+  )
+}
+
+pub fn choose_forecast_tracks_prefers_matching_name_test() {
+  let named =
+    make_test_track(
+      "ecmwf",
+      "06L",
+      Some("FAY"),
+      "2026-09-25T12:00:00Z",
+      29.8,
+      -42.6,
+    )
+  let numbered =
+    make_test_track(
+      "ecmwf",
+      "71L",
+      Some("71L"),
+      "2026-09-25T12:00:00Z",
+      29.8,
+      -42.6,
+    )
+
+  // In either input order, the named storm matching hazard name is preferred
+  wis2_matcher.choose_forecast_tracks(
+    [named, numbered],
+    "Tropical Cyclone Fay",
+    29.8,
+    -42.6,
+  )
+  |> should.equal([named])
+
+  wis2_matcher.choose_forecast_tracks(
+    [numbered, named],
+    "Tropical Cyclone Fay",
+    29.8,
+    -42.6,
+  )
+  |> should.equal([named])
+}
+
+pub fn choose_forecast_tracks_prefers_named_over_numbered_when_name_mismatch_test() {
+  let named =
+    make_test_track(
+      "ecmwf",
+      "06L",
+      Some("FAY"),
+      "2026-09-25T12:00:00Z",
+      29.8,
+      -42.6,
+    )
+  let numbered =
+    make_test_track(
+      "ecmwf",
+      "71L",
+      Some("71L"),
+      "2026-09-25T12:00:00Z",
+      29.8,
+      -42.6,
+    )
+
+  // Hazard title has no storm name or different name; named run is still preferred over numbered
+  wis2_matcher.choose_forecast_tracks(
+    [numbered, named],
+    "Tropical Cyclone Unknown",
+    29.8,
+    -42.6,
+  )
+  |> should.equal([named])
+}
+
+pub fn choose_forecast_tracks_prefers_closest_position_when_both_numbered_test() {
+  let closer =
+    make_test_track(
+      "ecmwf",
+      "71L",
+      Some("71L"),
+      "2026-09-25T12:00:00Z",
+      29.9,
+      -42.5,
+    )
+  let farther =
+    make_test_track(
+      "ecmwf",
+      "72L",
+      Some("72L"),
+      "2026-09-25T12:00:00Z",
+      25.0,
+      -40.0,
+    )
+
+  wis2_matcher.choose_forecast_tracks(
+    [farther, closer],
+    "Tropical Cyclone Unknown",
+    29.8,
+    -42.6,
+  )
+  |> should.equal([closer])
+}
+
+pub fn choose_forecast_tracks_prefers_closest_position_when_both_named_mismatch_test() {
+  let closer =
+    make_test_track(
+      "ecmwf",
+      "06L",
+      Some("ALPHA"),
+      "2026-09-25T12:00:00Z",
+      20.0,
+      130.0,
+    )
+  let farther =
+    make_test_track(
+      "ecmwf",
+      "07L",
+      Some("BETA"),
+      "2026-09-25T12:00:00Z",
+      25.0,
+      130.0,
+    )
+
+  wis2_matcher.choose_forecast_tracks(
+    [farther, closer],
+    "Tropical Cyclone GAMMA",
+    20.1,
+    130.0,
+  )
+  |> should.equal([closer])
+}
+
+pub fn choose_forecast_tracks_multiple_centres_picks_one_each_test() {
+  let ecmwf_named =
+    make_test_track(
+      "ecmwf",
+      "06L",
+      Some("FAY"),
+      "2026-09-25T12:00:00Z",
+      29.8,
+      -42.6,
+    )
+  let ecmwf_num =
+    make_test_track(
+      "ecmwf",
+      "71L",
+      Some("71L"),
+      "2026-09-25T12:00:00Z",
+      29.8,
+      -42.6,
+    )
+  let jma_named =
+    make_test_track(
+      "jma",
+      "06L",
+      Some("FAY"),
+      "2026-09-25T12:00:00Z",
+      29.8,
+      -42.6,
+    )
+  let jma_num =
+    make_test_track("jma", "99W", None, "2026-09-25T12:00:00Z", 29.8, -42.6)
+
+  wis2_matcher.choose_forecast_tracks(
+    [ecmwf_num, jma_num, ecmwf_named, jma_named],
+    "Tropical Cyclone Fay",
+    29.8,
+    -42.6,
+  )
+  |> should.equal([ecmwf_named, jma_named])
+}
+
+pub fn choose_forecast_tracks_ignores_older_analysis_time_test() {
+  let older =
+    make_test_track(
+      "ecmwf",
+      "06L",
+      Some("FAY"),
+      "2026-09-25T06:00:00Z",
+      29.8,
+      -42.6,
+    )
+  let newer =
+    make_test_track(
+      "ecmwf",
+      "71L",
+      Some("71L"),
+      "2026-09-25T12:00:00Z",
+      29.8,
+      -42.6,
+    )
+
+  wis2_matcher.choose_forecast_tracks(
+    [older, newer],
+    "Tropical Cyclone Fay",
+    29.8,
+    -42.6,
+  )
+  |> should.equal([newer])
+}
+
+pub fn choose_forecast_tracks_empty_test() {
+  wis2_matcher.choose_forecast_tracks([], "Tropical Cyclone Fay", 29.8, -42.6)
+  |> should.equal([])
 }

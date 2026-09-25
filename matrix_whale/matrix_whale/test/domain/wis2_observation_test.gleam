@@ -37,16 +37,19 @@ pub fn plausibility_precip_1h_test() {
 pub fn plausibility_precip_24h_test() {
   wis2_observation.is_plausible_precip_24h(0.0) |> should.equal(True)
   wis2_observation.is_plausible_precip_24h(1000.0) |> should.equal(True)
-  wis2_observation.is_plausible_precip_24h(2000.0) |> should.equal(True)
-  wis2_observation.is_plausible_precip_24h(2000.5) |> should.equal(False)
+  wis2_observation.is_plausible_precip_24h(1850.0) |> should.equal(True)
+  wis2_observation.is_plausible_precip_24h(1850.5) |> should.equal(False)
+  wis2_observation.is_plausible_precip_24h(2000.0) |> should.equal(False)
   wis2_observation.is_plausible_precip_24h(-1.0) |> should.equal(False)
 }
 
 pub fn plausibility_mslp_test() {
-  wis2_observation.is_plausible_mslp_hpa(850.0) |> should.equal(True)
+  wis2_observation.is_plausible_mslp_hpa(870.0) |> should.equal(True)
   wis2_observation.is_plausible_mslp_hpa(1013.2) |> should.equal(True)
   wis2_observation.is_plausible_mslp_hpa(1090.0) |> should.equal(True)
-  wis2_observation.is_plausible_mslp_hpa(849.9) |> should.equal(False)
+  wis2_observation.is_plausible_mslp_hpa(869.9) |> should.equal(False)
+  wis2_observation.is_plausible_mslp_hpa(856.0) |> should.equal(False)
+  wis2_observation.is_plausible_mslp_hpa(850.0) |> should.equal(False)
   wis2_observation.is_plausible_mslp_hpa(1090.1) |> should.equal(False)
 }
 
@@ -177,7 +180,15 @@ pub fn filter_plausible_discards_whole_observation_on_any_invalid_element_test()
   )
   |> should.be_error
 
-  // Implausible 24h precip (> 2000 mm) discards entire observation
+  // Implausible 24h precip (> 1850 mm) discards entire observation
+  wis2_observation.filter_plausible(
+    Wis2ObservationFeature(..base, precip: [
+      Wis2Precip(period_h: 24.0, mm: 1850.5),
+    ]),
+    1_700_000_000_000,
+  )
+  |> should.be_error
+
   wis2_observation.filter_plausible(
     Wis2ObservationFeature(..base, precip: [
       Wis2Precip(period_h: 24.0, mm: 2500.0),
@@ -186,7 +197,13 @@ pub fn filter_plausible_discards_whole_observation_on_any_invalid_element_test()
   )
   |> should.be_error
 
-  // Implausible MSLP (< 850 hPa) discards entire observation
+  // Implausible MSLP (< 870 hPa) discards entire observation (e.g. live 856 hPa)
+  wis2_observation.filter_plausible(
+    Wis2ObservationFeature(..base, mslp_pa: Some(85_600.0)),
+    1_700_000_000_000,
+  )
+  |> should.be_error
+
   wis2_observation.filter_plausible(
     Wis2ObservationFeature(..base, mslp_pa: Some(80_000.0)),
     1_700_000_000_000,
@@ -198,6 +215,49 @@ pub fn filter_plausible_discards_whole_observation_on_any_invalid_element_test()
     Wis2ObservationFeature(..base, mslp_pa: Some(115_000.0)),
     1_700_000_000_000,
   )
+  |> should.be_error
+
+  // Corrupt station name (U+FFFD, control chars) discards entire observation
+  wis2_observation.filter_plausible(
+    Wis2ObservationFeature(
+      ..base,
+      station_name: Some("_\u{FFFD}Y\u{FFFD}f\u{FFFD}\u{FFFD}"),
+    ),
+    1_700_000_000_000,
+  )
+  |> should.be_error
+
+  wis2_observation.filter_plausible(
+    Wis2ObservationFeature(..base, station_name: Some("Tokyo\u{0000}Station")),
+    1_700_000_000_000,
+  )
+  |> should.be_error
+
+  wis2_observation.filter_plausible(
+    Wis2ObservationFeature(..base, station_name: Some("Tokyo\tStation")),
+    1_700_000_000_000,
+  )
+  |> should.be_error
+
+  // Exact live corrupt finding: station name "_Yf", MSLP 856 hPa, rain 24h 1637.6 mm
+  let live_corrupt =
+    Wis2ObservationFeature(
+      data_id: "live-corrupt-1",
+      centre_id: "test-centre",
+      pubtime: "2026-09-25T13:00:00Z",
+      station_id: "0-20000-0-99999",
+      station_name: Some("_\u{FFFD}Y\u{FFFD}f\u{FFFD}\u{FFFD}"),
+      lat: 10.0,
+      lon: 100.0,
+      elevation_m: Some(10.0),
+      observed_at: "2026-09-25T13:00:00Z",
+      wind_speed_ms: Some(10.0),
+      gust_ms: None,
+      gust_period_min: None,
+      precip: [Wis2Precip(period_h: 24.0, mm: 1637.6)],
+      mslp_pa: Some(85_600.0),
+    )
+  wis2_observation.filter_plausible(live_corrupt, 1_700_000_000_000)
   |> should.be_error
 
   // Corrupt Singapore MSS style observation (shifted elements: wind 241.1, gust 408.7)
@@ -551,11 +611,179 @@ pub fn format_title_test() {
   wis2_observation.format_title(SubtypeRain24h, 160.0, "0-20000-0-47662", None)
   |> should.equal("Rain 24h 160.0 mm at 0-20000-0-47662")
 
+  // Float noise formatted to one decimal in titles
+  wis2_observation.format_title(
+    SubtypeRain24h,
+    164.60000000000002,
+    "0-20000-0-47662",
+    None,
+  )
+  |> should.equal("Rain 24h 164.6 mm at 0-20000-0-47662")
+
+  // MSLP formatted as integer in titles
   wis2_observation.format_title(
     SubtypeLowPressure,
     960.0,
     "0-20000-0-47662",
     None,
   )
-  |> should.equal("MSLP 960.0 hPa at 0-20000-0-47662")
+  |> should.equal("MSLP 960 hPa at 0-20000-0-47662")
+
+  wis2_observation.format_title(
+    SubtypeLowPressure,
+    958.4,
+    "0-20000-0-47662",
+    Some("Tokyo"),
+  )
+  |> should.equal("MSLP 958 hPa at Tokyo")
+}
+
+pub fn corrupt_station_name_test() {
+  wis2_observation.is_corrupt_station_name(
+    "_\u{FFFD}Y\u{FFFD}f\u{FFFD}\u{FFFD}",
+  )
+  |> should.equal(True)
+
+  wis2_observation.is_corrupt_station_name("Tokyo\u{FFFD}")
+  |> should.equal(True)
+
+  wis2_observation.is_corrupt_station_name("Tokyo\u{0000}")
+  |> should.equal(True)
+
+  wis2_observation.is_corrupt_station_name("Tokyo\n")
+  |> should.equal(True)
+
+  wis2_observation.is_corrupt_station_name("Tokyo\tStation")
+  |> should.equal(True)
+
+  wis2_observation.is_corrupt_station_name("Tokyo\u{007F}")
+  |> should.equal(True)
+
+  wis2_observation.is_corrupt_station_name("Tokyo\u{0080}")
+  |> should.equal(True)
+
+  wis2_observation.is_corrupt_station_name("Tokyo")
+  |> should.equal(False)
+
+  wis2_observation.is_corrupt_station_name("Paris-Montsouris")
+  |> should.equal(False)
+
+  wis2_observation.is_corrupt_station_name("Montréal")
+  |> should.equal(False)
+
+  wis2_observation.is_corrupt_station_name("東京")
+  |> should.equal(False)
+
+  wis2_observation.is_plausible_station_name(Some("Tokyo"))
+  |> should.equal(True)
+
+  wis2_observation.is_plausible_station_name(None)
+  |> should.equal(True)
+
+  wis2_observation.is_plausible_station_name(Some(
+    "_\u{FFFD}Y\u{FFFD}f\u{FFFD}\u{FFFD}",
+  ))
+  |> should.equal(False)
+}
+
+pub fn decide_episode_action_test() {
+  // 1. Unconfirmed low pressure creates nothing
+  let action1 =
+    wis2_observation.decide_episode_action(
+      SubtypeLowPressure,
+      906.0,
+      1_700_000_000_000,
+      "0-1",
+      None,
+      False,
+      None,
+    )
+  action1 |> should.equal(wis2_observation.ActionIgnore)
+
+  // 2. Unconfirmed low pressure ends existing unconfirmed episode
+  let ts = timestamp.from_unix_seconds(1_700_000_000)
+  let unconfirmed_hazard =
+    Hazard(
+      source: "wis2-centre",
+      source_id: "0-1/low_pressure/1700000000",
+      source_episode_id: None,
+      episode_count: 1,
+      hazard_type: "observed_extreme",
+      hazard_codes: [],
+      glide: None,
+      alert_level: "orange",
+      alert_score: None,
+      cap_severity: "severe",
+      severity_value: Some(910.0),
+      severity_unit: Some("hPa"),
+      severity_label: Some("Mean Sea Level Pressure"),
+      estimate_type: "primary",
+      title: "MSLP 910 hPa at 0-1",
+      description: None,
+      countries: [],
+      report_url: None,
+      external_ids: [],
+      onset_at: ts,
+      onset_at_ms: 1_700_000_000_000,
+      expires_at: Some(ts),
+      expires_at_ms: Some(1_700_010_800_000),
+      modified_at: ts,
+      modified_at_ms: 1_700_000_000_000,
+      is_current: True,
+      longitude: 139.76,
+      latitude: 35.68,
+      bbox: None,
+      primary_geometry: None,
+      geometries: None,
+      first_seen_at: ts,
+      last_seen_at: ts,
+      subtype: Some("low_pressure"),
+      confirmed: Some(False),
+    )
+
+  let action2 =
+    wis2_observation.decide_episode_action(
+      SubtypeLowPressure,
+      906.0,
+      1_700_001_000_000,
+      "0-1",
+      None,
+      False,
+      Some(unconfirmed_hazard),
+    )
+  action2 |> should.equal(wis2_observation.ActionEndExisting)
+
+  // 3. Confirmed low pressure creates hazard
+  let action3 =
+    wis2_observation.decide_episode_action(
+      SubtypeLowPressure,
+      960.0,
+      1_700_000_000_000,
+      "0-1",
+      Some("Tokyo"),
+      True,
+      None,
+    )
+  action3
+  |> should.equal(wis2_observation.ActionCreate(
+    title: "MSLP 960 hPa at Tokyo",
+    confirmed: True,
+  ))
+
+  // 4. Other subtype unconfirmed creates unconfirmed hazard
+  let action4 =
+    wis2_observation.decide_episode_action(
+      SubtypeGust,
+      35.0,
+      1_700_000_000_000,
+      "0-1",
+      Some("Tokyo"),
+      False,
+      None,
+    )
+  action4
+  |> should.equal(wis2_observation.ActionCreate(
+    title: "Gust 35.0 m/s at Tokyo",
+    confirmed: False,
+  ))
 }

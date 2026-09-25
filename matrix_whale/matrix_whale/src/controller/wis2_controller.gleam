@@ -609,57 +609,24 @@ pub fn process_observations(
                 ctx.db,
               ))
 
-              case active_opt {
-                Some(active) -> {
-                  case wis2_observation.can_merge(active, obs.observed_at_ms) {
-                    True -> {
-                      let episode_count = active.episode_count + 1
-                      let current_val =
-                        option.unwrap(active.severity_value, exc.value)
-                      let merged_val =
-                        wis2_observation.merge_severity_value(
-                          exc.subtype,
-                          current_val,
-                          exc.value,
-                        )
-                      let title =
-                        wis2_observation.format_title(
-                          exc.subtype,
-                          merged_val,
-                          obs.station_id,
-                          obs.station_name,
-                        )
-                      let confirmed =
-                        option.unwrap(active.confirmed, False) || is_confirmed
-                      use updated_hazard <- result.try(
-                        wis2_writer.extend_observed_extreme_episode(
-                          active.source,
-                          active.source_id,
-                          episode_count,
-                          merged_val,
-                          title,
-                          obs.observed_at_ms,
-                          now_ms,
-                          confirmed,
-                          ctx.db,
-                        ),
-                      )
-                      let key = #(active.source, active.source_id)
-                      case dict.has_key(new_acc, key) {
-                        True ->
-                          Ok(#(
-                            dict.insert(new_acc, key, updated_hazard),
-                            upd_acc,
-                          ))
-                        False ->
-                          Ok(#(
-                            new_acc,
-                            dict.insert(upd_acc, key, updated_hazard),
-                          ))
-                      }
-                    }
-                    False -> {
-                      let #(new_acc2, upd_acc2) = case
+              let action =
+                wis2_observation.decide_episode_action(
+                  exc.subtype,
+                  exc.value,
+                  obs.observed_at_ms,
+                  obs.station_id,
+                  obs.station_name,
+                  is_confirmed,
+                  active_opt,
+                )
+
+              case action {
+                wis2_observation.ActionIgnore -> Ok(acc_maps)
+
+                wis2_observation.ActionEndExisting -> {
+                  case active_opt {
+                    Some(active) ->
+                      case
                         wis2_writer.end_episode(
                           active.source,
                           active.source_id,
@@ -667,35 +634,86 @@ pub fn process_observations(
                           ctx.db,
                         )
                       {
-                        Ok(ended) -> #(
-                          new_acc,
-                          dict.insert(
-                            upd_acc,
-                            #(active.source, active.source_id),
-                            ended,
-                          ),
-                        )
-                        Error(_) -> #(new_acc, upd_acc)
+                        Ok(ended) ->
+                          Ok(#(
+                            new_acc,
+                            dict.insert(
+                              upd_acc,
+                              #(active.source, active.source_id),
+                              ended,
+                            ),
+                          ))
+                        Error(_) -> Ok(acc_maps)
                       }
-                      create_new_hazard_step(
-                        obs,
-                        exc,
-                        subtype_str,
-                        is_confirmed,
-                        now_ms,
-                        new_acc2,
-                        upd_acc2,
-                        ctx,
-                      )
-                    }
+                    None -> Ok(acc_maps)
                   }
                 }
-                None -> {
+
+                wis2_observation.ActionExtend(merged_val, title, confirmed) -> {
+                  let assert Some(active) = active_opt
+                  let episode_count = active.episode_count + 1
+                  use updated_hazard <- result.try(
+                    wis2_writer.extend_observed_extreme_episode(
+                      active.source,
+                      active.source_id,
+                      episode_count,
+                      merged_val,
+                      title,
+                      obs.observed_at_ms,
+                      now_ms,
+                      confirmed,
+                      ctx.db,
+                    ),
+                  )
+                  let key = #(active.source, active.source_id)
+                  case dict.has_key(new_acc, key) {
+                    True ->
+                      Ok(#(dict.insert(new_acc, key, updated_hazard), upd_acc))
+                    False ->
+                      Ok(#(new_acc, dict.insert(upd_acc, key, updated_hazard)))
+                  }
+                }
+
+                wis2_observation.ActionEndAndCreate(title, confirmed) -> {
+                  let assert Some(active) = active_opt
+                  let #(new_acc2, upd_acc2) = case
+                    wis2_writer.end_episode(
+                      active.source,
+                      active.source_id,
+                      now_ms,
+                      ctx.db,
+                    )
+                  {
+                    Ok(ended) -> #(
+                      new_acc,
+                      dict.insert(
+                        upd_acc,
+                        #(active.source, active.source_id),
+                        ended,
+                      ),
+                    )
+                    Error(_) -> #(new_acc, upd_acc)
+                  }
                   create_new_hazard_step(
                     obs,
                     exc,
                     subtype_str,
-                    is_confirmed,
+                    title,
+                    confirmed,
+                    now_ms,
+                    new_acc2,
+                    upd_acc2,
+                    ctx,
+                  )
+                }
+
+                wis2_observation.ActionCreate(title, confirmed) -> {
+                  create_new_hazard_step(
+                    obs,
+                    exc,
+                    subtype_str,
+                    title,
+                    confirmed,
                     now_ms,
                     new_acc,
                     upd_acc,
@@ -735,6 +753,7 @@ fn create_new_hazard_step(
   obs: PlausibleObservation,
   exc: Exceedance,
   subtype_str: String,
+  title: String,
   is_confirmed: Bool,
   now_ms: Int,
   new_acc: dict.Dict(#(String, String), Hazard),
@@ -751,19 +770,13 @@ fn create_new_hazard_step(
       exc.subtype,
       obs.observed_at_ms / 1000,
     )
-  let title =
-    wis2_observation.format_title(
-      exc.subtype,
-      exc.value,
-      obs.station_id,
-      obs.station_name,
-    )
+  let rounded_val = wis2_observation.round_to_one_decimal(exc.value)
   use new_hazard <- result.try(wis2_writer.create_observed_extreme_episode(
     source,
     source_id,
     subtype_str,
     is_confirmed,
-    exc.value,
+    rounded_val,
     exc.unit,
     exc.label,
     title,

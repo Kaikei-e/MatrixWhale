@@ -14,6 +14,7 @@ import domain/hazard
 import domain/source
 import domain/timeline
 import domain/wis2
+import domain/wis2_matcher
 import gleam/bit_array
 import gleam/bytes_tree
 import gleam/crypto
@@ -686,13 +687,25 @@ pub fn hazard_detail_response(
             )
           {
             Ok([]) -> base_fields
-            Ok(tracks) ->
-              list.append(base_fields, [
-                #(
-                  "forecast_tracks",
-                  json.array(tracks, wis2.forecast_track_to_json),
-                ),
-              ])
+            Ok(tracks) -> {
+              let chosen =
+                wis2_matcher.choose_forecast_tracks(
+                  tracks,
+                  row.title,
+                  row.latitude,
+                  row.longitude,
+                )
+              case chosen {
+                [] -> base_fields
+                _ ->
+                  list.append(base_fields, [
+                    #(
+                      "forecast_tracks",
+                      json.array(chosen, wis2.forecast_track_to_json),
+                    ),
+                  ])
+              }
+            }
             Error(_) -> base_fields
           }
         }

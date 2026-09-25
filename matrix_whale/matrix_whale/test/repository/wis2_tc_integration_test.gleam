@@ -130,6 +130,22 @@ pub fn wis2_tc_gdacs_present_same_name_matched_test() {
   ack.written |> should.equal(1)
   ack.deduped |> should.equal(0)
 
+  let numbered_feature =
+    Wis2TcFeature(
+      ..feature,
+      data_id: "urn:wmo:md:ecmwf:tc::71L-2026092506",
+      notification_id: "notif-tc-71L",
+      storm_id: "71L",
+      storm_name: Some("71L"),
+    )
+
+  let assert Ok(ack_num) =
+    wis2_controller.process_tc_tracks(None, [numbered_feature], 1, 0, ctx)
+  ack_num.written |> should.equal(1)
+  ack_num.deduped |> should.equal(0)
+
+  test_db.count(conn, "sea.wis2_tc_track") |> should.equal(2)
+
   let matched_source =
     test_db.scalar_text(
       conn,
@@ -144,15 +160,112 @@ pub fn wis2_tc_gdacs_present_same_name_matched_test() {
     )
   matched_source_id |> should.equal("TC-1000123")
 
-  // No own hazard row was created, only GDACS exists
-  test_db.count(conn, "sea.hazard") |> should.equal(1)
+  let matched_source_num =
+    test_db.scalar_text(
+      conn,
+      "SELECT matched_hazard_source FROM sea.wis2_tc_track WHERE storm_id = '71L'",
+    )
+  matched_source_num |> should.equal("gdacs")
 
+  let matched_source_id_num =
+    test_db.scalar_text(
+      conn,
+      "SELECT matched_hazard_source_id FROM sea.wis2_tc_track WHERE storm_id = '71L'",
+    )
+  matched_source_id_num |> should.equal("TC-1000123")
+
+  // Numbered disturbance distance-matched to GDACS hazard never creates or keeps its own hazard
+  test_db.count(conn, "sea.hazard") |> should.equal(1)
+  test_db.count(conn, "sea.hazard WHERE source = 'wis2-ecmwf'")
+  |> should.equal(0)
+  test_db.scalar_int(
+    conn,
+    "SELECT count(*) FROM sea.hazard WHERE source_id LIKE '71L%'",
+  )
+  |> should.equal(0)
+
+  // Repository returns all runs of the latest analysis_time per centre for the hazard
+  let assert Ok(tracks) =
+    wis2_writer.latest_forecast_tracks_for_hazard("gdacs", "TC-1000123", conn)
+  list.length(tracks) |> should.equal(2)
+
+  // Detail response shows only the named one
   let detail_resp = streamer.hazard_detail_response("gdacs", "TC-1000123", ctx)
   detail_resp.status |> should.equal(200)
   let body = read_mist_body(detail_resp)
   string.contains(body, "forecast_tracks") |> should.equal(True)
   string.contains(body, "ecmwf") |> should.equal(True)
   string.contains(body, "06L") |> should.equal(True)
+  string.contains(body, "FAY") |> should.equal(True)
+  string.contains(body, "71L") |> should.equal(False)
+}
+
+pub fn wis2_tc_gdacs_numbered_run_first_then_named_test() {
+  use conn <- test_db.with_test_db
+  let ctx = test_db.integration_context(conn)
+
+  test_db.exec(
+    conn,
+    "INSERT INTO sea.source (id, name, homepage, license, attribution_text, redistributable, priority)
+     VALUES ('gdacs', 'GDACS', NULL, 'Open', 'GDACS', true, 100)
+     ON CONFLICT (id) DO NOTHING",
+  )
+  test_db.exec(
+    conn,
+    "INSERT INTO sea.hazard
+       (source, source_id, episode_count, hazard_type, hazard_codes, alert_level,
+        cap_severity, estimate_type, title, countries, external_ids,
+        onset_at, onset_at_ms, modified_at, modified_at_ms, is_current,
+        centroid, first_seen_at, last_seen_at)
+     VALUES
+       ('gdacs', 'TC-1000123', 1, 'tropical_cyclone', ARRAY['glide:TC'], 'orange',
+        'severe', 'primary', 'Tropical Cyclone Fay', ARRAY['BMU'], ARRAY[]::text[],
+        to_timestamp(1790316000), 1790316000000, to_timestamp(1790316000), 1790316000000,
+        true, ST_SetSRID(ST_MakePoint(-42.6, 29.8), 4326), now(), now())",
+  )
+
+  let named_feature = load_named_tc()
+  let numbered_feature =
+    Wis2TcFeature(
+      ..named_feature,
+      data_id: "urn:wmo:md:ecmwf:tc::71L-2026092506",
+      notification_id: "notif-tc-71L",
+      storm_id: "71L",
+      storm_name: Some("71L"),
+    )
+
+  // 1. Numbered run arrives first, distance-matches GDACS hazard
+  let assert Ok(ack1) =
+    wis2_controller.process_tc_tracks(None, [numbered_feature], 1, 0, ctx)
+  ack1.written |> should.equal(1)
+
+  // Numbered run never creates or keeps its own hazard
+  test_db.count(conn, "sea.hazard") |> should.equal(1)
+  test_db.count(conn, "sea.hazard WHERE source = 'wis2-ecmwf'")
+  |> should.equal(0)
+  test_db.scalar_int(
+    conn,
+    "SELECT count(*) FROM sea.hazard WHERE source_id LIKE '71L%'",
+  )
+  |> should.equal(0)
+
+  // 2. Named run arrives second, matches GDACS hazard by name
+  let assert Ok(ack2) =
+    wis2_controller.process_tc_tracks(None, [named_feature], 1, 0, ctx)
+  ack2.written |> should.equal(1)
+
+  test_db.count(conn, "sea.wis2_tc_track") |> should.equal(2)
+  test_db.count(conn, "sea.hazard") |> should.equal(1)
+
+  // Detail response shows only the named one
+  let detail_resp = streamer.hazard_detail_response("gdacs", "TC-1000123", ctx)
+  detail_resp.status |> should.equal(200)
+  let body = read_mist_body(detail_resp)
+  string.contains(body, "forecast_tracks") |> should.equal(True)
+  string.contains(body, "ecmwf") |> should.equal(True)
+  string.contains(body, "06L") |> should.equal(True)
+  string.contains(body, "FAY") |> should.equal(True)
+  string.contains(body, "71L") |> should.equal(False)
 }
 
 pub fn wis2_tc_unnamed_storm_stored_only_test() {

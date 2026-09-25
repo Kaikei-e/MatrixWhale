@@ -260,7 +260,20 @@ pub fn followup_exceedance_within_3h_extends_and_updates_max_test() {
   let title2 = test_db.scalar_text(conn, "SELECT title FROM sea.hazard LIMIT 1")
   string.contains(title2, "Gust 38.0 m/s at Tokyo") |> should.equal(True)
 
-  // Also verify low pressure updates to MINIMUM
+  // Also verify low pressure updates to MINIMUM when confirmed by neighbour
+  let obs_p_neighbour =
+    make_obs(
+      "0-20000-0-47674",
+      Some("Yokohama"),
+      35.4437,
+      139.638,
+      "2026-09-26T02:00:00Z",
+      None,
+      None,
+      [],
+      Some(97_500.0),
+      // 975 hPa corroborates Tokyo (<= 970.0 + 10.0 = 980.0 hPa) without exceeding 970.0 hPa itself
+    )
   let obs_p1 =
     make_obs(
       "0-20000-0-47662",
@@ -275,7 +288,13 @@ pub fn followup_exceedance_within_3h_extends_and_updates_max_test() {
       // 965 hPa <= 970 hPa threshold
     )
   let assert Ok(_) =
-    wis2_controller.process_observations(None, [obs_p1], 1, 0, ctx)
+    wis2_controller.process_observations(
+      None,
+      [obs_p_neighbour, obs_p1],
+      2,
+      0,
+      ctx,
+    )
 
   let p_val1 =
     test_db.scalar_float(
@@ -306,6 +325,13 @@ pub fn followup_exceedance_within_3h_extends_and_updates_max_test() {
       "SELECT severity_value FROM sea.hazard WHERE subtype = 'low_pressure'",
     )
   p_val2 |> should.equal(958.0)
+
+  let title_p =
+    test_db.scalar_text(
+      conn,
+      "SELECT title FROM sea.hazard WHERE subtype = 'low_pressure'",
+    )
+  string.contains(title_p, "MSLP 958 hPa at Tokyo") |> should.equal(True)
 }
 
 // 4. Sweep ends episode after 3 h
@@ -534,4 +560,254 @@ pub fn batch_of_500_observations_handled_in_one_request_test() {
 
   test_db.count(conn, "sea.wis2_station") |> should.equal(500)
   test_db.count(conn, "sea.hazard") |> should.equal(1)
+}
+
+// 8. Unconfirmed low pressure creates NO hazard
+pub fn unconfirmed_low_pressure_creates_no_hazard_test() {
+  use conn <- test_db.with_test_db
+  let ctx = test_db.integration_context(conn)
+
+  // Inland station reporting 906 hPa with no corroborating neighbour
+  let obs =
+    make_obs(
+      "0-20000-0-47662",
+      Some("Tokyo"),
+      35.6895,
+      139.6917,
+      "2026-09-26T00:00:00Z",
+      None,
+      None,
+      [],
+      Some(90_600.0),
+    )
+
+  let assert Ok(ack) =
+    wis2_controller.process_observations(None, [obs], 1, 0, ctx)
+  ack.written |> should.equal(1)
+  ack.dropped |> should.equal(0)
+
+  // Station is stored
+  test_db.count(conn, "sea.wis2_station") |> should.equal(1)
+
+  // But NO hazard is created
+  test_db.count(conn, "sea.hazard") |> should.equal(0)
+}
+
+// 9. Unconfirmed low pressure ends existing unconfirmed episode
+pub fn unconfirmed_low_pressure_ends_existing_unconfirmed_episode_test() {
+  use conn <- test_db.with_test_db
+  let ctx = test_db.integration_context(conn)
+
+  // Seed existing unconfirmed low_pressure hazard
+  let now_ms = 1_700_000_000_000
+  let assert Ok(_) = wis2_writer.upsert_observation_source("rjtd", conn)
+  let assert Ok(_) =
+    wis2_writer.create_observed_extreme_episode(
+      "wis2-rjtd",
+      "0-20000-0-47662/low_pressure/1700000000",
+      "low_pressure",
+      False,
+      910.0,
+      "hPa",
+      "Mean Sea Level Pressure",
+      "MSLP 910 hPa at Tokyo",
+      "0-20000-0-47662",
+      Some("Tokyo"),
+      now_ms,
+      now_ms,
+      139.6917,
+      35.6895,
+      conn,
+    )
+
+  test_db.count(conn, "sea.hazard") |> should.equal(1)
+  let is_curr_before =
+    test_db.scalar_bool(conn, "SELECT is_current FROM sea.hazard LIMIT 1")
+  is_curr_before |> should.equal(True)
+
+  // New unconfirmed low pressure observation arrives for that station
+  let obs =
+    make_obs(
+      "0-20000-0-47662",
+      Some("Tokyo"),
+      35.6895,
+      139.6917,
+      "2026-09-26T00:30:00Z",
+      None,
+      None,
+      [],
+      Some(90_600.0),
+    )
+
+  let assert Ok(_) =
+    wis2_controller.process_observations(None, [obs], 1, 0, ctx)
+
+  // Existing unconfirmed episode is ended: is_current becomes False
+  let is_curr_after =
+    test_db.scalar_bool(conn, "SELECT is_current FROM sea.hazard LIMIT 1")
+  is_curr_after |> should.equal(False)
+
+  // No new hazard created
+  test_db.count(conn, "sea.hazard") |> should.equal(1)
+}
+
+// 10. Live corrupt message discarded as dropped (garbled name, MSLP 856 hPa, rain 1637.6 mm)
+pub fn live_corrupt_message_discarded_as_dropped_test() {
+  use conn <- test_db.with_test_db
+  let ctx = test_db.integration_context(conn)
+
+  let corrupt_obs =
+    make_obs(
+      "0-20000-0-99999",
+      Some("_\u{FFFD}Y\u{FFFD}f\u{FFFD}\u{FFFD}"),
+      10.0,
+      100.0,
+      "2026-09-26T00:00:00Z",
+      None,
+      None,
+      [Wis2Precip(period_h: 24.0, mm: 1637.6)],
+      Some(85_600.0),
+    )
+
+  let body =
+    json.to_string(
+      wis2_observation.observations_envelope_to_json([corrupt_obs]),
+    )
+  let post_req =
+    simulate.request(http.Post, "/api/v1/wis2_data/observations")
+    |> simulate.string_body(body)
+    |> request.set_header("content-type", "application/json")
+
+  let post_resp = wis2_reciever.observations_handler(post_req, ctx)
+  post_resp.status |> should.equal(200)
+
+  let resp_body = simulate.read_body(post_resp)
+  string.contains(resp_body, "\"written\":0") |> should.equal(True)
+  string.contains(resp_body, "\"dropped\":1") |> should.equal(True)
+
+  // Whole observation discarded: no station, no hazard
+  test_db.count(conn, "sea.wis2_station") |> should.equal(0)
+  test_db.count(conn, "sea.hazard") |> should.equal(0)
+}
+
+// 11. MSLP plausibility bound raised to 870 hPa
+pub fn mslp_870hpa_plausibility_bound_test() {
+  use conn <- test_db.with_test_db
+  let ctx = test_db.integration_context(conn)
+
+  // 869.9 hPa -> implausible, dropped
+  let obs_low =
+    make_obs(
+      "0-20000-0-47662",
+      Some("Tokyo"),
+      35.6895,
+      139.6917,
+      "2026-09-26T00:00:00Z",
+      None,
+      None,
+      [],
+      Some(86_990.0),
+    )
+  let assert Ok(ack_low) =
+    wis2_controller.process_observations(None, [obs_low], 1, 0, ctx)
+  ack_low.written |> should.equal(0)
+  ack_low.dropped |> should.equal(1)
+
+  // 870.0 hPa -> plausible, written
+  let obs_870 =
+    make_obs(
+      "0-20000-0-47662",
+      Some("Tokyo"),
+      35.6895,
+      139.6917,
+      "2026-09-26T00:00:00Z",
+      None,
+      None,
+      [],
+      Some(87_000.0),
+    )
+  let assert Ok(ack_870) =
+    wis2_controller.process_observations(None, [obs_870], 1, 0, ctx)
+  ack_870.written |> should.equal(1)
+  ack_870.dropped |> should.equal(0)
+}
+
+// 12. 24h precipitation plausibility upper bound 1850 mm
+pub fn precip_24h_1850mm_plausibility_bound_test() {
+  use conn <- test_db.with_test_db
+  let ctx = test_db.integration_context(conn)
+
+  // 1850.5 mm -> implausible, dropped
+  let obs_high =
+    make_obs(
+      "0-20000-0-47662",
+      Some("Tokyo"),
+      35.6895,
+      139.6917,
+      "2026-09-26T00:00:00Z",
+      None,
+      None,
+      [Wis2Precip(period_h: 24.0, mm: 1850.5)],
+      None,
+    )
+  let assert Ok(ack_high) =
+    wis2_controller.process_observations(None, [obs_high], 1, 0, ctx)
+  ack_high.written |> should.equal(0)
+  ack_high.dropped |> should.equal(1)
+
+  // 1850.0 mm -> plausible, written
+  let obs_ok =
+    make_obs(
+      "0-20000-0-47662",
+      Some("Tokyo"),
+      35.6895,
+      139.6917,
+      "2026-09-26T00:00:00Z",
+      None,
+      None,
+      [Wis2Precip(period_h: 24.0, mm: 1850.0)],
+      None,
+    )
+  let assert Ok(ack_ok) =
+    wis2_controller.process_observations(None, [obs_ok], 1, 0, ctx)
+  ack_ok.written |> should.equal(1)
+  ack_ok.dropped |> should.equal(0)
+}
+
+// 13. Titles format floats with one decimal and severity_value rounded to one decimal
+pub fn title_noise_formatting_and_severity_rounding_test() {
+  use conn <- test_db.with_test_db
+  let ctx = test_db.integration_context(conn)
+
+  // Float noise: 164.60000000000002 mm
+  let obs =
+    make_obs(
+      "0-20000-0-47662",
+      Some("Tokyo"),
+      35.6895,
+      139.6917,
+      "2026-09-26T00:00:00Z",
+      None,
+      None,
+      [Wis2Precip(period_h: 24.0, mm: 164.60000000000002)],
+      None,
+    )
+
+  let assert Ok(_) =
+    wis2_controller.process_observations(None, [obs], 1, 0, ctx)
+
+  test_db.count(conn, "sea.hazard") |> should.equal(1)
+  let val =
+    test_db.scalar_float(
+      conn,
+      "SELECT severity_value FROM sea.hazard WHERE subtype = 'rain_24h'",
+    )
+  val |> should.equal(164.6)
+
+  let title =
+    test_db.scalar_text(
+      conn,
+      "SELECT title FROM sea.hazard WHERE subtype = 'rain_24h'",
+    )
+  string.contains(title, "Rain 24h 164.6 mm at Tokyo") |> should.equal(True)
 }

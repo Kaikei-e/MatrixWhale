@@ -9,6 +9,7 @@ import gleam/http/request
 import gleam/http/response
 import gleam/option.{None, Some}
 import gleam/string
+import gleam/time/calendar
 import gleam/time/duration
 import gleam/time/timestamp
 import gleeunit/should
@@ -417,8 +418,35 @@ pub fn wis2_health_http_post_and_get_test() {
   use conn <- test_db.with_test_db
   let ctx = test_db.integration_context(conn)
 
+  let now = timestamp.system_time()
+  let #(now_sec, _) = timestamp.to_unix_seconds_and_nanoseconds(now)
+  let window_start_str =
+    timestamp.from_unix_seconds(now_sec - 3600)
+    |> timestamp.to_rfc3339(calendar.utc_offset)
+  let window_end_str =
+    timestamp.from_unix_seconds(now_sec)
+    |> timestamp.to_rfc3339(calendar.utc_offset)
+  let last_rx_warnings =
+    timestamp.from_unix_seconds(now_sec - 300)
+    |> timestamp.to_rfc3339(calendar.utc_offset)
+  let last_rx_synop =
+    timestamp.from_unix_seconds(now_sec - 600)
+    |> timestamp.to_rfc3339(calendar.utc_offset)
+
   let health_body =
-    "{\"poll_meta\":{\"feed_url\":\"mqtts://wis2.example.org:8883\",\"error\":null},\"features\":[{\"centre_id\":\"eu-eumetnet-warnings\",\"kind\":\"warnings\",\"window_start\":\"2026-09-25T10:00:00Z\",\"window_end\":\"2026-09-25T11:00:00Z\",\"received\":20,\"duplicates\":2,\"download_failed\":1,\"decode_failed\":0,\"integrity_failed\":0,\"last_received_at\":\"2026-09-25T10:55:00Z\"},{\"centre_id\":\"cn-cma-synop\",\"kind\":\"synop\",\"window_start\":\"2026-09-25T10:00:00Z\",\"window_end\":\"2026-09-25T11:00:00Z\",\"received\":10,\"duplicates\":0,\"download_failed\":6,\"decode_failed\":1,\"integrity_failed\":0,\"last_received_at\":\"2026-09-25T10:50:00Z\"}]}"
+    "{\"poll_meta\":{\"feed_url\":\"mqtts://wis2.example.org:8883\",\"error\":null},\"features\":[{\"centre_id\":\"eu-eumetnet-warnings\",\"kind\":\"warnings\",\"window_start\":\""
+    <> window_start_str
+    <> "\",\"window_end\":\""
+    <> window_end_str
+    <> "\",\"received\":20,\"duplicates\":2,\"download_failed\":1,\"decode_failed\":0,\"integrity_failed\":0,\"last_received_at\":\""
+    <> last_rx_warnings
+    <> "\"},{\"centre_id\":\"cn-cma-synop\",\"kind\":\"synop\",\"window_start\":\""
+    <> window_start_str
+    <> "\",\"window_end\":\""
+    <> window_end_str
+    <> "\",\"received\":10,\"duplicates\":0,\"download_failed\":6,\"decode_failed\":1,\"integrity_failed\":0,\"last_received_at\":\""
+    <> last_rx_synop
+    <> "\"}]}"
 
   // 1. HTTP POST to wis2_data/health receiver
   let post_req =

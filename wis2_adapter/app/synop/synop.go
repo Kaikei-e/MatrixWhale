@@ -34,22 +34,29 @@ type ObservationFeature struct {
 // ExtractObservations extracts valid observation features from a BUFR message.
 // Each subset in the message corresponds to one station observation.
 // Subsets without valid lat/lon/time/station_id are rejected.
-// Returns the extracted features and the count of rejected subsets.
-func ExtractObservations(msg bufr.Message, dataID, centreID, pubTime string) (features []ObservationFeature, rejected int) {
+// Returns the extracted features and the slice of rejection reasons for rejected subsets.
+func ExtractObservations(msg bufr.Message, dataID, centreID, pubTime string) (features []ObservationFeature, rejections []string) {
 	for _, subset := range msg.Subsets {
-		feat, ok := ExtractObservation(subset, dataID, centreID, pubTime)
+		feat, reason, ok := ExtractObservationWithReason(subset, dataID, centreID, pubTime)
 		if !ok {
-			rejected++
+			rejections = append(rejections, reason)
 			continue
 		}
 		features = append(features, *feat)
 	}
-	return features, rejected
+	return features, rejections
 }
 
 // ExtractObservation extracts a single observation feature from a slice of BUFR values (one subset).
 // Returns (feat, true) if valid, or (nil, false) if rejected due to missing lat/lon/time/station_id.
 func ExtractObservation(values []bufr.Value, dataID, centreID, pubTime string) (*ObservationFeature, bool) {
+	feat, _, ok := ExtractObservationWithReason(values, dataID, centreID, pubTime)
+	return feat, ok
+}
+
+// ExtractObservationWithReason extracts a single observation feature and returns the rejection reason if invalid.
+// Rejection reasons are: "missing_station_id", "missing_coordinates", "missing_time".
+func ExtractObservationWithReason(values []bufr.Value, dataID, centreID, pubTime string) (*ObservationFeature, string, bool) {
 	var (
 		wigosSeries  *int
 		wigosIssuer  *int
@@ -271,24 +278,24 @@ func ExtractObservation(values []bufr.Value, dataID, centreID, pubTime string) (
 		stationID = fmt.Sprintf("0-20000-0-%02d%03d", *block, *station)
 	}
 	if stationID == "" {
-		return nil, false
+		return nil, "missing_station_id", false
 	}
 
 	// 2. Position: lat & lon are required
 	if lat == nil || lon == nil {
-		return nil, false
+		return nil, "missing_coordinates", false
 	}
 
 	// 3. Time: year, month, day, hour, minute are required
 	if year == nil || month == nil || day == nil || hour == nil || minute == nil {
-		return nil, false
+		return nil, "missing_time", false
 	}
 	sec := 0
 	if second != nil {
 		sec = *second
 	}
 	if *month < 1 || *month > 12 || *day < 1 || *day > 31 || *hour < 0 || *hour > 23 || *minute < 0 || *minute > 59 || sec < 0 || sec > 59 {
-		return nil, false
+		return nil, "missing_time", false
 	}
 
 	observedAt := time.Date(*year, time.Month(*month), *day, *hour, *minute, sec, 0, time.UTC).Format(time.RFC3339)
@@ -312,5 +319,5 @@ func ExtractObservation(values []bufr.Value, dataID, centreID, pubTime string) (
 		GustPeriodMin: gustPeriodMin,
 		Precip:        precip,
 		MSLPPa:        mslpPa,
-	}, true
+	}, "", true
 }

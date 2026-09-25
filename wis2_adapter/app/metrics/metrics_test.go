@@ -15,4 +15,5 @@ func TestMetricsRecord(t *testing.T) {
 	SetBrokerConnected(true)
 	SetBrokerInfo("mqtts://broker:8883", "matrixwhale-1234")
 	SetBrokerConnected(false)
+	RecordSubsetRejected("test-centre", "missing_coordinates")
 }

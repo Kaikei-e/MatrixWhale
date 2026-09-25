@@ -1774,11 +1774,13 @@ func TestControllerSynopDownloadPayload(t *testing.T) {
 	}
 }
 
-func TestControllerSynopRejectedSubsetsCountedAsDecodeFailed(t *testing.T) {
+func TestControllerSynopRejectedSubsetsCountedAsSubsetsRejectedMetric(t *testing.T) {
 	synop2Bytes, err := os.ReadFile(filepath.Join("..", "testdata", "synop_2_wnm.json"))
 	if err != nil {
 		t.Fatalf("failed to read testdata synop_2_wnm.json: %v", err)
 	}
+
+	beforeRejected := testutil.ToFloat64(wis2metrics.SubsetsRejectedTotal.WithLabelValues("kz-kazhydromet", "missing_coordinates"))
 
 	var obsReceivedCount int32
 	coreServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1824,8 +1826,13 @@ func TestControllerSynopRejectedSubsetsCountedAsDecodeFailed(t *testing.T) {
 	if rec != 1 {
 		t.Errorf("expected 1 received in health, got %d", rec)
 	}
-	if decFailed != 1 {
-		t.Errorf("expected 1 decode_failed in health for rejected subset with missing lat/lon, got %d", decFailed)
+	if decFailed != 0 {
+		t.Errorf("expected 0 decode_failed in health for rejected subset with valid BUFR, got %d", decFailed)
+	}
+
+	afterRejected := testutil.ToFloat64(wis2metrics.SubsetsRejectedTotal.WithLabelValues("kz-kazhydromet", "missing_coordinates"))
+	if afterRejected-beforeRejected != 1 {
+		t.Errorf("expected subsets_rejected_total to increment by 1, got %f -> %f", beforeRejected, afterRejected)
 	}
 }
 

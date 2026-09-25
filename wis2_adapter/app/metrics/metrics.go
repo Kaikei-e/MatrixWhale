@@ -52,6 +52,14 @@ var (
 		},
 		[]string{"reason"},
 	)
+
+	SubsetsRejectedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "matrixwhale_wis2_subsets_rejected_total",
+			Help: "Total rejected observation subsets by centre and reason.",
+		},
+		[]string{"centre", "reason"},
+	)
 )
 
 func RecordMessage(kind string) {
@@ -81,4 +89,8 @@ func SetBrokerInfo(broker, clientID string) {
 
 func RecordDrop(reason string) {
 	DropsTotal.WithLabelValues(reason).Inc()
+}
+
+func RecordSubsetRejected(centre, reason string) {
+	SubsetsRejectedTotal.WithLabelValues(centre, reason).Inc()
 }

@@ -7,11 +7,13 @@ import domain/wis2.{
   type Wis2TcFeature, BrokerState, ChannelHealth, ForecastTrack,
 }
 import domain/wis2_observation.{type StationNeighbour, StationNeighbour}
+import gleam/dict
 import gleam/dynamic/decode
 import gleam/int
 import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/order
 import gleam/result
 import gleam/string
 import gleam/time/duration
@@ -816,6 +818,25 @@ pub fn link_older_tracks_to_hazard(
   |> result.map_error(err)
 }
 
+pub fn filter_latest_runs_per_centre(
+  tracks: List(ForecastTrack),
+) -> List(ForecastTrack) {
+  let by_centre = list.group(tracks, fn(t) { t.centre_id })
+  dict.to_list(by_centre)
+  |> list.sort(fn(a, b) { string.compare(a.0, b.0) })
+  |> list.flat_map(fn(entry) {
+    let #(_centre_id, centre_tracks) = entry
+    let max_time =
+      list.fold(centre_tracks, "", fn(acc, t) {
+        case string.compare(t.analysis_time, acc) {
+          order.Gt -> t.analysis_time
+          _ -> acc
+        }
+      })
+    list.filter(centre_tracks, fn(t) { t.analysis_time == max_time })
+  })
+}
+
 pub fn latest_forecast_tracks_for_hazard(
   matched_source: String,
   matched_source_id: String,
@@ -838,35 +859,43 @@ pub fn latest_forecast_tracks_for_hazard(
     ))
   }
   pog.query(
-    "SELECT DISTINCT ON (centre_id)
+    "SELECT
        source, centre_id, storm_id, storm_name,
        to_char(analysis_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),
        points::text
      FROM sea.wis2_tc_track
      WHERE matched_hazard_source = $1::text AND matched_hazard_source_id = $2::text
-     ORDER BY centre_id, analysis_time DESC",
+     ORDER BY centre_id, analysis_time DESC, storm_id ASC",
   )
   |> pog.parameter(pog.text(matched_source))
   |> pog.parameter(pog.text(matched_source_id))
   |> pog.returning(decoder)
   |> pog.execute(conn)
   |> result.map(fn(x) {
-    list.map(x.rows, fn(row) {
-      let #(source, centre_id, storm_id, storm_name, analysis_time, points_text) =
-        row
-      let points = case json.parse(points_text, wis2.points_decoder()) {
-        Ok(pts) -> pts
-        Error(_) -> []
-      }
-      ForecastTrack(
-        source:,
-        centre_id:,
-        storm_id:,
-        storm_name:,
-        analysis_time:,
-        points:,
-      )
-    })
+    let all_tracks =
+      list.map(x.rows, fn(row) {
+        let #(
+          source,
+          centre_id,
+          storm_id,
+          storm_name,
+          analysis_time,
+          points_text,
+        ) = row
+        let points = case json.parse(points_text, wis2.points_decoder()) {
+          Ok(pts) -> pts
+          Error(_) -> []
+        }
+        ForecastTrack(
+          source:,
+          centre_id:,
+          storm_id:,
+          storm_name:,
+          analysis_time:,
+          points:,
+        )
+      })
+    filter_latest_runs_per_centre(all_tracks)
   })
   |> result.map_error(err)
 }
