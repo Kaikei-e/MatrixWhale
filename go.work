@@ -8,5 +8,6 @@ use (
 	./noaa_adapter/app
 	./usgs_adapter/app
 	./jma_adapter/app
+	./wis2_adapter/app
 )
 

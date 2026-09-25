@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"matrixwhale/adapters/common/cap"
 	"matrixwhale/adapters/common/core"
 	"matrixwhale/adapters/common/metrics"
 	"matrixwhale/adapters/common/poll"
@@ -37,13 +38,13 @@ type pendingResponse struct {
 }
 
 type AlertResult struct {
-	CAPURL     string    `json:"cap_url"`
-	FeedURL    string    `json:"feed_url"`
-	FetchedAt  string    `json:"fetched_at"`
-	HTTPStatus int       `json:"http_status"`
-	Error      *string   `json:"error"`
-	Cap        *CAPAlert `json:"cap"`
-	RawXML     *string   `json:"raw_xml"`
+	CAPURL     string        `json:"cap_url"`
+	FeedURL    string        `json:"feed_url"`
+	FetchedAt  string        `json:"fetched_at"`
+	HTTPStatus int           `json:"http_status"`
+	Error      *string       `json:"error"`
+	Cap        *cap.CAPAlert `json:"cap"`
+	RawXML     *string       `json:"raw_xml"`
 }
 
 type MatrixWhaleClient struct {

@@ -13,6 +13,8 @@ import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
+import gleam/time/calendar
+import gleam/time/timestamp
 import gleeunit/should
 import intake/record
 import message/reciever/emsc_reciever
@@ -137,14 +139,15 @@ pub fn cross_source_matching_and_projection_integration_test() {
 pub fn emsc_http_ingest_dedupes_identical_replay_integration_test() {
   test_db.with_test_db(fn(conn) {
     let ctx = test_db.integration_context(conn)
+    let body = emsc_body("dedup1")
 
-    let first = emsc_reciever.emsc_data_handler(emsc_request("dedup1"), ctx)
+    let first = emsc_reciever.emsc_data_handler(make_emsc_request(body), ctx)
     first.status |> should.equal(200)
     let first_body = simulate.read_body(first)
     string.contains(first_body, "\"received\":1") |> should.equal(True)
     string.contains(first_body, "\"deduped\":0") |> should.equal(True)
 
-    let second = emsc_reciever.emsc_data_handler(emsc_request("dedup1"), ctx)
+    let second = emsc_reciever.emsc_data_handler(make_emsc_request(body), ctx)
     second.status |> should.equal(200)
     let second_body = simulate.read_body(second)
     string.contains(second_body, "\"received\":1") |> should.equal(True)
@@ -430,14 +433,24 @@ fn read_mist_body(res: response.Response(mist.ResponseData)) -> String {
   text
 }
 
-fn emsc_request(id: String) {
+fn emsc_body(id: String) -> String {
+  let now_str =
+    timestamp.system_time() |> timestamp.to_rfc3339(calendar.utc_offset)
+  "{\"poll_meta\":{\"fetched_at\":\""
+  <> now_str
+  <> "\",\"http_status\":200,\"feature_count\":1,\"bytes\":1,\"backfill\":false},\"features\":[{\"action\":\"create\",\"data\":{\"type\":\"Feature\",\"properties\":{\"unid\":\""
+  <> id
+  <> "\",\"source_id\":\""
+  <> id
+  <> "\",\"lastupdate\":\""
+  <> now_str
+  <> "\",\"time\":\""
+  <> now_str
+  <> "\",\"flynn_region\":\"TEST REGION\",\"lat\":1.0,\"lon\":1.0,\"depth\":10.0,\"evtype\":\"ke\",\"auth\":\"EMSC\",\"mag\":4.5,\"magtype\":\"ml\"}}}]}"
+}
+
+fn make_emsc_request(body: String) {
   simulate.request(http.Post, "/api/v1/emsc_data/send")
-  |> simulate.string_body(
-    "{\"poll_meta\":{\"fetched_at\":\"2026-09-18T00:00:00Z\",\"http_status\":200,\"feature_count\":1,\"bytes\":1,\"backfill\":false},\"features\":[{\"action\":\"create\",\"data\":{\"type\":\"Feature\",\"properties\":{\"unid\":\""
-    <> id
-    <> "\",\"source_id\":\""
-    <> id
-    <> "\",\"lastupdate\":\"2026-09-18T00:00:00.000000Z\",\"time\":\"2026-09-18T00:00:00Z\",\"flynn_region\":\"TEST REGION\",\"lat\":1.0,\"lon\":1.0,\"depth\":10.0,\"evtype\":\"ke\",\"auth\":\"EMSC\",\"mag\":4.5,\"magtype\":\"ml\"}}}]}",
-  )
+  |> simulate.string_body(body)
   |> request.set_header("content-type", "application/json")
 }

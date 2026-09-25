@@ -1,4 +1,4 @@
-package adapter
+package cap
 
 import (
 	"bytes"
@@ -12,7 +12,18 @@ import (
 	"golang.org/x/net/html/charset"
 )
 
-const maxNonAlertRawSize = 1 << 20 // 1 MiB
+const maxNonAlertRawSize = 1 << 20
+
+var customHTMLAutoClose = []string{
+	"basefont",
+	"br",
+	"col",
+	"frame",
+	"hr",
+	"img",
+	"input",
+	"isindex",
+}
 
 type CAPKeyValuePair struct {
 	ValueName string `json:"valueName"`
@@ -151,10 +162,7 @@ type CAPResult struct {
 var xmlDeclRE = regexp.MustCompile(`(?is)^\s*<\?xml\b[^>]*\?>`)
 var xmlEncodingRE = regexp.MustCompile(`(?i)(encoding\s*=\s*["'])([^"']+)(["'])`)
 
-// toUTF8 transcodes src from the declared charset to UTF-8 and rewrites the
-// XML prolog encoding to "UTF-8". Returns src unchanged if already UTF-8.
 func toUTF8(src []byte) ([]byte, error) {
-	// Only read and rewrite encoding inside a leading <?xml ... ?> declaration.
 	declLoc := xmlDeclRE.FindIndex(src)
 	if declLoc == nil {
 		return src, nil
@@ -188,20 +196,14 @@ func toUTF8(src []byte) ([]byte, error) {
 	return out, nil
 }
 
-// ParseCAP decodes CAP XML into the contract §5.6 JSON mirror representation.
 func ParseCAP(data []byte) CAPResult {
-	// Strip UTF-8 BOM if present
 	cleanData := bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 
-	// Transcode to UTF-8 so raw_xml can be round-tripped through JSON without
-	// replacement characters for documents declared as ISO-8859-1, windows-1252, etc.
 	utf8Data, err := toUTF8(cleanData)
 	if err != nil {
-		// Fall back to original bytes; the XML decoder may still handle it.
 		utf8Data = cleanData
 	}
 
-	// Parse strictly first; fall back to non-strict (with HTML entities) only on failure.
 	res := parseCAPInternal(utf8Data, true)
 	if res.Error == nil {
 		return res
@@ -368,6 +370,17 @@ func buildCAPAlert(capVersion string, raw rawAlertXML) CAPAlert {
 	}
 
 	return alert
+}
+
+func cleanStringPtr(s *string) *string {
+	if s == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*s)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 func cleanStringSlice(s []string) []string {

@@ -17,6 +17,7 @@ import repository/alert_writer
 import repository/earthquake_reader
 import repository/initialize_db
 import repository/source_writer
+import repository/wis2_writer
 import wisp
 
 const default_seen_ttl_ms = 3_600_000
@@ -104,6 +105,11 @@ fn sweep_and_clean_alerts(
   {
     Ok(Nil) -> Nil
     Error(error) -> wisp.log_error("Alert retention cleanup failed: " <> error)
+  }
+  case wis2_writer.cleanup(cutoff, db) {
+    Ok(Nil) -> Nil
+    Error(error) ->
+      wisp.log_error("WIS2 notification retention cleanup failed: " <> error)
   }
 }
 

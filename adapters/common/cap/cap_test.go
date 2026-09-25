@@ -1,4 +1,4 @@
-package adapter
+package cap
 
 import (
 	"encoding/json"
@@ -244,7 +244,6 @@ func TestCAPJSONEncodingListsVsNull(t *testing.T) {
 		t.Fatalf("unmarshal error: %v", err)
 	}
 
-	// Missing scalars must encode as null
 	if val, ok := rawMap["source"]; !ok || val != nil {
 		t.Errorf("expected source to be null, got %v", val)
 	}
@@ -255,21 +254,18 @@ func TestCAPJSONEncodingListsVsNull(t *testing.T) {
 		t.Errorf("expected references to be null, got %v", val)
 	}
 
-	// Lists must encode as []
 	if val, ok := rawMap["code"]; !ok {
 		t.Errorf("code field missing")
 	} else if list, isList := val.([]any); !isList || len(list) != 0 {
 		t.Errorf("expected code to be [], got %v", val)
 	}
 
-	// In Info:
 	infoList, ok := rawMap["info"].([]any)
 	if !ok || len(infoList) != 1 {
 		t.Fatalf("expected 1 info element in JSON, got %v", rawMap["info"])
 	}
 	infoMap := infoList[0].(map[string]any)
 
-	// Missing scalars in info must be null
 	if val, ok := infoMap["language"]; !ok || val != nil {
 		t.Errorf("expected info.language to be null, got %v", val)
 	}
@@ -277,7 +273,6 @@ func TestCAPJSONEncodingListsVsNull(t *testing.T) {
 		t.Errorf("expected info.headline to be null, got %v", val)
 	}
 
-	// Lists in info must be []
 	if val, ok := infoMap["responseType"]; !ok {
 		t.Errorf("responseType field missing")
 	} else if list, isList := val.([]any); !isList || len(list) != 0 {
@@ -294,7 +289,6 @@ func TestCAPJSONEncodingListsVsNull(t *testing.T) {
 		t.Errorf("expected resource to be [], got %v", val)
 	}
 
-	// In Area:
 	areaList, ok := infoMap["area"].([]any)
 	if !ok || len(areaList) != 1 {
 		t.Fatalf("expected 1 area element, got %v", infoMap["area"])
@@ -323,7 +317,6 @@ func TestParseCAPTranscodeISO88591ToUTF8(t *testing.T) {
 	}
 	raw := *res.RawXML
 
-	// Prolog encoding must be rewritten to UTF-8
 	if !strings.Contains(raw, `encoding="UTF-8"`) {
 		t.Errorf("expected raw_xml to have encoding=\"UTF-8\", got: %s", raw)
 	}
@@ -331,8 +324,7 @@ func TestParseCAPTranscodeISO88591ToUTF8(t *testing.T) {
 		t.Errorf("raw_xml should no longer mention ISO-8859-1, got: %s", raw)
 	}
 
-	// The character 'é' must be transcoded from 0xe9 to UTF-8 0xc3 0xa9
-	expectedUTF8Word := "eléctricas" // contains \xc3\xa9
+	expectedUTF8Word := "eléctricas"
 	if !strings.Contains(raw, expectedUTF8Word) {
 		t.Errorf("expected raw_xml to contain %q in UTF-8, got: %s", expectedUTF8Word, raw)
 	}

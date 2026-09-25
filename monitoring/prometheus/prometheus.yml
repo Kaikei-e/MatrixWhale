@@ -41,6 +41,11 @@ scrape_configs:
     static_configs:
       - targets: ["jma_adapter:2112"]
 
+  - job_name: wis2_adapter
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["wis2_adapter:2112"]
+
   - job_name: proxy
     metrics_path: /metrics
     static_configs:

@@ -5,6 +5,7 @@ import adapter/earthquake_hub
 import adapter/hazard_hub
 import adapter/live_stream
 import adapter/response_cache
+import controller/wis2_controller
 import domain/alert
 import domain/cap_feed_view
 import domain/earthquake
@@ -12,6 +13,7 @@ import domain/event
 import domain/hazard
 import domain/source
 import domain/timeline
+import domain/wis2
 import gleam/bit_array
 import gleam/bytes_tree
 import gleam/crypto
@@ -90,6 +92,7 @@ fn router(
     ["api", "v1", "alerts", "search"] -> search_response(req, ctx)
     ["api", "v1", "alerts", "history"] -> history_response(req, ctx)
     ["api", "v1", "cap", "feeds"] -> cap_feeds_response(req, ctx)
+    ["api", "v1", "wis2", "health"] -> wis2_health_response(req, ctx)
     ["api", "v1", "earthquakes", "recent"] -> earthquakes_response(req, ctx)
     ["api", "v1", "earthquakes", "stream"] ->
       case req.method {
@@ -553,6 +556,21 @@ fn cap_feeds_response(
         Error(err) -> error_response(err)
       }
     }
+    _ -> response.new(405) |> response.set_body(mist.Bytes(bytes_tree.new()))
+  }
+}
+
+pub fn wis2_health_response(
+  req: Request(connection),
+  ctx: Context,
+) -> Response(mist.ResponseData) {
+  case req.method {
+    http.Get ->
+      case wis2_controller.get_health(ctx) {
+        Ok(#(broker, channels)) ->
+          etag_json_response(req, wis2.health_report_to_json(broker, channels))
+        Error(err) -> error_response(err)
+      }
     _ -> response.new(405) |> response.set_body(mist.Bytes(bytes_tree.new()))
   }
 }

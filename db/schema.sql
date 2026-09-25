@@ -329,3 +329,52 @@ CREATE TABLE sea.jma_area (
   geom geometry(MultiPolygon, 4326) NOT NULL
 );
 CREATE INDEX idx_jma_area_geom ON sea.jma_area USING GIST (geom);
+
+CREATE TABLE sea.wis2_notification (
+  data_id TEXT PRIMARY KEY,
+  notification_id TEXT,
+  centre_id TEXT,
+  kind TEXT,
+  topic TEXT,
+  channel TEXT,
+  pubtime TIMESTAMPTZ,
+  received_at TIMESTAMPTZ,
+  fetched_via TEXT,
+  download_url TEXT,
+  cap_sender TEXT,
+  cap_identifier TEXT,
+  outcome TEXT NOT NULL
+);
+CREATE INDEX idx_wis2_notification_received_at ON sea.wis2_notification (received_at DESC);
+
+CREATE TABLE sea.wis2_cap_area (
+  cap_sender TEXT NOT NULL,
+  cap_identifier TEXT NOT NULL,
+  area_key TEXT NOT NULL,
+  geom geometry(MultiPolygon, 4326),
+  precision TEXT NOT NULL DEFAULT 'exact' CHECK (precision IN ('exact', 'bbox')),
+  received_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (cap_sender, cap_identifier, area_key)
+);
+CREATE INDEX idx_wis2_cap_area_geom ON sea.wis2_cap_area USING GIST (geom);
+
+CREATE TABLE sea.wis2_health_bucket (
+  centre_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  bucket_start TIMESTAMPTZ NOT NULL,
+  received INTEGER NOT NULL DEFAULT 0,
+  duplicates INTEGER NOT NULL DEFAULT 0,
+  download_failed INTEGER NOT NULL DEFAULT 0,
+  decode_failed INTEGER NOT NULL DEFAULT 0,
+  integrity_failed INTEGER NOT NULL DEFAULT 0,
+  last_received_at TIMESTAMPTZ,
+  PRIMARY KEY (centre_id, kind, bucket_start)
+);
+
+CREATE TABLE sea.wis2_broker (
+  id SMALLINT PRIMARY KEY CHECK (id = 1),
+  url TEXT NOT NULL,
+  connected BOOLEAN NOT NULL,
+  error TEXT,
+  last_report_at TIMESTAMPTZ NOT NULL
+);

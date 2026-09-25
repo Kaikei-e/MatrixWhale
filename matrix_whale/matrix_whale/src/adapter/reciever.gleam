@@ -9,6 +9,7 @@ import message/reciever/gdacs_reciever
 import message/reciever/jma_reciever
 import message/reciever/noaa_reciever
 import message/reciever/usgs_reciever
+import message/reciever/wis2_reciever
 import metrics
 import mist
 import wisp.{type Request, type Response}
@@ -78,6 +79,9 @@ pub fn reciever_router(request: Request, ctx: Context) -> Response {
       jma_reciever.pending_handler(req, ctx)
     ["api", "v1", "jma_data", "messages"] ->
       jma_reciever.messages_handler(req, ctx)
+    ["api", "v1", "wis2_data", "cap"] -> wis2_reciever.cap_handler(req, ctx)
+    ["api", "v1", "wis2_data", "health"] ->
+      wis2_reciever.health_handler(req, ctx)
     _ -> wisp.response(404)
   }
 

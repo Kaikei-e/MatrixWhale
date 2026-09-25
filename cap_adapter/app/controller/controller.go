@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"matrixwhale/adapters/common/cap"
 	"matrixwhale/adapters/common/core"
 	"matrixwhale/adapters/common/metrics"
 	"matrixwhale/adapters/common/useragent"
@@ -649,7 +650,7 @@ func (c *Controller) fetchSingleCAP(ctx context.Context, host string, item adapt
 		return result
 	}
 
-	parseRes := adapter.ParseCAP(body)
+	parseRes := cap.ParseCAP(body)
 	result.Cap = parseRes.Cap
 	result.Error = parseRes.Error
 	result.RawXML = sanitizeRawXML(parseRes.RawXML)

@@ -1,0 +1,118 @@
+{
+  "cap_version": "1.2",
+  "identifier": "2.49.0.0.300.0.GR.260925114400.020000009",
+  "sender": "emk@hnms.gr",
+  "sent": "2026-09-25T11:44:00+00:00",
+  "status": "Actual",
+  "msgType": "Update",
+  "source": null,
+  "scope": "Public",
+  "restriction": null,
+  "addresses": null,
+  "code": [],
+  "note": null,
+  "references": "emk@hnms.gr,2.49.0.0.300.0.GR.260924124800.010000009,2026-09-24T12:48:00+00:00",
+  "incidents": null,
+  "info": [
+    {
+      "language": "en-GB",
+      "category": [
+        "Met"
+      ],
+      "event": "Moderate Thunderstorm warning",
+      "responseType": [
+        "None"
+      ],
+      "urgency": "Expected",
+      "severity": "Moderate",
+      "certainty": "Likely",
+      "audience": null,
+      "eventCode": [],
+      "effective": "2026-09-25T11:44:00+00:00",
+      "onset": "2026-09-25T20:00:00+00:00",
+      "expires": "2026-09-26T09:59:00+00:00",
+      "senderName": "Hnms Forecaster",
+      "headline": "Yellow Thunderstorm for West Peloponnisos",
+      "description": "Locally thunderstorms. BE AWARE that thunderstorms may occur.  Take extra care in exposed areas, like mountains, forest and open terrain. Disruption to outdoor activities is possible.",
+      "instruction": null,
+      "web": "https://www.emy.gr",
+      "contact": null,
+      "parameter": [
+        {
+          "valueName": "awareness_type",
+          "value": "3; Thunderstorm"
+        },
+        {
+          "valueName": "awareness_level",
+          "value": "2; Yellow; Moderate"
+        }
+      ],
+      "resource": [],
+      "area": [
+        {
+          "areaDesc": "West Peloponnisos",
+          "polygon": [],
+          "circle": [],
+          "geocode": [
+            {
+              "valueName": "EMMA_ID",
+              "value": "GR009"
+            }
+          ],
+          "altitude": null,
+          "ceiling": null
+        }
+      ]
+    },
+    {
+      "language": "el-GR",
+      "category": [
+        "Met"
+      ],
+      "event": "Προειδοποίηση για καταγίδιες",
+      "responseType": [
+        "None"
+      ],
+      "urgency": "Expected",
+      "severity": "Moderate",
+      "certainty": "Likely",
+      "audience": null,
+      "eventCode": [],
+      "effective": "2026-09-25T11:44:00+00:00",
+      "onset": "2026-09-25T20:00:00+00:00",
+      "expires": "2026-09-26T09:59:00+00:00",
+      "senderName": "Hnms Forecaster",
+      "headline": "Κίτρινη προειδοποίηση για Δυτική Πελοπόννησο",
+      "description": "Τοπικές καταιγίδες. ΕΝΗΜΕΡΩΘΕΙΤΕ. Ιδιαίτερη προσοχή σε εκτεθειμένες περιοχές, όπως τα βουνά, τα δάση και όλοι οι ανοιχτοί χώροι. Είναι δυνατόν να δημιουργηθούν προβλήματα σε υπαίθριες δραστηριότητες.",
+      "instruction": null,
+      "web": "https://www.emy.gr",
+      "contact": null,
+      "parameter": [
+        {
+          "valueName": "awareness_type",
+          "value": "3; Thunderstorm"
+        },
+        {
+          "valueName": "awareness_level",
+          "value": "2; Yellow; Moderate"
+        }
+      ],
+      "resource": [],
+      "area": [
+        {
+          "areaDesc": "Δυτική Πελοπόννησο",
+          "polygon": [],
+          "circle": [],
+          "geocode": [
+            {
+              "valueName": "EMMA_ID",
+              "value": "GR009"
+            }
+          ],
+          "altitude": null,
+          "ceiling": null
+        }
+      ]
+    }
+  ]
+}

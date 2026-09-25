@@ -211,6 +211,31 @@ services:
       matrix_network:
         ipv4_address: 10.254.100.46
 
+  wis2_adapter:
+    build:
+      context: .
+      dockerfile: wis2_adapter/Dockerfile
+    environment:
+      MATRIX_WHALE_URL: http://matrix_whale:6000/api/v1
+      WIS2_BROKERS: mqtts://globalbroker.meteo.fr:8883,mqtts://gb.wis.cma.cn:8883,mqtts://wis2globalbroker.nws.noaa.gov:8883,mqtts://globalbroker.inmet.gov.br:8883
+      WIS2_USERNAME: everyone
+      WIS2_PASSWORD: everyone
+      WIS2_TOPICS: cache/a/wis2/+/data/core/weather/advisories-warnings/#
+      WIS2_CONTACT_EMAIL: ${WIS2_CONTACT_EMAIL:-}
+      WIS2_MAX_DOWNLOAD_BYTES: 5242880
+      WIS2_DOWNLOAD_CONCURRENCY: 8
+      WIS2_HEALTH_INTERVAL: 60s
+    tty: true
+    restart: always
+    volumes:
+      - ./wis2_adapter/app:/app
+    depends_on:
+      - matrix_whale
+    networks:
+      matrix_network:
+        ipv4_address: 10.254.100.47
+
+
 
   db:
     build:
