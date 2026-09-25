@@ -31,6 +31,7 @@ import gleam/string
 import gleam/string_tree
 import gleam/time/calendar
 import gleam/time/timestamp
+import gleam/uri
 import metrics
 import mist
 import repository/alert_reader
@@ -39,6 +40,7 @@ import repository/earthquake_reader
 import repository/hazard_reader
 import repository/source_writer
 import repository/timeline_reader
+import repository/wis2_writer
 import wisp
 
 type SSEState {
@@ -109,8 +111,13 @@ fn router(
         _ ->
           response.new(405) |> response.set_body(mist.Bytes(bytes_tree.new()))
       }
-    ["api", "v1", "hazards", hazard_source, hazard_source_id] ->
+    ["api", "v1", "hazards", hazard_source, ..source_id_segments]
+      if source_id_segments != []
+    -> {
+      let raw_id = string.join(source_id_segments, "/")
+      let hazard_source_id = uri.percent_decode(raw_id) |> result.unwrap(raw_id)
       hazard_detail_response(hazard_source, hazard_source_id, ctx)
+    }
     ["api", "v1", "timeline"] -> timeline_response(req, ctx)
     ["api", "v1", "stream"] ->
       case req.method {
@@ -652,7 +659,7 @@ fn now_rfc3339() -> String {
   timestamp.system_time() |> timestamp.to_rfc3339(calendar.utc_offset)
 }
 
-fn hazard_detail_response(
+pub fn hazard_detail_response(
   hazard_source: String,
   hazard_source_id: String,
   ctx: Context,
@@ -664,14 +671,35 @@ fn hazard_detail_response(
         404,
         json.object([#("error", json.string("hazard not found"))]),
       )
-    Ok(option.Some(#(row, episodes))) ->
-      json_response(
-        200,
-        json.object([
-          #("hazard", hazard.to_detail_json(row)),
-          #("episodes", json.array(episodes, hazard.episode_to_json)),
-        ]),
-      )
+    Ok(option.Some(#(row, episodes))) -> {
+      let base_fields = [
+        #("hazard", hazard.to_detail_json(row)),
+        #("episodes", json.array(episodes, hazard.episode_to_json)),
+      ]
+      let fields = case row.hazard_type {
+        "tropical_cyclone" -> {
+          case
+            wis2_writer.latest_forecast_tracks_for_hazard(
+              row.source,
+              row.source_id,
+              ctx.db,
+            )
+          {
+            Ok([]) -> base_fields
+            Ok(tracks) ->
+              list.append(base_fields, [
+                #(
+                  "forecast_tracks",
+                  json.array(tracks, wis2.forecast_track_to_json),
+                ),
+              ])
+            Error(_) -> base_fields
+          }
+        }
+        _ -> base_fields
+      }
+      json_response(200, json.object(fields))
+    }
   }
 }
 

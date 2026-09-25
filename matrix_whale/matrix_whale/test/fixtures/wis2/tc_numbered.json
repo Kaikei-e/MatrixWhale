@@ -1,0 +1,954 @@
+{
+  "notification_id": "notif-tc-007",
+  "data_id": "urn:wmo:md:ecmwf:tc::70W-2026092506",
+  "topic": "cache/a/wis2/ecmwf/data/core/weather/prediction/forecast/medium-range/deterministic/trajectory",
+  "centre_id": "ecmwf",
+  "channel": "cache",
+  "pubtime": "2026-09-25T06:00:00Z",
+  "fetched_via": "cache",
+  "download_url": "https://example.org/tc/70W.bufr4",
+  "message_index": 7,
+  "originating_centre": 98,
+  "storm_id": "70W",
+  "storm_name": null,
+  "ensemble_member": 51,
+  "analysis_time": "2026-09-25T06:00:00Z",
+  "points": [
+    {
+      "lead_hours": 6,
+      "time": "2026-09-25T12:00:00Z",
+      "lat": 14.0,
+      "lon": 101.5,
+      "mslp_pa": 100500.0,
+      "max_wind_ms": 9.8,
+      "max_wind_lat": 12.2,
+      "max_wind_lon": 101.5,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 12,
+      "time": "2026-09-25T18:00:00Z",
+      "lat": 14.6,
+      "lon": 101.1,
+      "mslp_pa": 100600.0,
+      "max_wind_ms": 11.3,
+      "max_wind_lat": 12.2,
+      "max_wind_lon": 102.1,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 18,
+      "time": "2026-09-26T00:00:00Z",
+      "lat": 14.5,
+      "lon": 100.6,
+      "mslp_pa": 100600.0,
+      "max_wind_ms": 11.3,
+      "max_wind_lat": 12.2,
+      "max_wind_lon": 101.4,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 24,
+      "time": "2026-09-26T06:00:00Z",
+      "lat": 14.3,
+      "lon": 100.4,
+      "mslp_pa": 100400.0,
+      "max_wind_ms": 11.8,
+      "max_wind_lat": 12.0,
+      "max_wind_lon": 100.8,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 30,
+      "time": "2026-09-26T12:00:00Z",
+      "lat": 14.5,
+      "lon": 100.4,
+      "mslp_pa": 100500.0,
+      "max_wind_ms": 11.3,
+      "max_wind_lat": 13.2,
+      "max_wind_lon": 98.3,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 36,
+      "time": "2026-09-26T18:00:00Z",
+      "lat": 14.7,
+      "lon": 100.2,
+      "mslp_pa": 100500.0,
+      "max_wind_ms": 12.9,
+      "max_wind_lat": 14.0,
+      "max_wind_lon": 97.7,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 42,
+      "time": "2026-09-27T00:00:00Z",
+      "lat": 14.7,
+      "lon": 99.7,
+      "mslp_pa": 100500.0,
+      "max_wind_ms": 13.9,
+      "max_wind_lat": 13.7,
+      "max_wind_lon": 97.8,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 48,
+      "time": "2026-09-27T06:00:00Z",
+      "lat": 14.6,
+      "lon": 99.8,
+      "mslp_pa": 100300.0,
+      "max_wind_ms": 13.9,
+      "max_wind_lat": 13.5,
+      "max_wind_lon": 97.9,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 54,
+      "time": "2026-09-27T12:00:00Z",
+      "lat": 14.1,
+      "lon": 99.7,
+      "mslp_pa": 100300.0,
+      "max_wind_ms": 12.9,
+      "max_wind_lat": 13.4,
+      "max_wind_lon": 100.5,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 60,
+      "time": "2026-09-27T18:00:00Z",
+      "lat": 14.8,
+      "lon": 98.0,
+      "mslp_pa": 100200.0,
+      "max_wind_ms": 13.4,
+      "max_wind_lat": 14.2,
+      "max_wind_lon": 97.3,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 66,
+      "time": "2026-09-28T00:00:00Z",
+      "lat": 15.9,
+      "lon": 97.6,
+      "mslp_pa": 100300.0,
+      "max_wind_ms": 13.9,
+      "max_wind_lat": 14.5,
+      "max_wind_lon": 97.5,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 72,
+      "time": "2026-09-28T06:00:00Z",
+      "lat": 16.5,
+      "lon": 97.5,
+      "mslp_pa": 100200.0,
+      "max_wind_ms": 11.3,
+      "max_wind_lat": 15.1,
+      "max_wind_lon": 96.5,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 78,
+      "time": "2026-09-28T12:00:00Z",
+      "lat": 16.7,
+      "lon": 97.0,
+      "mslp_pa": 100200.0,
+      "max_wind_ms": 11.8,
+      "max_wind_lat": 15.5,
+      "max_wind_lon": 97.5,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 84,
+      "time": "2026-09-28T18:00:00Z",
+      "lat": 17.1,
+      "lon": 96.4,
+      "mslp_pa": 100300.0,
+      "max_wind_ms": 14.4,
+      "max_wind_lat": 16.3,
+      "max_wind_lon": 97.2,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 90,
+      "time": "2026-09-29T00:00:00Z",
+      "lat": 17.8,
+      "lon": 96.3,
+      "mslp_pa": 100400.0,
+      "max_wind_ms": 13.4,
+      "max_wind_lat": 16.9,
+      "max_wind_lon": 97.0,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 96,
+      "time": "2026-09-29T06:00:00Z",
+      "lat": 18.9,
+      "lon": 96.0,
+      "mslp_pa": 100400.0,
+      "max_wind_ms": 11.3,
+      "max_wind_lat": 19.1,
+      "max_wind_lon": 96.3,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 102,
+      "time": "2026-09-29T12:00:00Z",
+      "lat": 19.7,
+      "lon": 95.4,
+      "mslp_pa": 100200.0,
+      "max_wind_ms": 9.8,
+      "max_wind_lat": 19.8,
+      "max_wind_lon": 95.6,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 108,
+      "time": "2026-09-29T18:00:00Z",
+      "lat": 20.7,
+      "lon": 95.2,
+      "mslp_pa": 100500.0,
+      "max_wind_ms": 9.8,
+      "max_wind_lat": 20.7,
+      "max_wind_lon": 95.3,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 114,
+      "time": "2026-09-30T00:00:00Z",
+      "lat": 21.4,
+      "lon": 94.5,
+      "mslp_pa": 100500.0,
+      "max_wind_ms": 9.3,
+      "max_wind_lat": 19.1,
+      "max_wind_lon": 93.4,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 120,
+      "time": "2026-09-30T06:00:00Z",
+      "lat": 21.8,
+      "lon": 94.1,
+      "mslp_pa": 100600.0,
+      "max_wind_ms": 8.2,
+      "max_wind_lat": 21.0,
+      "max_wind_lon": 95.1,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 126,
+      "time": "2026-09-30T12:00:00Z",
+      "lat": 21.8,
+      "lon": 94.8,
+      "mslp_pa": 100700.0,
+      "max_wind_ms": 8.7,
+      "max_wind_lat": 21.1,
+      "max_wind_lon": 95.1,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 132,
+      "time": "2026-09-30T18:00:00Z",
+      "lat": 22.7,
+      "lon": 94.7,
+      "mslp_pa": 100700.0,
+      "max_wind_ms": 7.7,
+      "max_wind_lat": 22.7,
+      "max_wind_lon": 94.9,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 138,
+      "time": "2026-10-01T00:00:00Z",
+      "lat": 23.7,
+      "lon": 94.5,
+      "mslp_pa": 100700.0,
+      "max_wind_ms": 7.2,
+      "max_wind_lat": 22.0,
+      "max_wind_lon": 91.7,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "lead_hours": 144,
+      "time": "2026-10-01T06:00:00Z",
+      "lat": 22.7,
+      "lon": 94.9,
+      "mslp_pa": 100900.0,
+      "max_wind_ms": 6.7,
+      "max_wind_lat": 22.8,
+      "max_wind_lon": 95.8,
+      "wind_radii": [
+        {
+          "threshold_ms": 18.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 26.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "threshold_ms": 33.0,
+          "radii_m": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    }
+  ]
+}

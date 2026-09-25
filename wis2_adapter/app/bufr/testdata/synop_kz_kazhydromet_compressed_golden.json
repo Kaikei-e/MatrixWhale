@@ -1,0 +1,706 @@
+{
+  "edition": 4,
+  "master_table": 0,
+  "master_table_version": 28,
+  "local_table_version": 0,
+  "centre": 4,
+  "subcentre": 0,
+  "data_category": 0,
+  "data_subcategory": 0,
+  "compressed": true,
+  "num_subsets": 1,
+  "subsets": [
+    [
+      {
+        "code": 1125,
+        "name": "wigosIdentifierSeries",
+        "unit": "Numeric",
+        "val": 0.0
+      },
+      {
+        "code": 1126,
+        "name": "wigosIssuerOfIdentifier",
+        "unit": "Numeric",
+        "val": 398.0
+      },
+      {
+        "code": 1127,
+        "name": "wigosIssueNumber",
+        "unit": "Numeric",
+        "val": 0.0
+      },
+      {
+        "code": 1128,
+        "name": "wigosLocalIdentifierCharacter",
+        "unit": "CCITT IA5",
+        "val": "35741"
+      },
+      {
+        "code": 1001,
+        "name": "blockNumber",
+        "unit": "Numeric",
+        "val": 35.0
+      },
+      {
+        "code": 1002,
+        "name": "stationNumber",
+        "unit": "Numeric",
+        "val": 741.0
+      },
+      {
+        "code": 1015,
+        "name": "stationOrSiteName",
+        "unit": "CCITT IA5",
+        "val": null
+      },
+      {
+        "code": 2001,
+        "name": "stationType",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 4001,
+        "name": "year",
+        "unit": "a",
+        "val": 2026.0
+      },
+      {
+        "code": 4002,
+        "name": "month",
+        "unit": "mon",
+        "val": 9.0
+      },
+      {
+        "code": 4003,
+        "name": "day",
+        "unit": "d",
+        "val": 25.0
+      },
+      {
+        "code": 4004,
+        "name": "hour",
+        "unit": "h",
+        "val": 11.0
+      },
+      {
+        "code": 4005,
+        "name": "minute",
+        "unit": "min",
+        "val": 0.0
+      },
+      {
+        "code": 5001,
+        "name": "latitude",
+        "unit": "deg",
+        "val": null
+      },
+      {
+        "code": 6001,
+        "name": "longitude",
+        "unit": "deg",
+        "val": null
+      },
+      {
+        "code": 7030,
+        "name": "heightOfStationGroundAboveMeanSeaLevel",
+        "unit": "m",
+        "val": null
+      },
+      {
+        "code": 7031,
+        "name": "heightOfBarometerAboveMeanSeaLevel",
+        "unit": "m",
+        "val": null
+      },
+      {
+        "code": 10004,
+        "name": "nonCoordinatePressure",
+        "unit": "Pa",
+        "val": null
+      },
+      {
+        "code": 10051,
+        "name": "pressureReducedToMeanSeaLevel",
+        "unit": "Pa",
+        "val": null
+      },
+      {
+        "code": 10061,
+        "name": "3HourPressureChange",
+        "unit": "Pa",
+        "val": null
+      },
+      {
+        "code": 10063,
+        "name": "characteristicOfPressureTendency",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 10062,
+        "name": "24HourPressureChange",
+        "unit": "Pa",
+        "val": null
+      },
+      {
+        "code": 7004,
+        "name": "pressure",
+        "unit": "Pa",
+        "val": null
+      },
+      {
+        "code": 10009,
+        "name": "nonCoordinateGeopotentialHeight",
+        "unit": "gpm",
+        "val": null
+      },
+      {
+        "code": 7032,
+        "name": "heightOfSensorAboveLocalGroundOrDeckOfMarinePlatform",
+        "unit": "m",
+        "val": null
+      },
+      {
+        "code": 12101,
+        "name": "airTemperature",
+        "unit": "K",
+        "val": null
+      },
+      {
+        "code": 12103,
+        "name": "dewpointTemperature",
+        "unit": "K",
+        "val": null
+      },
+      {
+        "code": 13003,
+        "name": "relativeHumidity",
+        "unit": "%",
+        "val": null
+      },
+      {
+        "code": 7032,
+        "name": "heightOfSensorAboveLocalGroundOrDeckOfMarinePlatform",
+        "unit": "m",
+        "val": null
+      },
+      {
+        "code": 20001,
+        "name": "horizontalVisibility",
+        "unit": "m",
+        "val": null
+      },
+      {
+        "code": 7032,
+        "name": "heightOfSensorAboveLocalGroundOrDeckOfMarinePlatform",
+        "unit": "m",
+        "val": null
+      },
+      {
+        "code": 13023,
+        "name": "totalPrecipitationPast24Hours",
+        "unit": "kg m-2",
+        "val": null
+      },
+      {
+        "code": 7032,
+        "name": "heightOfSensorAboveLocalGroundOrDeckOfMarinePlatform",
+        "unit": "m",
+        "val": null
+      },
+      {
+        "code": 20010,
+        "name": "cloudCoverTotal",
+        "unit": "%",
+        "val": null
+      },
+      {
+        "code": 8002,
+        "name": "verticalSignificanceSurfaceObservations",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 20011,
+        "name": "cloudAmount",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 20013,
+        "name": "heightOfBaseOfCloud",
+        "unit": "m",
+        "val": null
+      },
+      {
+        "code": 20012,
+        "name": "cloudType",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 20012,
+        "name": "cloudType",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 20012,
+        "name": "cloudType",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 31001,
+        "name": "delayedDescriptorReplicationFactor",
+        "unit": "Numeric",
+        "val": 1.0
+      },
+      {
+        "code": 8002,
+        "name": "verticalSignificanceSurfaceObservations",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 20011,
+        "name": "cloudAmount",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 20012,
+        "name": "cloudType",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 20013,
+        "name": "heightOfBaseOfCloud",
+        "unit": "m",
+        "val": null
+      },
+      {
+        "code": 31001,
+        "name": "delayedDescriptorReplicationFactor",
+        "unit": "Numeric",
+        "val": 0.0
+      },
+      {
+        "code": 8002,
+        "name": "verticalSignificanceSurfaceObservations",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 20054,
+        "name": "trueDirectionFromWhichAPhenomenonOrCloudsAreMovingOrInWhichTheyAreObserved",
+        "unit": "deg",
+        "val": null
+      },
+      {
+        "code": 8002,
+        "name": "verticalSignificanceSurfaceObservations",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 20054,
+        "name": "trueDirectionFromWhichAPhenomenonOrCloudsAreMovingOrInWhichTheyAreObserved",
+        "unit": "deg",
+        "val": null
+      },
+      {
+        "code": 8002,
+        "name": "verticalSignificanceSurfaceObservations",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 20054,
+        "name": "trueDirectionFromWhichAPhenomenonOrCloudsAreMovingOrInWhichTheyAreObserved",
+        "unit": "deg",
+        "val": null
+      },
+      {
+        "code": 8002,
+        "name": "verticalSignificanceSurfaceObservations",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 5021,
+        "name": "bearingOrAzimuth",
+        "unit": "deg",
+        "val": null
+      },
+      {
+        "code": 7021,
+        "name": "elevation",
+        "unit": "deg",
+        "val": null
+      },
+      {
+        "code": 20012,
+        "name": "cloudType",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 5021,
+        "name": "bearingOrAzimuth",
+        "unit": "deg",
+        "val": null
+      },
+      {
+        "code": 7021,
+        "name": "elevation",
+        "unit": "deg",
+        "val": null
+      },
+      {
+        "code": 20062,
+        "name": "stateOfGround",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 13013,
+        "name": "totalSnowDepth",
+        "unit": "m",
+        "val": null
+      },
+      {
+        "code": 12113,
+        "name": "groundMinimumTemperaturePast12Hours",
+        "unit": "K",
+        "val": null
+      },
+      {
+        "code": 20003,
+        "name": "presentWeather",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 4024,
+        "name": "timePeriod",
+        "unit": "h",
+        "val": null
+      },
+      {
+        "code": 20004,
+        "name": "pastWeather1",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 20005,
+        "name": "pastWeather2",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 4024,
+        "name": "timePeriod",
+        "unit": "h",
+        "val": null
+      },
+      {
+        "code": 14031,
+        "name": "totalSunshine",
+        "unit": "min",
+        "val": null
+      },
+      {
+        "code": 4024,
+        "name": "timePeriod",
+        "unit": "h",
+        "val": null
+      },
+      {
+        "code": 14031,
+        "name": "totalSunshine",
+        "unit": "min",
+        "val": null
+      },
+      {
+        "code": 7032,
+        "name": "heightOfSensorAboveLocalGroundOrDeckOfMarinePlatform",
+        "unit": "m",
+        "val": null
+      },
+      {
+        "code": 4024,
+        "name": "timePeriod",
+        "unit": "h",
+        "val": null
+      },
+      {
+        "code": 13011,
+        "name": "totalPrecipitationOrTotalWaterEquivalent",
+        "unit": "kg m-2",
+        "val": null
+      },
+      {
+        "code": 4024,
+        "name": "timePeriod",
+        "unit": "h",
+        "val": null
+      },
+      {
+        "code": 13011,
+        "name": "totalPrecipitationOrTotalWaterEquivalent",
+        "unit": "kg m-2",
+        "val": null
+      },
+      {
+        "code": 7032,
+        "name": "heightOfSensorAboveLocalGroundOrDeckOfMarinePlatform",
+        "unit": "m",
+        "val": null
+      },
+      {
+        "code": 4024,
+        "name": "timePeriod",
+        "unit": "h",
+        "val": null
+      },
+      {
+        "code": 4024,
+        "name": "timePeriod",
+        "unit": "h",
+        "val": null
+      },
+      {
+        "code": 12111,
+        "name": "maximumTemperatureAtHeightAndOverPeriodSpecified",
+        "unit": "K",
+        "val": null
+      },
+      {
+        "code": 4024,
+        "name": "timePeriod",
+        "unit": "h",
+        "val": null
+      },
+      {
+        "code": 4024,
+        "name": "timePeriod",
+        "unit": "h",
+        "val": null
+      },
+      {
+        "code": 12112,
+        "name": "minimumTemperatureAtHeightAndOverPeriodSpecified",
+        "unit": "K",
+        "val": null
+      },
+      {
+        "code": 7032,
+        "name": "heightOfSensorAboveLocalGroundOrDeckOfMarinePlatform",
+        "unit": "m",
+        "val": null
+      },
+      {
+        "code": 2002,
+        "name": "instrumentationForWindMeasurement",
+        "unit": "FLAG TABLE",
+        "val": null
+      },
+      {
+        "code": 8021,
+        "name": "timeSignificance",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 4025,
+        "name": "timePeriod",
+        "unit": "min",
+        "val": null
+      },
+      {
+        "code": 11001,
+        "name": "windDirection",
+        "unit": "deg",
+        "val": null
+      },
+      {
+        "code": 11002,
+        "name": "windSpeed",
+        "unit": "m/s",
+        "val": null
+      },
+      {
+        "code": 8021,
+        "name": "timeSignificance",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 4025,
+        "name": "timePeriod",
+        "unit": "min",
+        "val": null
+      },
+      {
+        "code": 11043,
+        "name": "maximumWindGustDirection",
+        "unit": "deg",
+        "val": null
+      },
+      {
+        "code": 11041,
+        "name": "maximumWindGustSpeed",
+        "unit": "m/s",
+        "val": null
+      },
+      {
+        "code": 4025,
+        "name": "timePeriod",
+        "unit": "min",
+        "val": null
+      },
+      {
+        "code": 11043,
+        "name": "maximumWindGustDirection",
+        "unit": "deg",
+        "val": null
+      },
+      {
+        "code": 11041,
+        "name": "maximumWindGustSpeed",
+        "unit": "m/s",
+        "val": null
+      },
+      {
+        "code": 7032,
+        "name": "heightOfSensorAboveLocalGroundOrDeckOfMarinePlatform",
+        "unit": "m",
+        "val": null
+      },
+      {
+        "code": 4024,
+        "name": "timePeriod",
+        "unit": "h",
+        "val": null
+      },
+      {
+        "code": 2004,
+        "name": "typeOfInstrumentationForEvaporationMeasurement",
+        "unit": "CODE TABLE",
+        "val": null
+      },
+      {
+        "code": 13033,
+        "name": "evaporation",
+        "unit": "kg m-2",
+        "val": null
+      },
+      {
+        "code": 4024,
+        "name": "timePeriod",
+        "unit": "h",
+        "val": null
+      },
+      {
+        "code": 14002,
+        "name": "longWaveRadiationIntegratedOverPeriodSpecified",
+        "unit": "J m-2",
+        "val": null
+      },
+      {
+        "code": 14004,
+        "name": "shortWaveRadiationIntegratedOverPeriodSpecified",
+        "unit": "J m-2",
+        "val": null
+      },
+      {
+        "code": 14016,
+        "name": "netRadiationIntegratedOverPeriodSpecified",
+        "unit": "J m-2",
+        "val": null
+      },
+      {
+        "code": 14028,
+        "name": "globalSolarRadiationIntegratedOverPeriodSpecified",
+        "unit": "J m-2",
+        "val": null
+      },
+      {
+        "code": 14029,
+        "name": "diffuseSolarRadiationIntegratedOverPeriodSpecified",
+        "unit": "J m-2",
+        "val": null
+      },
+      {
+        "code": 14030,
+        "name": "directSolarRadiationIntegratedOverPeriodSpecified",
+        "unit": "J m-2",
+        "val": null
+      },
+      {
+        "code": 4024,
+        "name": "timePeriod",
+        "unit": "h",
+        "val": null
+      },
+      {
+        "code": 14002,
+        "name": "longWaveRadiationIntegratedOverPeriodSpecified",
+        "unit": "J m-2",
+        "val": null
+      },
+      {
+        "code": 14004,
+        "name": "shortWaveRadiationIntegratedOverPeriodSpecified",
+        "unit": "J m-2",
+        "val": null
+      },
+      {
+        "code": 14016,
+        "name": "netRadiationIntegratedOverPeriodSpecified",
+        "unit": "J m-2",
+        "val": null
+      },
+      {
+        "code": 14028,
+        "name": "globalSolarRadiationIntegratedOverPeriodSpecified",
+        "unit": "J m-2",
+        "val": null
+      },
+      {
+        "code": 14029,
+        "name": "diffuseSolarRadiationIntegratedOverPeriodSpecified",
+        "unit": "J m-2",
+        "val": null
+      },
+      {
+        "code": 14030,
+        "name": "directSolarRadiationIntegratedOverPeriodSpecified",
+        "unit": "J m-2",
+        "val": null
+      },
+      {
+        "code": 4024,
+        "name": "timePeriod",
+        "unit": "h",
+        "val": null
+      },
+      {
+        "code": 4024,
+        "name": "timePeriod",
+        "unit": "h",
+        "val": null
+      },
+      {
+        "code": 12049,
+        "name": "temperatureChangeOverSpecifiedPeriod",
+        "unit": "K",
+        "val": null
+      }
+    ]
+  ]
+}

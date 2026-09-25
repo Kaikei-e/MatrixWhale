@@ -1066,3 +1066,473 @@ func TestLinkFallbackIgnoringDeclaredType(t *testing.T) {
 		t.Fatalf("expected parsed CAP object from alternate link")
 	}
 }
+
+func TestControllerTCTracksFlow(t *testing.T) {
+	bufrData, err := os.ReadFile(filepath.Join("..", "bufr", "testdata", "1.bufr"))
+	if err != nil {
+		t.Fatalf("failed to read testdata 1.bufr: %v", err)
+	}
+
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/tracks.bufr":
+			// Deliberately serve as application/grib to test link type unreliability
+			w.Header().Set("Content-Type", "application/grib")
+			_, _ = w.Write(bufrData)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer upstreamServer.Close()
+
+	var tcReceivedCount int32
+	var capturedTCFeatures []TCFeature
+	var capturedRawFeatures []json.RawMessage
+	var tcMu sync.Mutex
+
+	coreServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/wis2_data/tc_tracks":
+			var env struct {
+				PollMeta core.PollMeta     `json:"poll_meta"`
+				Features []json.RawMessage `json:"features"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&env); err != nil {
+				t.Errorf("failed to decode tc_tracks envelope: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			atomic.AddInt32(&tcReceivedCount, int32(len(env.Features)))
+
+			tcMu.Lock()
+			capturedRawFeatures = append(capturedRawFeatures, env.Features...)
+			for _, rf := range env.Features {
+				var feat TCFeature
+				if err := json.Unmarshal(rf, &feat); err != nil {
+					t.Errorf("failed to unmarshal TCFeature: %v", err)
+				}
+				capturedTCFeatures = append(capturedTCFeatures, feat)
+			}
+			tcMu.Unlock()
+
+			ack := fmt.Sprintf(`{"received":%d,"deduped":0,"written":%d,"dropped":0,"message":"ok"}`,
+				len(env.Features), len(env.Features))
+			_, _ = w.Write([]byte(ack))
+
+		case "/api/v1/wis2_data/health":
+			var env struct {
+				Features []json.RawMessage `json:"features"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&env)
+			ack := fmt.Sprintf(`{"received":%d,"deduped":0,"written":%d,"dropped":0,"message":"ok"}`,
+				len(env.Features), len(env.Features))
+			_, _ = w.Write([]byte(ack))
+
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer coreServer.Close()
+
+	cfg := config.Config{
+		Brokers:             []string{"mqtts://globalbroker.meteo.fr:8883"},
+		Topics:              []string{"cache/a/wis2/+/data/core/weather/prediction/forecast/+/deterministic/trajectory/#"},
+		DownloadConcurrency: 4,
+		HealthInterval:      10 * time.Second,
+	}
+
+	coreClient := core.NewClient(coreServer.URL+"/api/v1", &http.Client{Timeout: 5 * time.Second})
+	fakeBroker := broker.NewFakeBroker("mqtts://globalbroker.meteo.fr:8883")
+	ctrl := NewController(cfg, coreClient, fakeBroker, &http.Client{Timeout: 5 * time.Second}, time.Now)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go ctrl.Execute(ctx)
+	if err := fakeBroker.WaitRunning(ctx); err != nil {
+		t.Fatalf("broker wait running failed: %v", err)
+	}
+
+	wnmMsg := wnm.WNMMessage{
+		ID:   "tc-notif-uuid-12345",
+		Type: "Feature",
+		Properties: wnm.WNMProperties{
+			DataID:  "ecmwf/deterministic/tc/2026092506",
+			PubTime: "2026-09-25T06:30:00Z",
+		},
+		Links: []wnm.WNMLink{
+			{
+				Rel:  "canonical",
+				Href: upstreamServer.URL + "/tracks.bufr",
+				Type: "application/grib",
+			},
+		},
+	}
+	wnmBytes, _ := json.Marshal(wnmMsg)
+	topic := "cache/a/wis2/ecmwf/data/core/weather/prediction/forecast/10day/deterministic/trajectory"
+	fakeBroker.Publish(topic, wnmBytes)
+
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		if atomic.LoadInt32(&tcReceivedCount) > 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	tcMu.Lock()
+	features := capturedTCFeatures
+	rawFeatures := capturedRawFeatures
+	tcMu.Unlock()
+
+	if len(features) != 16 {
+		t.Fatalf("expected 16 storm features from 1.bufr, got %d", len(features))
+	}
+
+	// Find FAY / 06L feature
+	var fayFeat *TCFeature
+	var fayRaw json.RawMessage
+	for i := range features {
+		if features[i].StormID == "06L" {
+			fayFeat = &features[i]
+			fayRaw = rawFeatures[i]
+			break
+		}
+	}
+
+	if fayFeat == nil {
+		t.Fatalf("expected to find storm 06L (FAY)")
+	}
+
+	// Verify contract fields
+	if fayFeat.NotificationID != "tc-notif-uuid-12345" {
+		t.Errorf("notification_id mismatch: %s", fayFeat.NotificationID)
+	}
+	if fayFeat.DataID != "ecmwf/deterministic/tc/2026092506" {
+		t.Errorf("data_id mismatch: %s", fayFeat.DataID)
+	}
+	if fayFeat.Topic != topic {
+		t.Errorf("topic mismatch: %s", fayFeat.Topic)
+	}
+	if fayFeat.CentreID != "ecmwf" {
+		t.Errorf("centre_id mismatch: %s", fayFeat.CentreID)
+	}
+	if fayFeat.Channel != "cache" {
+		t.Errorf("channel mismatch: %s", fayFeat.Channel)
+	}
+	if fayFeat.PubTime != "2026-09-25T06:30:00Z" {
+		t.Errorf("pubtime mismatch: %s", fayFeat.PubTime)
+	}
+	if fayFeat.FetchedVia != "cache" {
+		t.Errorf("fetched_via mismatch: %s", fayFeat.FetchedVia)
+	}
+	if fayFeat.DownloadURL == nil || *fayFeat.DownloadURL != upstreamServer.URL+"/tracks.bufr" {
+		t.Errorf("download_url mismatch: %v", fayFeat.DownloadURL)
+	}
+	if fayFeat.MessageIndex != 0 {
+		t.Errorf("message_index mismatch: %d", fayFeat.MessageIndex)
+	}
+	if fayFeat.OriginatingCentre != 98 {
+		t.Errorf("originating_centre mismatch: %d", fayFeat.OriginatingCentre)
+	}
+	if fayFeat.StormName == nil || *fayFeat.StormName != "FAY" {
+		t.Errorf("storm_name mismatch: %v", fayFeat.StormName)
+	}
+	if fayFeat.EnsembleMember == nil || *fayFeat.EnsembleMember != 51 {
+		t.Errorf("ensemble_member mismatch: %v", fayFeat.EnsembleMember)
+	}
+	if fayFeat.AnalysisTime != "2026-09-25T06:00:00Z" {
+		t.Errorf("analysis_time mismatch: %s", fayFeat.AnalysisTime)
+	}
+
+	// Verify points
+	if len(fayFeat.Points) == 0 {
+		t.Fatalf("expected points for FAY, got 0")
+	}
+	p0 := fayFeat.Points[0]
+	if p0.LeadHours != 0 {
+		t.Errorf("first point lead_hours mismatch: %d", p0.LeadHours)
+	}
+	if p0.Time != "2026-09-25T06:00:00Z" {
+		t.Errorf("first point time mismatch: %s", p0.Time)
+	}
+	if p0.Lat != 29.8 || p0.Lon != -42.6 {
+		t.Errorf("first point lat/lon mismatch: (%f, %f)", p0.Lat, p0.Lon)
+	}
+	if p0.MSLPPa == nil || *p0.MSLPPa != 101100.0 {
+		t.Errorf("first point mslp_pa mismatch: %v", p0.MSLPPa)
+	}
+	if p0.MaxWindMS == nil || *p0.MaxWindMS != 14.4 {
+		t.Errorf("first point max_wind_ms mismatch: %v", p0.MaxWindMS)
+	}
+	if p0.MaxWindLat == nil || *p0.MaxWindLat != 30.2 {
+		t.Errorf("first point max_wind_lat mismatch: %v", p0.MaxWindLat)
+	}
+	if p0.MaxWindLon == nil || *p0.MaxWindLon != -41.7 {
+		t.Errorf("first point max_wind_lon mismatch: %v", p0.MaxWindLon)
+	}
+
+	// Verify JSON contract keys in raw payload
+	var rawMap map[string]any
+	if err := json.Unmarshal(fayRaw, &rawMap); err != nil {
+		t.Fatalf("unmarshal raw JSON failed: %v", err)
+	}
+	contractKeys := []string{
+		"notification_id", "data_id", "topic", "centre_id", "channel",
+		"pubtime", "fetched_via", "download_url", "message_index",
+		"originating_centre", "storm_id", "storm_name", "ensemble_member",
+		"analysis_time", "points",
+	}
+	for _, k := range contractKeys {
+		if _, ok := rawMap[k]; !ok {
+			t.Errorf("missing contract key in raw feature JSON: %s", k)
+		}
+	}
+
+	// Verify a numbered storm like 70W has storm_name null or equal to storm_id
+	var found70W bool
+	for _, f := range features {
+		if f.StormID == "70W" {
+			found70W = true
+			if f.StormName != nil && *f.StormName != "70W" {
+				t.Errorf("numbered storm 70W: expected storm_name null or 70W, got %v", *f.StormName)
+			}
+		}
+	}
+	if !found70W {
+		t.Errorf("expected to find storm 70W in features")
+	}
+}
+
+func TestControllerTC429Retry(t *testing.T) {
+	bufrData, err := os.ReadFile(filepath.Join("..", "bufr", "testdata", "1.bufr"))
+	if err != nil {
+		t.Fatalf("failed to read testdata 1.bufr: %v", err)
+	}
+
+	var reqCount int32
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count := atomic.AddInt32(&reqCount, 1)
+		if count == 1 {
+			// First request: 429 Too Many Requests with Retry-After: 0
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte("Too Many Requests"))
+			return
+		}
+		// Second request: 200 OK
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(bufrData)
+	}))
+	defer upstreamServer.Close()
+
+	var tcReceivedCount int32
+	coreServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/wis2_data/tc_tracks" {
+			var env struct {
+				Features []json.RawMessage `json:"features"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&env)
+			atomic.AddInt32(&tcReceivedCount, int32(len(env.Features)))
+			ack := fmt.Sprintf(`{"received":%d,"deduped":0,"written":%d,"dropped":0,"message":"ok"}`,
+				len(env.Features), len(env.Features))
+			_, _ = w.Write([]byte(ack))
+		} else {
+			_, _ = w.Write([]byte(`{"received":0,"deduped":0,"written":0,"dropped":0,"message":"ok"}`))
+		}
+	}))
+	defer coreServer.Close()
+
+	cfg := config.Config{
+		Brokers:             []string{"mqtts://broker:8883"},
+		Topics:              []string{"cache/a/wis2/+/data/core/weather/prediction/forecast/+/deterministic/trajectory/#"},
+		DownloadConcurrency: 2,
+		HealthInterval:      10 * time.Second,
+	}
+
+	coreClient := core.NewClient(coreServer.URL+"/api/v1", nil)
+	fakeBroker := broker.NewFakeBroker("mqtts://broker:8883")
+	ctrl := NewController(cfg, coreClient, fakeBroker, nil, time.Now)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go ctrl.Execute(ctx)
+	_ = fakeBroker.WaitRunning(ctx)
+
+	msg := wnm.WNMMessage{
+		ID:   "retry-tc-msg",
+		Type: "Feature",
+		Properties: wnm.WNMProperties{
+			DataID:  "retry-tc-data",
+			PubTime: "2026-09-25T06:00:00Z",
+		},
+		Links: []wnm.WNMLink{
+			{Rel: "canonical", Href: upstreamServer.URL + "/tc.bufr"},
+		},
+	}
+	b, _ := json.Marshal(msg)
+	fakeBroker.Publish("cache/a/wis2/ecmwf/data/core/weather/prediction/forecast/10day/deterministic/trajectory", b)
+
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		if atomic.LoadInt32(&tcReceivedCount) > 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if atomic.LoadInt32(&reqCount) < 2 {
+		t.Errorf("expected at least 2 requests to upstream (1 failed with 429, 1 retry), got %d", atomic.LoadInt32(&reqCount))
+	}
+	if atomic.LoadInt32(&tcReceivedCount) != 16 {
+		t.Fatalf("expected 16 storm tracks received after retry, got %d", atomic.LoadInt32(&tcReceivedCount))
+	}
+}
+
+func TestControllerTCNonBUFRBody(t *testing.T) {
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// HTTP 200 but body is 17 bytes of text: "Too Many Requests"
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("Too Many Requests"))
+	}))
+	defer upstreamServer.Close()
+
+	var tcReceivedCount int32
+	coreServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/wis2_data/tc_tracks" {
+			atomic.AddInt32(&tcReceivedCount, 1)
+		}
+		_, _ = w.Write([]byte(`{"received":0,"deduped":0,"written":0,"dropped":0,"message":"ok"}`))
+	}))
+	defer coreServer.Close()
+
+	cfg := config.Config{
+		Brokers:             []string{"mqtts://broker:8883"},
+		Topics:              []string{"cache/a/wis2/+/data/core/weather/prediction/forecast/+/deterministic/trajectory/#"},
+		DownloadConcurrency: 2,
+		HealthInterval:      10 * time.Second,
+	}
+
+	coreClient := core.NewClient(coreServer.URL+"/api/v1", nil)
+	fakeBroker := broker.NewFakeBroker("mqtts://broker:8883")
+	ctrl := NewController(cfg, coreClient, fakeBroker, nil, time.Now)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go ctrl.Execute(ctx)
+	_ = fakeBroker.WaitRunning(ctx)
+
+	msg := wnm.WNMMessage{
+		ID:   "non-bufr-tc-msg",
+		Type: "Feature",
+		Properties: wnm.WNMProperties{
+			DataID:  "non-bufr-data",
+			PubTime: "2026-09-25T06:00:00Z",
+		},
+		Links: []wnm.WNMLink{
+			{Rel: "canonical", Href: upstreamServer.URL + "/bad.bufr"},
+		},
+	}
+	b, _ := json.Marshal(msg)
+	fakeBroker.Publish("cache/a/wis2/bad-centre/data/core/weather/prediction/forecast/10day/deterministic/trajectory", b)
+
+	time.Sleep(300 * time.Millisecond)
+
+	if atomic.LoadInt32(&tcReceivedCount) > 0 {
+		t.Errorf("non-BUFR body must not be sent to tc_tracks endpoint")
+	}
+
+	h := ctrl.getOrCreateHealth("bad-centre", "trajectory")
+	h.mu.Lock()
+	dlFailed := h.DownloadFailed
+	h.mu.Unlock()
+
+	if dlFailed != 1 {
+		t.Errorf("expected 1 download_failed for non-BUFR body, got %d", dlFailed)
+	}
+}
+
+func TestControllerTCProbabilisticIgnored(t *testing.T) {
+	bufrData, err := os.ReadFile(filepath.Join("..", "bufr", "testdata", "1.bufr"))
+	if err != nil {
+		t.Fatalf("failed to read testdata 1.bufr: %v", err)
+	}
+
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(bufrData)
+	}))
+	defer upstreamServer.Close()
+
+	var tcReceivedCount int32
+	coreServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/wis2_data/tc_tracks" {
+			atomic.AddInt32(&tcReceivedCount, 1)
+		}
+		_, _ = w.Write([]byte(`{"received":0,"deduped":0,"written":0,"dropped":0,"message":"ok"}`))
+	}))
+	defer coreServer.Close()
+
+	cfg := config.Config{
+		Brokers:        []string{"mqtts://broker:8883"},
+		HealthInterval: 10 * time.Second,
+	}
+
+	coreClient := core.NewClient(coreServer.URL+"/api/v1", nil)
+	fakeBroker := broker.NewFakeBroker("mqtts://broker:8883")
+	ctrl := NewController(cfg, coreClient, fakeBroker, nil, time.Now)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go ctrl.Execute(ctx)
+	_ = fakeBroker.WaitRunning(ctx)
+
+	msg := wnm.WNMMessage{
+		ID:   "prob-tc-msg",
+		Type: "Feature",
+		Properties: wnm.WNMProperties{
+			DataID:  "prob-tc-data",
+			PubTime: "2026-09-25T06:00:00Z",
+		},
+		Links: []wnm.WNMLink{
+			{Rel: "canonical", Href: upstreamServer.URL + "/tracks.bufr"},
+		},
+	}
+	b, _ := json.Marshal(msg)
+	// Probabilistic topic
+	probTopic := "cache/a/wis2/ecmwf/data/core/weather/prediction/forecast/10day/probabilistic/trajectory"
+	fakeBroker.Publish(probTopic, b)
+
+	time.Sleep(300 * time.Millisecond)
+
+	if atomic.LoadInt32(&tcReceivedCount) > 0 {
+		t.Errorf("probabilistic topic must not be processed or sent to tc_tracks")
+	}
+
+	// Should be recorded under "other", not "trajectory"
+	hOther := ctrl.getOrCreateHealth("ecmwf", "other")
+	hOther.mu.Lock()
+	recOther := hOther.Received
+	hOther.mu.Unlock()
+
+	if recOther != 1 {
+		t.Errorf("expected 1 received under kind=other for probabilistic topic, got %d", recOther)
+	}
+
+	hTraj := ctrl.getOrCreateHealth("ecmwf", "trajectory")
+	hTraj.mu.Lock()
+	recTraj := hTraj.Received
+	hTraj.mu.Unlock()
+
+	if recTraj != 0 {
+		t.Errorf("expected 0 received under kind=trajectory for probabilistic topic, got %d", recTraj)
+	}
+}

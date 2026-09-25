@@ -82,6 +82,8 @@ pub fn reciever_router(request: Request, ctx: Context) -> Response {
     ["api", "v1", "wis2_data", "cap"] -> wis2_reciever.cap_handler(req, ctx)
     ["api", "v1", "wis2_data", "health"] ->
       wis2_reciever.health_handler(req, ctx)
+    ["api", "v1", "wis2_data", "tc_tracks"] ->
+      wis2_reciever.tc_tracks_handler(req, ctx)
     _ -> wisp.response(404)
   }
 

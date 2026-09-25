@@ -312,3 +312,59 @@ pub fn decode_cap_area_precision_test() {
   let assert Ok(dyn_invalid) = json.parse(json_invalid, decode.dynamic)
   let assert Ok(#(_, [], 1, 1)) = wis2.decode_cap_body(dyn_invalid)
 }
+
+pub fn make_tc_source_test() {
+  let s = wis2.make_tc_source("ecmwf")
+  s.id |> should.equal("wis2-ecmwf")
+  s.name |> should.equal("WMO WIS2 / ecmwf")
+  s.attribution_text |> should.equal("WMO WIS2 / ecmwf")
+  s.priority |> should.equal(75)
+  s.redistributable |> should.equal(False)
+  s.license |> should.equal("Unknown")
+}
+
+pub fn decode_tc_tracks_fixtures_test() {
+  // Named storm fixture (FAY / 06L)
+  let assert Ok(named_json) =
+    simplifile.read("test/fixtures/wis2/tc_named.json")
+  let envelope_named = "{\"features\":[" <> named_json <> "]}"
+  let assert Ok(dyn_named) = json.parse(envelope_named, decode.dynamic)
+  let assert Ok(#(meta, [feat_named], 1, 0)) =
+    wis2.decode_tc_tracks_body(dyn_named)
+  meta |> should.equal(None)
+  feat_named.storm_id |> should.equal("06L")
+  feat_named.storm_name |> should.equal(Some("FAY"))
+  feat_named.centre_id |> should.equal("ecmwf")
+  feat_named.originating_centre |> should.equal(98)
+  feat_named.analysis_time |> should.equal("2026-09-25T06:00:00Z")
+  list.length(feat_named.points) |> should.equal(17)
+
+  let assert Ok(pt0) = list.first(feat_named.points)
+  pt0.lead_hours |> should.equal(0)
+  pt0.lat |> should.equal(29.8)
+  pt0.lon |> should.equal(-42.6)
+  pt0.mslp_pa |> should.equal(Some(101_100.0))
+  pt0.max_wind_ms |> should.equal(Some(14.4))
+  list.length(pt0.wind_radii) |> should.equal(3)
+
+  // Numbered storm fixture (70W)
+  let assert Ok(numbered_json) =
+    simplifile.read("test/fixtures/wis2/tc_numbered.json")
+  let envelope_numbered = "{\"features\":[" <> numbered_json <> "]}"
+  let assert Ok(dyn_numbered) = json.parse(envelope_numbered, decode.dynamic)
+  let assert Ok(#(_, [feat_numbered], 1, 0)) =
+    wis2.decode_tc_tracks_body(dyn_numbered)
+  feat_numbered.storm_id |> should.equal("70W")
+  feat_numbered.storm_name |> should.equal(None)
+  list.length(feat_numbered.points) |> should.equal(24)
+
+  // GeoJSON LineString and BBox helpers
+  let linestring_opt = wis2.points_to_linestring_geojson(feat_named.points)
+  linestring_opt |> option.is_some |> should.equal(True)
+
+  let bbox_opt = wis2.points_to_bbox(feat_named.points)
+  bbox_opt |> option.is_some |> should.equal(True)
+
+  wis2.tc_hazard_source_id("06L", "2026-09-25T06:00:00Z")
+  |> should.equal("06L/2026")
+}

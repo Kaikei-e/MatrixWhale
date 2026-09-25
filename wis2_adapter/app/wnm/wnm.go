@@ -64,7 +64,7 @@ func ClassifyTopic(topic string) (channel, centreID, kind string) {
 
 	if strings.Contains(topic, "/weather/advisories-warnings") {
 		kind = "warnings"
-	} else if strings.Contains(topic, "/trajectory") {
+	} else if strings.Contains(topic, "/deterministic/trajectory") {
 		kind = "trajectory"
 	} else if strings.Contains(topic, "/surface-based-observations/synop") {
 		kind = "synop"

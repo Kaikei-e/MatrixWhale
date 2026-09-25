@@ -378,3 +378,23 @@ CREATE TABLE sea.wis2_broker (
   error TEXT,
   last_report_at TIMESTAMPTZ NOT NULL
 );
+
+CREATE TABLE sea.wis2_tc_track (
+  source TEXT NOT NULL REFERENCES sea.source(id),
+  storm_id TEXT NOT NULL,
+  analysis_time TIMESTAMPTZ NOT NULL,
+  storm_name TEXT,
+  centre_id TEXT NOT NULL,
+  data_id TEXT NOT NULL,
+  originating_centre INTEGER NOT NULL,
+  ensemble_member INTEGER,
+  points JSONB NOT NULL,
+  track geometry(LineString, 4326),
+  matched_hazard_source TEXT,
+  matched_hazard_source_id TEXT,
+  received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (source, storm_id, analysis_time)
+);
+CREATE INDEX idx_wis2_tc_track_latest ON sea.wis2_tc_track (source, storm_id, analysis_time DESC);
+CREATE INDEX idx_wis2_tc_track_matched_hazard ON sea.wis2_tc_track (matched_hazard_source, matched_hazard_source_id);
+CREATE INDEX idx_wis2_tc_track_received_at ON sea.wis2_tc_track (received_at);

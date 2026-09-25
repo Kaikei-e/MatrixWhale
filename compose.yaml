@@ -220,7 +220,7 @@ services:
       WIS2_BROKERS: mqtts://globalbroker.meteo.fr:8883,mqtts://gb.wis.cma.cn:8883,mqtts://wis2globalbroker.nws.noaa.gov:8883,mqtts://globalbroker.inmet.gov.br:8883
       WIS2_USERNAME: everyone
       WIS2_PASSWORD: everyone
-      WIS2_TOPICS: cache/a/wis2/+/data/core/weather/advisories-warnings/#
+      WIS2_TOPICS: cache/a/wis2/+/data/core/weather/advisories-warnings/#,cache/a/wis2/+/data/core/weather/prediction/forecast/+/deterministic/trajectory/#
       WIS2_CONTACT_EMAIL: ${WIS2_CONTACT_EMAIL:-}
       WIS2_MAX_DOWNLOAD_BYTES: 5242880
       WIS2_DOWNLOAD_CONCURRENCY: 8

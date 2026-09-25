@@ -78,6 +78,43 @@ fn health_post_handler(req: Request, ctx: Context) -> Response {
   }
 }
 
+pub fn tc_tracks_handler(req: Request, ctx: Context) -> Response {
+  case req.method {
+    http.Post -> tc_tracks_post_handler(req, ctx)
+    _ -> wisp.response(405)
+  }
+}
+
+fn tc_tracks_post_handler(req: Request, ctx: Context) -> Response {
+  let req = wisp.set_max_body_size(req, 64 * 1024 * 1024)
+  use body <- wisp.require_json(req)
+  case wis2.decode_tc_tracks_body(body) {
+    Error(error) ->
+      error_response(400, "invalid wis2 tc_tracks envelope: " <> error)
+    Ok(#(meta, features, received, decode_dropped)) -> {
+      case
+        wis2_controller.process_tc_tracks(
+          meta,
+          features,
+          received,
+          decode_dropped,
+          ctx,
+        )
+      {
+        Ok(ack) ->
+          ack_response(
+            ack.received,
+            ack.deduped,
+            ack.written,
+            ack.dropped,
+            ack.message,
+          )
+        Error(error) -> error_response(503, error)
+      }
+    }
+  }
+}
+
 fn ack_response(
   received: Int,
   deduped: Int,

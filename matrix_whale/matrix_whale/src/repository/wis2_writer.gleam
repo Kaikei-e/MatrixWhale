@@ -1,10 +1,13 @@
 import domain/alert.{type AlertRow}
+import domain/cap
+import domain/hazard.{type Hazard}
 import domain/source.{type Source}
 import domain/wis2.{
-  type AreaPrecision, type BrokerState, type ChannelHealth, BrokerState,
-  ChannelHealth,
+  type AreaPrecision, type BrokerState, type ChannelHealth, type ForecastTrack,
+  type Wis2TcFeature, BrokerState, ChannelHealth, ForecastTrack,
 }
 import gleam/dynamic/decode
+import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
@@ -78,7 +81,15 @@ pub fn record_notification(
 }
 
 pub fn cleanup(cutoff: Timestamp, conn: pog.Connection) -> Result(Nil, String) {
-  pog.query("DELETE FROM sea.wis2_notification WHERE received_at < $1")
+  use _ <- result.try(
+    pog.query("DELETE FROM sea.wis2_notification WHERE received_at < $1")
+    |> pog.parameter(pog.timestamp(cutoff))
+    |> pog.returning(decode.success(Nil))
+    |> pog.execute(conn)
+    |> result.map(fn(_) { Nil })
+    |> result.map_error(err),
+  )
+  pog.query("DELETE FROM sea.wis2_tc_track WHERE received_at < $1")
   |> pog.parameter(pog.timestamp(cutoff))
   |> pog.returning(decode.success(Nil))
   |> pog.execute(conn)
@@ -227,9 +238,9 @@ const update_alert_geom_sql = "
       geom = (
         SELECT ST_Multi(ST_CollectionExtract(ST_MakeValid(ST_UnaryUnion(ST_Collect(geom))), 3))
         FROM sea.wis2_cap_area
-        WHERE cap_sender = $1 AND cap_identifier = $2 AND geom IS NOT NULL
+        WHERE cap_sender = $1::text AND cap_identifier = $2::text AND geom IS NOT NULL
       )
-    WHERE (sender = $1 AND identifier = $2) OR source_id = $1 || ',' || $2
+    WHERE (sender = $1::text AND identifier = $2::text) OR source_id = $1::text || ',' || $2::text
     RETURNING *
   )
   SELECT "
@@ -448,6 +459,409 @@ fn read_channels_24h(
     })
   })
   |> result.map_error(err)
+}
+
+pub fn upsert_tc_source(
+  centre_id: String,
+  conn: pog.Connection,
+) -> Result(Nil, String) {
+  let s = wis2.make_tc_source(centre_id)
+  pog.query(
+    "INSERT INTO sea.source (id, name, homepage, license, attribution_text, redistributable, priority)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (id) DO NOTHING",
+  )
+  |> pog.parameter(pog.text(s.id))
+  |> pog.parameter(pog.text(s.name))
+  |> pog.parameter(pog.nullable(pog.text, s.homepage))
+  |> pog.parameter(pog.text(s.license))
+  |> pog.parameter(pog.text(s.attribution_text))
+  |> pog.parameter(pog.bool(s.redistributable))
+  |> pog.parameter(pog.int(s.priority))
+  |> pog.returning(decode.success(Nil))
+  |> pog.execute(conn)
+  |> result.map(fn(_) { Nil })
+  |> result.map_error(err)
+}
+
+pub fn track_exists(
+  source: String,
+  storm_id: String,
+  analysis_time: Timestamp,
+  conn: pog.Connection,
+) -> Result(Bool, String) {
+  pog.query(
+    "SELECT 1 FROM sea.wis2_tc_track WHERE source = $1::text AND storm_id = $2::text AND analysis_time = $3",
+  )
+  |> pog.parameter(pog.text(source))
+  |> pog.parameter(pog.text(storm_id))
+  |> pog.parameter(pog.timestamp(analysis_time))
+  |> pog.returning(decode.success(Nil))
+  |> pog.execute(conn)
+  |> result.map(fn(x) { !list.is_empty(x.rows) })
+  |> result.map_error(err)
+}
+
+pub fn load_active_gdacs_tc_hazards(
+  conn: pog.Connection,
+) -> Result(List(Hazard), String) {
+  pog.query(
+    "SELECT "
+    <> hazard.columns
+    <> " FROM sea.hazard WHERE source = 'gdacs' AND hazard_type = 'tropical_cyclone' AND is_current",
+  )
+  |> pog.returning(hazard.row_decoder())
+  |> pog.execute(conn)
+  |> result.map(fn(x) { x.rows })
+  |> result.map_error(err)
+}
+
+pub fn write_tc_track(
+  feature: Wis2TcFeature,
+  source: String,
+  analysis_time: Timestamp,
+  matched_hazard_source: Option(String),
+  matched_hazard_source_id: Option(String),
+  received_at: Timestamp,
+  conn: pog.Connection,
+) -> Result(Nil, String) {
+  let points_json =
+    json.to_string(json.array(feature.points, wis2.forecast_point_to_json))
+  let track_geom = wis2.points_to_linestring_geojson(feature.points)
+
+  pog.query(
+    "INSERT INTO sea.wis2_tc_track
+       (source, storm_id, analysis_time, storm_name, centre_id, data_id,
+        originating_centre, ensemble_member, points, track,
+        matched_hazard_source, matched_hazard_source_id, received_at)
+     VALUES
+       ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb,
+        CASE WHEN $10::text IS NOT NULL THEN ST_SetSRID(ST_GeomFromGeoJSON($10::text), 4326) ELSE NULL END,
+        $11, $12, $13)
+     ON CONFLICT (source, storm_id, analysis_time) DO NOTHING",
+  )
+  |> pog.parameter(pog.text(source))
+  |> pog.parameter(pog.text(feature.storm_id))
+  |> pog.parameter(pog.timestamp(analysis_time))
+  |> pog.parameter(pog.nullable(pog.text, feature.storm_name))
+  |> pog.parameter(pog.text(feature.centre_id))
+  |> pog.parameter(pog.text(feature.data_id))
+  |> pog.parameter(pog.int(feature.originating_centre))
+  |> pog.parameter(pog.nullable(pog.int, feature.ensemble_member))
+  |> pog.parameter(pog.text(points_json))
+  |> pog.parameter(pog.nullable(pog.text, track_geom))
+  |> pog.parameter(pog.nullable(pog.text, matched_hazard_source))
+  |> pog.parameter(pog.nullable(pog.text, matched_hazard_source_id))
+  |> pog.parameter(pog.timestamp(received_at))
+  |> pog.returning(decode.success(Nil))
+  |> pog.execute(conn)
+  |> result.map(fn(_) { Nil })
+  |> result.map_error(err)
+}
+
+const tc_hazard_insert_sql = "INSERT INTO sea.hazard (source,source_id,source_episode_id,episode_count,hazard_type,hazard_codes,glide,alert_level,alert_score,cap_severity,severity_value,severity_unit,severity_label,estimate_type,title,description,countries,report_url,external_ids,onset_at,onset_at_ms,expires_at,expires_at_ms,modified_at,modified_at_ms,is_current,centroid,bbox,primary_geometry,geometries,first_seen_at,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,to_timestamp($20::double precision/1000),$20,to_timestamp($21::double precision/1000),$21,to_timestamp($22::double precision/1000),$22,$23,ST_SetSRID(ST_MakePoint($24,$25),4326),ST_SetSRID(ST_MakeEnvelope($26,$27,$28,$29),4326),ST_SetSRID(ST_GeomFromGeoJSON($30::text),4326),$31::jsonb,to_timestamp($32::double precision/1000),to_timestamp($32::double precision/1000)) RETURNING "
+
+const tc_hazard_update_sql = "UPDATE sea.hazard SET alert_level=$3::text,cap_severity=$4::text,severity_value=$5::double precision,title=$6::text,description=$7,expires_at=to_timestamp($8::double precision/1000),expires_at_ms=$8,modified_at=to_timestamp($9::double precision/1000),modified_at_ms=$9,is_current=$10,centroid=ST_SetSRID(ST_MakePoint($11,$12),4326),bbox=ST_SetSRID(ST_MakeEnvelope($13,$14,$15,$16),4326),primary_geometry=ST_SetSRID(ST_GeomFromGeoJSON($17::text),4326),geometries=$18::jsonb,last_seen_at=to_timestamp($19::double precision/1000) WHERE source=$1::text AND source_id=$2::text RETURNING "
+
+pub fn upsert_own_tc_hazard(
+  feature: Wis2TcFeature,
+  source: String,
+  analysis_time_ms: Int,
+  now: Timestamp,
+  conn: pog.Connection,
+) -> Result(#(Hazard, Bool), String) {
+  let source_id =
+    wis2.tc_hazard_source_id(feature.storm_id, feature.analysis_time)
+  let now_ms = timestamp_to_ms(now)
+
+  use exists <- result.try(own_tc_hazard_exists(source, source_id, conn))
+  case exists {
+    True -> {
+      pog.query(tc_hazard_update_sql <> hazard.columns)
+      |> bind_tc_hazard_update_params(source, source_id, feature, now_ms)
+      |> pog.returning(hazard.row_decoder())
+      |> pog.execute(conn)
+      |> result.map_error(err)
+      |> result.try(fn(x) {
+        case x.rows {
+          [row] -> Ok(#(row, False))
+          _ -> Error("hazard update returned no row for " <> source_id)
+        }
+      })
+    }
+    False -> {
+      pog.query(tc_hazard_insert_sql <> hazard.columns)
+      |> bind_tc_hazard_params(
+        source,
+        source_id,
+        feature,
+        analysis_time_ms,
+        now_ms,
+      )
+      |> pog.returning(hazard.row_decoder())
+      |> pog.execute(conn)
+      |> result.map_error(err)
+      |> result.try(fn(x) {
+        case x.rows {
+          [row] -> Ok(#(row, True))
+          _ -> Error("hazard insert returned no row for " <> source_id)
+        }
+      })
+    }
+  }
+}
+
+fn own_tc_hazard_exists(
+  source: String,
+  source_id: String,
+  conn: pog.Connection,
+) -> Result(Bool, String) {
+  pog.query(
+    "SELECT 1 FROM sea.hazard WHERE source = $1::text AND source_id = $2::text FOR UPDATE",
+  )
+  |> pog.parameter(pog.text(source))
+  |> pog.parameter(pog.text(source_id))
+  |> pog.returning(decode.success(Nil))
+  |> pog.execute(conn)
+  |> result.map(fn(x) { !list.is_empty(x.rows) })
+  |> result.map_error(err)
+}
+
+fn bind_tc_hazard_params(
+  query: pog.Query(a),
+  source: String,
+  source_id: String,
+  feature: Wis2TcFeature,
+  analysis_time_ms: Int,
+  now_ms: Int,
+) -> pog.Query(a) {
+  let alert_level = wis2.calculate_alert_level(feature.points)
+  let cap_severity = hazard.cap_severity_for(alert_level)
+  let severity_value = wis2.max_wind_from_points(feature.points)
+  let title = option.unwrap(feature.storm_name, feature.storm_id)
+  let description = Some("Tropical cyclone " <> title)
+  let expires_at_ms = case list.last(feature.points) {
+    Ok(last_pt) ->
+      case cap.parse_rfc3339(last_pt.time) {
+        Ok(t) -> Some(timestamp_to_ms(t))
+        Error(_) -> None
+      }
+    Error(_) -> None
+  }
+  let #(centroid_lon, centroid_lat) = wis2.points_to_centroid(feature.points)
+  let #(bbox_w, bbox_s, bbox_e, bbox_n) = case
+    wis2.points_to_bbox(feature.points)
+  {
+    Some(#(w, s, e, n)) -> #(Some(w), Some(s), Some(e), Some(n))
+    None -> #(None, None, None, None)
+  }
+  let primary_geom = wis2.points_to_linestring_geojson(feature.points)
+  let geometries =
+    wis2.track_to_feature_collection_geojson(
+      feature.storm_id,
+      feature.storm_name,
+      feature.analysis_time,
+      feature.points,
+    )
+
+  query
+  |> pog.parameter(pog.text(source))
+  |> pog.parameter(pog.text(source_id))
+  |> pog.parameter(pog.nullable(pog.text, None))
+  |> pog.parameter(pog.int(1))
+  |> pog.parameter(pog.text("tropical_cyclone"))
+  |> pog.parameter(pog.array(pog.text, hazard.hazard_codes_for("TC")))
+  |> pog.parameter(pog.nullable(pog.text, None))
+  |> pog.parameter(pog.text(alert_level))
+  |> pog.parameter(pog.nullable(pog.float, None))
+  |> pog.parameter(pog.text(cap_severity))
+  |> pog.parameter(pog.nullable(pog.float, severity_value))
+  |> pog.parameter(pog.nullable(pog.text, Some("m/s")))
+  |> pog.parameter(pog.nullable(pog.text, None))
+  |> pog.parameter(pog.text(hazard.estimate_type))
+  |> pog.parameter(pog.text(title))
+  |> pog.parameter(pog.nullable(pog.text, description))
+  |> pog.parameter(pog.array(pog.text, []))
+  |> pog.parameter(pog.nullable(pog.text, feature.download_url))
+  |> pog.parameter(pog.array(pog.text, []))
+  |> pog.parameter(pog.int(analysis_time_ms))
+  |> pog.parameter(pog.nullable(pog.int, expires_at_ms))
+  |> pog.parameter(pog.int(now_ms))
+  |> pog.parameter(pog.bool(True))
+  |> pog.parameter(pog.float(centroid_lon))
+  |> pog.parameter(pog.float(centroid_lat))
+  |> pog.parameter(pog.nullable(pog.float, bbox_w))
+  |> pog.parameter(pog.nullable(pog.float, bbox_s))
+  |> pog.parameter(pog.nullable(pog.float, bbox_e))
+  |> pog.parameter(pog.nullable(pog.float, bbox_n))
+  |> pog.parameter(pog.nullable(pog.text, primary_geom))
+  |> pog.parameter(pog.nullable(pog.text, geometries))
+  |> pog.parameter(pog.int(now_ms))
+}
+
+fn bind_tc_hazard_update_params(
+  query: pog.Query(a),
+  source: String,
+  source_id: String,
+  feature: Wis2TcFeature,
+  now_ms: Int,
+) -> pog.Query(a) {
+  let alert_level = wis2.calculate_alert_level(feature.points)
+  let cap_severity = hazard.cap_severity_for(alert_level)
+  let severity_value = wis2.max_wind_from_points(feature.points)
+  let title = option.unwrap(feature.storm_name, feature.storm_id)
+  let description = Some("Tropical cyclone " <> title)
+  let expires_at_ms = case list.last(feature.points) {
+    Ok(last_pt) ->
+      case cap.parse_rfc3339(last_pt.time) {
+        Ok(t) -> Some(timestamp_to_ms(t))
+        Error(_) -> None
+      }
+    Error(_) -> None
+  }
+  let #(centroid_lon, centroid_lat) = wis2.points_to_centroid(feature.points)
+  let #(bbox_w, bbox_s, bbox_e, bbox_n) = case
+    wis2.points_to_bbox(feature.points)
+  {
+    Some(#(w, s, e, n)) -> #(Some(w), Some(s), Some(e), Some(n))
+    None -> #(None, None, None, None)
+  }
+  let primary_geom = wis2.points_to_linestring_geojson(feature.points)
+  let geometries =
+    wis2.track_to_feature_collection_geojson(
+      feature.storm_id,
+      feature.storm_name,
+      feature.analysis_time,
+      feature.points,
+    )
+
+  query
+  |> pog.parameter(pog.text(source))
+  |> pog.parameter(pog.text(source_id))
+  |> pog.parameter(pog.text(alert_level))
+  |> pog.parameter(pog.text(cap_severity))
+  |> pog.parameter(pog.nullable(pog.float, severity_value))
+  |> pog.parameter(pog.text(title))
+  |> pog.parameter(pog.nullable(pog.text, description))
+  |> pog.parameter(pog.nullable(pog.int, expires_at_ms))
+  |> pog.parameter(pog.int(now_ms))
+  |> pog.parameter(pog.bool(True))
+  |> pog.parameter(pog.float(centroid_lon))
+  |> pog.parameter(pog.float(centroid_lat))
+  |> pog.parameter(pog.nullable(pog.float, bbox_w))
+  |> pog.parameter(pog.nullable(pog.float, bbox_s))
+  |> pog.parameter(pog.nullable(pog.float, bbox_e))
+  |> pog.parameter(pog.nullable(pog.float, bbox_n))
+  |> pog.parameter(pog.nullable(pog.text, primary_geom))
+  |> pog.parameter(pog.nullable(pog.text, geometries))
+  |> pog.parameter(pog.int(now_ms))
+}
+
+pub fn end_own_tc_hazards_for_storm(
+  source: String,
+  storm_id: String,
+  now_ms: Int,
+  conn: pog.Connection,
+) -> Result(List(Hazard), String) {
+  pog.query("UPDATE sea.hazard
+     SET is_current = false,
+         modified_at = to_timestamp($1::double precision / 1000),
+         modified_at_ms = $1,
+         last_seen_at = to_timestamp($1::double precision / 1000)
+     WHERE source = $2::text
+       AND source_id LIKE $3::text
+       AND is_current
+     RETURNING " <> hazard.columns)
+  |> pog.parameter(pog.int(now_ms))
+  |> pog.parameter(pog.text(source))
+  |> pog.parameter(pog.text(storm_id <> "/%"))
+  |> pog.returning(hazard.row_decoder())
+  |> pog.execute(conn)
+  |> result.map(fn(x) { x.rows })
+  |> result.map_error(err)
+}
+
+pub fn link_older_tracks_to_hazard(
+  source: String,
+  storm_id: String,
+  matched_source: String,
+  matched_source_id: String,
+  conn: pog.Connection,
+) -> Result(Nil, String) {
+  pog.query(
+    "UPDATE sea.wis2_tc_track
+     SET matched_hazard_source = $1::text,
+         matched_hazard_source_id = $2::text
+     WHERE source = $3::text AND storm_id = $4::text",
+  )
+  |> pog.parameter(pog.text(matched_source))
+  |> pog.parameter(pog.text(matched_source_id))
+  |> pog.parameter(pog.text(source))
+  |> pog.parameter(pog.text(storm_id))
+  |> pog.returning(decode.success(Nil))
+  |> pog.execute(conn)
+  |> result.map(fn(_) { Nil })
+  |> result.map_error(err)
+}
+
+pub fn latest_forecast_tracks_for_hazard(
+  matched_source: String,
+  matched_source_id: String,
+  conn: pog.Connection,
+) -> Result(List(ForecastTrack), String) {
+  let decoder = {
+    use source <- decode.field(0, decode.string)
+    use centre_id <- decode.field(1, decode.string)
+    use storm_id <- decode.field(2, decode.string)
+    use storm_name <- decode.field(3, decode.optional(decode.string))
+    use analysis_time <- decode.field(4, decode.string)
+    use points_text <- decode.field(5, decode.string)
+    decode.success(#(
+      source,
+      centre_id,
+      storm_id,
+      storm_name,
+      analysis_time,
+      points_text,
+    ))
+  }
+  pog.query(
+    "SELECT DISTINCT ON (centre_id)
+       source, centre_id, storm_id, storm_name,
+       to_char(analysis_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),
+       points::text
+     FROM sea.wis2_tc_track
+     WHERE matched_hazard_source = $1::text AND matched_hazard_source_id = $2::text
+     ORDER BY centre_id, analysis_time DESC",
+  )
+  |> pog.parameter(pog.text(matched_source))
+  |> pog.parameter(pog.text(matched_source_id))
+  |> pog.returning(decoder)
+  |> pog.execute(conn)
+  |> result.map(fn(x) {
+    list.map(x.rows, fn(row) {
+      let #(source, centre_id, storm_id, storm_name, analysis_time, points_text) =
+        row
+      let points = case json.parse(points_text, wis2.points_decoder()) {
+        Ok(pts) -> pts
+        Error(_) -> []
+      }
+      ForecastTrack(
+        source:,
+        centre_id:,
+        storm_id:,
+        storm_name:,
+        analysis_time:,
+        points:,
+      )
+    })
+  })
+  |> result.map_error(err)
+}
+
+fn timestamp_to_ms(ts: Timestamp) -> Int {
+  let #(sec, nano) = timestamp.to_unix_seconds_and_nanoseconds(ts)
+  sec * 1000 + nano / 1_000_000
 }
 
 fn err(x: pog.QueryError) -> String {

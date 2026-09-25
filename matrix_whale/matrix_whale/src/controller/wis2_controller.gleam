@@ -1,12 +1,14 @@
 import adapter/alert_hub
 import adapter/context.{type Context}
+import adapter/hazard_hub
 import adapter/response_cache
 import domain/alert.{type AlertRow}
 import domain/cap
 import domain/wis2.{
   type BrokerState, type ChannelHealth, type Wis2CapFeature,
-  type Wis2HealthFeature, type Wis2PollMeta,
+  type Wis2HealthFeature, type Wis2PollMeta, type Wis2TcFeature,
 }
+import domain/wis2_matcher
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -333,4 +335,181 @@ fn replace_or_append_alert(
     True -> list.reverse(replaced)
     False -> [target, ..alerts]
   }
+}
+
+pub fn process_tc_tracks(
+  _meta: Option(Wis2PollMeta),
+  features: List(Wis2TcFeature),
+  received: Int,
+  decode_dropped: Int,
+  ctx: Context,
+) -> Result(Wis2Ack, String) {
+  let now = timestamp.system_time()
+  let now_ms = timestamp_to_ms(now)
+
+  use candidates <- result.try(wis2_writer.load_active_gdacs_tc_hazards(ctx.db))
+
+  let initial_acc = #(0, 0, decode_dropped, [], [])
+  use #(written, deduped, dropped, new_hazards, updated_hazards) <- result.try(
+    list.try_fold(features, initial_acc, fn(acc, feature) {
+      let #(w_acc, d_acc, dr_acc, new_h_acc, upd_h_acc) = acc
+      let source = "wis2-" <> feature.centre_id
+
+      case cap.parse_rfc3339(feature.analysis_time) {
+        Error(_) -> Ok(#(w_acc, d_acc, dr_acc + 1, new_h_acc, upd_h_acc))
+        Ok(analysis_ts) -> {
+          let analysis_time_ms = timestamp_to_ms(analysis_ts)
+
+          use _ <- result.try(wis2_writer.upsert_tc_source(
+            feature.centre_id,
+            ctx.db,
+          ))
+          use exists <- result.try(wis2_writer.track_exists(
+            source,
+            feature.storm_id,
+            analysis_ts,
+            ctx.db,
+          ))
+
+          case exists {
+            True -> Ok(#(w_acc, d_acc + 1, dr_acc, new_h_acc, upd_h_acc))
+            False -> {
+              let #(analysis_lon, analysis_lat) =
+                wis2.points_to_centroid(feature.points)
+              let maybe_match =
+                wis2_matcher.match_tc_run(
+                  feature.storm_id,
+                  feature.storm_name,
+                  analysis_time_ms,
+                  analysis_lat,
+                  analysis_lon,
+                  candidates,
+                )
+
+              case maybe_match {
+                Some(gdacs_hazard) -> {
+                  use _ <- result.try(wis2_writer.write_tc_track(
+                    feature,
+                    source,
+                    analysis_ts,
+                    Some("gdacs"),
+                    Some(gdacs_hazard.source_id),
+                    now,
+                    ctx.db,
+                  ))
+                  use _ <- result.try(wis2_writer.link_older_tracks_to_hazard(
+                    source,
+                    feature.storm_id,
+                    "gdacs",
+                    gdacs_hazard.source_id,
+                    ctx.db,
+                  ))
+                  use ended_hazards <- result.try(
+                    wis2_writer.end_own_tc_hazards_for_storm(
+                      source,
+                      feature.storm_id,
+                      now_ms,
+                      ctx.db,
+                    ),
+                  )
+
+                  let upd = [
+                    gdacs_hazard,
+                    ..list.append(ended_hazards, upd_h_acc)
+                  ]
+                  Ok(#(w_acc + 1, d_acc, dr_acc, new_h_acc, upd))
+                }
+
+                None -> {
+                  case
+                    wis2_matcher.is_named(feature.storm_id, feature.storm_name)
+                  {
+                    True -> {
+                      let own_source_id =
+                        wis2.tc_hazard_source_id(
+                          feature.storm_id,
+                          feature.analysis_time,
+                        )
+                      use _ <- result.try(wis2_writer.write_tc_track(
+                        feature,
+                        source,
+                        analysis_ts,
+                        Some(source),
+                        Some(own_source_id),
+                        now,
+                        ctx.db,
+                      ))
+                      use #(h, is_new) <- result.try(
+                        wis2_writer.upsert_own_tc_hazard(
+                          feature,
+                          source,
+                          analysis_time_ms,
+                          now,
+                          ctx.db,
+                        ),
+                      )
+                      case is_new {
+                        True ->
+                          Ok(#(
+                            w_acc + 1,
+                            d_acc,
+                            dr_acc,
+                            [h, ..new_h_acc],
+                            upd_h_acc,
+                          ))
+                        False ->
+                          Ok(
+                            #(w_acc + 1, d_acc, dr_acc, new_h_acc, [
+                              h,
+                              ..upd_h_acc
+                            ]),
+                          )
+                      }
+                    }
+
+                    False -> {
+                      use _ <- result.try(wis2_writer.write_tc_track(
+                        feature,
+                        source,
+                        analysis_ts,
+                        None,
+                        None,
+                        now,
+                        ctx.db,
+                      ))
+                      Ok(#(w_acc + 1, d_acc, dr_acc, new_h_acc, upd_h_acc))
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }),
+  )
+
+  let unique_new = list.unique(new_hazards)
+  let unique_updated = list.unique(updated_hazards)
+
+  case !list.is_empty(unique_new) || !list.is_empty(unique_updated) {
+    True -> {
+      hazard_hub.publish(ctx.hazard_hub, unique_new, unique_updated)
+      response_cache.invalidate(ctx.hazard_cache)
+    }
+    False -> Nil
+  }
+
+  Ok(Wis2Ack(
+    received:,
+    written:,
+    deduped:,
+    dropped:,
+    message: int.to_string(written) <> " TC tracks written",
+  ))
+}
+
+fn timestamp_to_ms(ts: timestamp.Timestamp) -> Int {
+  let #(sec, nano) = timestamp.to_unix_seconds_and_nanoseconds(ts)
+  sec * 1000 + nano / 1_000_000
 }

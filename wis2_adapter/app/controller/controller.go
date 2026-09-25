@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -17,19 +18,42 @@ import (
 	"matrixwhale/adapters/common/cap"
 	"matrixwhale/adapters/common/core"
 	"matrixwhale/adapters/common/metrics"
+	"matrixwhale/adapters/common/poll"
 	"matrixwhale/adapters/common/useragent"
 
 	"wis2_adapter/broker"
+	"wis2_adapter/bufr"
 	"wis2_adapter/config"
 	"wis2_adapter/dedup"
 	wis2metrics "wis2_adapter/metrics"
+	"wis2_adapter/tc"
 	"wis2_adapter/wnm"
 )
 
 const (
 	CapBatchLimit         = 50
 	CapBatchFlushInterval = 2 * time.Second
+	TCBatchLimit          = 50
+	TCBatchFlushInterval  = 2 * time.Second
 )
+
+type TCFeature struct {
+	NotificationID    string             `json:"notification_id"`
+	DataID            string             `json:"data_id"`
+	Topic             string             `json:"topic"`
+	CentreID          string             `json:"centre_id"`
+	Channel           string             `json:"channel"`
+	PubTime           string             `json:"pubtime"`
+	FetchedVia        string             `json:"fetched_via"`
+	DownloadURL       *string            `json:"download_url"`
+	MessageIndex      int                `json:"message_index"`
+	OriginatingCentre int                `json:"originating_centre"`
+	StormID           string             `json:"storm_id"`
+	StormName         *string            `json:"storm_name"`
+	EnsembleMember    *int               `json:"ensemble_member"`
+	AnalysisTime      string             `json:"analysis_time"`
+	Points            []tc.ForecastPoint `json:"points"`
+}
 
 type CAPFeature struct {
 	NotificationID string        `json:"notification_id"`
@@ -77,12 +101,16 @@ type Controller struct {
 	dedupCache  *dedup.Cache
 	downloadSem chan struct{}
 	now         func() time.Time
+	sleepAfter  func(d time.Duration) <-chan time.Time
 
 	healthMu sync.Mutex
 	health   map[HealthKey]*HealthStats
 
 	batchMu  sync.Mutex
 	capBatch []json.RawMessage
+
+	tcBatchMu sync.Mutex
+	tcBatch   []json.RawMessage
 }
 
 func Run(ctx context.Context) {
@@ -127,9 +155,15 @@ func NewController(
 		dedupCache:  dedup.New(),
 		downloadSem: make(chan struct{}, concurrency),
 		now:         now,
+		sleepAfter:  func(d time.Duration) <-chan time.Time { return time.After(d) },
 		health:      make(map[HealthKey]*HealthStats),
 		capBatch:    make([]json.RawMessage, 0, CapBatchLimit),
+		tcBatch:     make([]json.RawMessage, 0, TCBatchLimit),
 	}
+}
+
+func (c *Controller) SetSleepAfter(fn func(d time.Duration) <-chan time.Time) {
+	c.sleepAfter = fn
 }
 
 func (c *Controller) Execute(ctx context.Context) {
@@ -153,7 +187,7 @@ func (c *Controller) Execute(ctx context.Context) {
 		}
 	}()
 
-	// Background worker 2: CAP batch flush ticker (every 2s)
+	// Background worker 2: CAP and TC batch flush ticker (every 2s)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -163,9 +197,11 @@ func (c *Controller) Execute(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				c.flushCapBatch(context.Background())
+				c.flushTCBatch(context.Background())
 				return
 			case <-ticker.C:
 				c.flushCapBatch(ctx)
+				c.flushTCBatch(ctx)
 			}
 		}
 	}()
@@ -288,10 +324,30 @@ func (c *Controller) handleMessage(ctx context.Context, topic string, payload []
 		wis2metrics.RecordDownload("payload", "success")
 	}
 
-	if kind != "warnings" {
-		return
+	pubTime, err := wnm.FormatRFC3339(wnmMsg.Properties.PubTime)
+	if err != nil {
+		pubTime = wnmMsg.Properties.PubTime
 	}
 
+	if kind == "warnings" {
+		c.handleWarnings(ctx, wnmMsg, topic, centreID, channel, pubTime, fetchedVia, downloadURL, data, stats)
+	} else if kind == "trajectory" {
+		c.handleTrajectory(ctx, wnmMsg, topic, centreID, channel, pubTime, fetchedVia, downloadURL, data, stats)
+	}
+}
+
+func (c *Controller) handleWarnings(
+	ctx context.Context,
+	wnmMsg *wnm.WNMMessage,
+	topic string,
+	centreID string,
+	channel string,
+	pubTime string,
+	fetchedVia string,
+	downloadURL *string,
+	data []byte,
+	stats *HealthStats,
+) {
 	capRes := cap.ParseCAP(data)
 	if capRes.Error != nil || capRes.Cap == nil {
 		stats.recordDecodeFailed()
@@ -359,11 +415,6 @@ func (c *Controller) handleMessage(ctx context.Context, topic string, payload []
 		licenseURL = &licLink.Href
 	}
 
-	pubTime, err := wnm.FormatRFC3339(wnmMsg.Properties.PubTime)
-	if err != nil {
-		pubTime = wnmMsg.Properties.PubTime
-	}
-
 	var dateTime *string
 	if wnmMsg.Properties.DateTime != nil && *wnmMsg.Properties.DateTime != "" {
 		dt, dtErr := wnm.FormatRFC3339(*wnmMsg.Properties.DateTime)
@@ -393,6 +444,86 @@ func (c *Controller) handleMessage(ctx context.Context, topic string, payload []
 	}
 
 	c.enqueueCAPFeature(ctx, feat)
+}
+
+func (c *Controller) handleTrajectory(
+	ctx context.Context,
+	wnmMsg *wnm.WNMMessage,
+	topic string,
+	centreID string,
+	channel string,
+	pubTime string,
+	fetchedVia string,
+	downloadURL *string,
+	data []byte,
+	stats *HealthStats,
+) {
+	if !isBUFR(data) {
+		slog.Warn("Payload is not BUFR; rejected as download_failed",
+			"centre_id", centreID,
+			"data_id", wnmMsg.Properties.DataID,
+			"len", len(data),
+		)
+		stats.recordDownloadFailed()
+		wis2metrics.RecordDownload("payload", "failed")
+		return
+	}
+
+	msgs, errs := bufr.Decode(data)
+	if len(msgs) == 0 {
+		slog.Warn("No BUFR messages found in payload",
+			"centre_id", centreID,
+			"data_id", wnmMsg.Properties.DataID,
+		)
+		stats.recordDecodeFailed()
+		return
+	}
+
+	hasAnySuccess := false
+	for _, err := range errs {
+		if err == nil {
+			hasAnySuccess = true
+			break
+		}
+	}
+	if !hasAnySuccess {
+		slog.Warn("All BUFR messages failed to decode",
+			"centre_id", centreID,
+			"data_id", wnmMsg.Properties.DataID,
+		)
+		stats.recordDecodeFailed()
+		return
+	}
+
+	storms := tc.ExtractStorms(msgs)
+	if len(storms) == 0 {
+		slog.Debug("No storm tracks with valid points extracted",
+			"centre_id", centreID,
+			"data_id", wnmMsg.Properties.DataID,
+		)
+		return
+	}
+
+	for _, storm := range storms {
+		feat := TCFeature{
+			NotificationID:    wnmMsg.ID,
+			DataID:            wnmMsg.Properties.DataID,
+			Topic:             topic,
+			CentreID:          centreID,
+			Channel:           channel,
+			PubTime:           pubTime,
+			FetchedVia:        fetchedVia,
+			DownloadURL:       downloadURL,
+			MessageIndex:      storm.MessageIndex,
+			OriginatingCentre: storm.OriginatingCentre,
+			StormID:           storm.StormID,
+			StormName:         storm.StormName,
+			EnsembleMember:    storm.EnsembleMember,
+			AnalysisTime:      storm.AnalysisTime,
+			Points:            storm.Points,
+		}
+		c.enqueueTCFeature(ctx, feat)
+	}
 }
 
 func (c *Controller) enqueueCAPFeature(ctx context.Context, feat CAPFeature) {
@@ -437,6 +568,51 @@ func (c *Controller) flushCapBatch(ctx context.Context) {
 
 	if valErr := core.ValidateAck(ack, len(batch)); valErr != nil {
 		slog.Error("ValidateAck failed on CAP batch", "error", valErr)
+	}
+}
+
+func (c *Controller) enqueueTCFeature(ctx context.Context, feat TCFeature) {
+	b, err := json.Marshal(feat)
+	if err != nil {
+		slog.Error("Failed to marshal TC feature", "error", err)
+		return
+	}
+
+	c.tcBatchMu.Lock()
+	c.tcBatch = append(c.tcBatch, b)
+	flushNow := len(c.tcBatch) >= TCBatchLimit
+	c.tcBatchMu.Unlock()
+
+	if flushNow {
+		c.flushTCBatch(ctx)
+	}
+}
+
+func (c *Controller) flushTCBatch(ctx context.Context) {
+	c.tcBatchMu.Lock()
+	if len(c.tcBatch) == 0 {
+		c.tcBatchMu.Unlock()
+		return
+	}
+	batch := c.tcBatch
+	c.tcBatch = make([]json.RawMessage, 0, TCBatchLimit)
+	c.tcBatchMu.Unlock()
+
+	meta := core.PollMeta{
+		FetchedAt:    c.now().UTC().Format(time.RFC3339),
+		HTTPStatus:   200,
+		FeatureCount: len(batch),
+		FeedURL:      c.broker.CurrentBroker(),
+	}
+
+	ack, err := c.coreClient.Send(ctx, "wis2_data/tc_tracks", meta, batch)
+	if err != nil {
+		slog.Error("Failed to send TC batch to core", "error", err, "count", len(batch))
+		return
+	}
+
+	if valErr := core.ValidateAck(ack, len(batch)); valErr != nil {
+		slog.Error("ValidateAck failed on TC batch", "error", valErr)
 	}
 }
 
@@ -516,6 +692,10 @@ func (c *Controller) reportHealth(ctx context.Context) {
 }
 
 func (c *Controller) downloadPayload(ctx context.Context, rawURL string) ([]byte, error) {
+	return c.downloadPayloadWithRetry(ctx, rawURL, true)
+}
+
+func (c *Controller) downloadPayloadWithRetry(ctx context.Context, rawURL string, allowRetry bool) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, cleanError(err)
@@ -528,6 +708,21 @@ func (c *Controller) downloadPayload(ctx context.Context, rawURL string) ([]byte
 		return nil, cleanError(err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusTooManyRequests && allowRetry {
+		backoff := poll.ComputeBackoff(resp.Header, 0, 50*time.Millisecond, 10*time.Second)
+		if d, ok := poll.ParseRetryAfter(resp.Header); ok {
+			backoff = d
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-c.sleepAfter(backoff):
+		}
+
+		return c.downloadPayloadWithRetry(ctx, rawURL, false)
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("http error: %d", resp.StatusCode)
@@ -544,6 +739,10 @@ func (c *Controller) downloadPayload(ctx context.Context, rawURL string) ([]byte
 	}
 
 	return body, nil
+}
+
+func isBUFR(data []byte) bool {
+	return len(data) >= 8 && bytes.Contains(data, []byte("BUFR"))
 }
 
 func cleanError(err error) error {

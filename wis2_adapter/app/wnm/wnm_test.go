@@ -36,10 +36,16 @@ func TestTopicClassification(t *testing.T) {
 			expectedKind:     "synop",
 		},
 		{
-			topic:            "cache/a/wis2/ca-eccc-msc/data/core/weather/prediction/forecast/model/trajectory",
+			topic:            "cache/a/wis2/ca-eccc-msc/data/core/weather/prediction/forecast/model/deterministic/trajectory",
 			expectedChannel:  "cache",
 			expectedCentreID: "ca-eccc-msc",
 			expectedKind:     "trajectory",
+		},
+		{
+			topic:            "cache/a/wis2/ca-eccc-msc/data/core/weather/prediction/forecast/model/probabilistic/trajectory",
+			expectedChannel:  "cache",
+			expectedCentreID: "ca-eccc-msc",
+			expectedKind:     "other",
 		},
 		{
 			topic:            "other/a/wis2/foo/bar",
