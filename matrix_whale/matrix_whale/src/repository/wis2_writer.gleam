@@ -6,7 +6,9 @@ import domain/wis2.{
   type AreaPrecision, type BrokerState, type ChannelHealth, type ForecastTrack,
   type Wis2TcFeature, BrokerState, ChannelHealth, ForecastTrack,
 }
+import domain/wis2_observation.{type StationNeighbour, StationNeighbour}
 import gleam/dynamic/decode
+import gleam/int
 import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -89,7 +91,17 @@ pub fn cleanup(cutoff: Timestamp, conn: pog.Connection) -> Result(Nil, String) {
     |> result.map(fn(_) { Nil })
     |> result.map_error(err),
   )
-  pog.query("DELETE FROM sea.wis2_tc_track WHERE received_at < $1")
+  use _ <- result.try(
+    pog.query("DELETE FROM sea.wis2_tc_track WHERE received_at < $1")
+    |> pog.parameter(pog.timestamp(cutoff))
+    |> pog.returning(decode.success(Nil))
+    |> pog.execute(conn)
+    |> result.map(fn(_) { Nil })
+    |> result.map_error(err),
+  )
+  pog.query(
+    "DELETE FROM sea.hazard WHERE hazard_type = 'observed_extreme' AND NOT is_current AND modified_at < $1",
+  )
   |> pog.parameter(pog.timestamp(cutoff))
   |> pog.returning(decode.success(Nil))
   |> pog.execute(conn)
@@ -866,4 +878,449 @@ fn timestamp_to_ms(ts: Timestamp) -> Int {
 
 fn err(x: pog.QueryError) -> String {
   "Database error: " <> string.inspect(x)
+}
+
+pub fn upsert_observation_source(
+  centre_id: String,
+  conn: pog.Connection,
+) -> Result(Nil, String) {
+  let s = wis2.make_source(centre_id, None)
+  pog.query(
+    "INSERT INTO sea.source (id, name, homepage, license, attribution_text, redistributable, priority)
+     VALUES ($1, $2, $3, $4, $5, $6, 70)
+     ON CONFLICT (id) DO NOTHING",
+  )
+  |> pog.parameter(pog.text(s.id))
+  |> pog.parameter(pog.text(s.name))
+  |> pog.parameter(pog.nullable(pog.text, s.homepage))
+  |> pog.parameter(pog.text(s.license))
+  |> pog.parameter(pog.text(s.attribution_text))
+  |> pog.parameter(pog.bool(s.redistributable))
+  |> pog.returning(decode.success(Nil))
+  |> pog.execute(conn)
+  |> result.map(fn(_) { Nil })
+  |> result.map_error(err)
+}
+
+pub type StationUpsert {
+  StationUpsert(
+    station_id: String,
+    name: Option(String),
+    lat: Float,
+    lon: Float,
+    elevation_m: Option(Float),
+    observed_at: Timestamp,
+    wind_speed_ms: Option(Float),
+    gust_ms: Option(Float),
+    precip_1h_mm: Option(Float),
+    precip_24h_mm: Option(Float),
+    mslp_hpa: Option(Float),
+  )
+}
+
+const batch_upsert_stations_sql = "
+  INSERT INTO sea.wis2_station (
+    station_id, name, lat, lon, elevation_m, geom, last_observed_at,
+    wind_speed_ms, wind_observed_at,
+    gust_ms, gust_observed_at,
+    precip_1h_mm, precip_1h_observed_at,
+    precip_24h_mm, precip_24h_observed_at,
+    mslp_hpa, mslp_observed_at,
+    updated_at
+  )
+  SELECT
+    s.station_id,
+    s.name,
+    s.lat,
+    s.lon,
+    s.elevation_m,
+    ST_SetSRID(ST_MakePoint(s.lon, s.lat), 4326),
+    s.observed_at,
+    s.wind_speed_ms,
+    CASE WHEN s.wind_speed_ms IS NOT NULL THEN s.observed_at ELSE NULL END,
+    s.gust_ms,
+    CASE WHEN s.gust_ms IS NOT NULL THEN s.observed_at ELSE NULL END,
+    s.precip_1h_mm,
+    CASE WHEN s.precip_1h_mm IS NOT NULL THEN s.observed_at ELSE NULL END,
+    s.precip_24h_mm,
+    CASE WHEN s.precip_24h_mm IS NOT NULL THEN s.observed_at ELSE NULL END,
+    s.mslp_hpa,
+    CASE WHEN s.mslp_hpa IS NOT NULL THEN s.observed_at ELSE NULL END,
+    now()
+  FROM (
+    SELECT DISTINCT ON (u.station_id)
+      u.station_id, u.name, u.lat, u.lon, u.elevation_m, u.observed_at,
+      u.wind_speed_ms, u.gust_ms, u.precip_1h_mm, u.precip_24h_mm, u.mslp_hpa
+    FROM unnest(
+      $1::text[], $2::text[], $3::double precision[], $4::double precision[], $5::double precision[],
+      $6::timestamptz[],
+      $7::double precision[], $8::double precision[], $9::double precision[], $10::double precision[], $11::double precision[]
+    ) AS u(
+      station_id, name, lat, lon, elevation_m, observed_at,
+      wind_speed_ms, gust_ms, precip_1h_mm, precip_24h_mm, mslp_hpa
+    )
+    ORDER BY u.station_id, u.observed_at DESC
+  ) AS s
+  ON CONFLICT (station_id) DO UPDATE SET
+    name = COALESCE(EXCLUDED.name, sea.wis2_station.name),
+    lat = EXCLUDED.lat,
+    lon = EXCLUDED.lon,
+    elevation_m = COALESCE(EXCLUDED.elevation_m, sea.wis2_station.elevation_m),
+    geom = EXCLUDED.geom,
+    last_observed_at = GREATEST(sea.wis2_station.last_observed_at, EXCLUDED.last_observed_at),
+    wind_speed_ms = CASE WHEN EXCLUDED.wind_speed_ms IS NOT NULL AND EXCLUDED.last_observed_at >= COALESCE(sea.wis2_station.wind_observed_at, '-infinity'::timestamptz) THEN EXCLUDED.wind_speed_ms ELSE sea.wis2_station.wind_speed_ms END,
+    wind_observed_at = CASE WHEN EXCLUDED.wind_speed_ms IS NOT NULL AND EXCLUDED.last_observed_at >= COALESCE(sea.wis2_station.wind_observed_at, '-infinity'::timestamptz) THEN EXCLUDED.last_observed_at ELSE sea.wis2_station.wind_observed_at END,
+    gust_ms = CASE WHEN EXCLUDED.gust_ms IS NOT NULL AND EXCLUDED.last_observed_at >= COALESCE(sea.wis2_station.gust_observed_at, '-infinity'::timestamptz) THEN EXCLUDED.gust_ms ELSE sea.wis2_station.gust_ms END,
+    gust_observed_at = CASE WHEN EXCLUDED.gust_ms IS NOT NULL AND EXCLUDED.last_observed_at >= COALESCE(sea.wis2_station.gust_observed_at, '-infinity'::timestamptz) THEN EXCLUDED.last_observed_at ELSE sea.wis2_station.gust_observed_at END,
+    precip_1h_mm = CASE WHEN EXCLUDED.precip_1h_mm IS NOT NULL AND EXCLUDED.last_observed_at >= COALESCE(sea.wis2_station.precip_1h_observed_at, '-infinity'::timestamptz) THEN EXCLUDED.precip_1h_mm ELSE sea.wis2_station.precip_1h_mm END,
+    precip_1h_observed_at = CASE WHEN EXCLUDED.precip_1h_mm IS NOT NULL AND EXCLUDED.last_observed_at >= COALESCE(sea.wis2_station.precip_1h_observed_at, '-infinity'::timestamptz) THEN EXCLUDED.last_observed_at ELSE sea.wis2_station.precip_1h_observed_at END,
+    precip_24h_mm = CASE WHEN EXCLUDED.precip_24h_mm IS NOT NULL AND EXCLUDED.last_observed_at >= COALESCE(sea.wis2_station.precip_24h_observed_at, '-infinity'::timestamptz) THEN EXCLUDED.precip_24h_mm ELSE sea.wis2_station.precip_24h_mm END,
+    precip_24h_observed_at = CASE WHEN EXCLUDED.precip_24h_mm IS NOT NULL AND EXCLUDED.last_observed_at >= COALESCE(sea.wis2_station.precip_24h_observed_at, '-infinity'::timestamptz) THEN EXCLUDED.last_observed_at ELSE sea.wis2_station.precip_24h_observed_at END,
+    mslp_hpa = CASE WHEN EXCLUDED.mslp_hpa IS NOT NULL AND EXCLUDED.last_observed_at >= COALESCE(sea.wis2_station.mslp_observed_at, '-infinity'::timestamptz) THEN EXCLUDED.mslp_hpa ELSE sea.wis2_station.mslp_hpa END,
+    mslp_observed_at = CASE WHEN EXCLUDED.mslp_hpa IS NOT NULL AND EXCLUDED.last_observed_at >= COALESCE(sea.wis2_station.mslp_observed_at, '-infinity'::timestamptz) THEN EXCLUDED.last_observed_at ELSE sea.wis2_station.mslp_observed_at END,
+    updated_at = now()"
+
+pub fn upsert_stations_batch(
+  stations: List(StationUpsert),
+  conn: pog.Connection,
+) -> Result(Nil, String) {
+  case stations {
+    [] -> Ok(Nil)
+    _ -> {
+      let station_ids = list.map(stations, fn(s) { s.station_id })
+      let names = list.map(stations, fn(s) { s.name })
+      let lats = list.map(stations, fn(s) { s.lat })
+      let lons = list.map(stations, fn(s) { s.lon })
+      let elevations = list.map(stations, fn(s) { s.elevation_m })
+      let observed_ats = list.map(stations, fn(s) { s.observed_at })
+      let winds = list.map(stations, fn(s) { s.wind_speed_ms })
+      let gusts = list.map(stations, fn(s) { s.gust_ms })
+      let precip_1hs = list.map(stations, fn(s) { s.precip_1h_mm })
+      let precip_24hs = list.map(stations, fn(s) { s.precip_24h_mm })
+      let mslps = list.map(stations, fn(s) { s.mslp_hpa })
+
+      pog.query(batch_upsert_stations_sql)
+      |> pog.parameter(pog.array(pog.text, station_ids))
+      |> pog.parameter(pog.array(fn(x) { pog.nullable(pog.text, x) }, names))
+      |> pog.parameter(pog.array(pog.float, lats))
+      |> pog.parameter(pog.array(pog.float, lons))
+      |> pog.parameter(pog.array(
+        fn(x) { pog.nullable(pog.float, x) },
+        elevations,
+      ))
+      |> pog.parameter(pog.array(pog.timestamp, observed_ats))
+      |> pog.parameter(pog.array(fn(x) { pog.nullable(pog.float, x) }, winds))
+      |> pog.parameter(pog.array(fn(x) { pog.nullable(pog.float, x) }, gusts))
+      |> pog.parameter(pog.array(
+        fn(x) { pog.nullable(pog.float, x) },
+        precip_1hs,
+      ))
+      |> pog.parameter(pog.array(
+        fn(x) { pog.nullable(pog.float, x) },
+        precip_24hs,
+      ))
+      |> pog.parameter(pog.array(fn(x) { pog.nullable(pog.float, x) }, mslps))
+      |> pog.returning(decode.success(Nil))
+      |> pog.execute(conn)
+      |> result.map(fn(_) { Nil })
+      |> result.map_error(err)
+    }
+  }
+}
+
+pub fn fetch_neighbour_candidates(
+  station_id: String,
+  lon: Float,
+  lat: Float,
+  conn: pog.Connection,
+) -> Result(List(StationNeighbour), String) {
+  let decoder = {
+    use st_id <- decode.field(0, decode.string)
+    use n_lat <- decode.field(1, decode.float)
+    use n_lon <- decode.field(2, decode.float)
+    use wind_speed <- decode.field(3, decode.optional(decode.float))
+    use wind_ts <- decode.field(4, decode.optional(decode.int))
+    use gust <- decode.field(5, decode.optional(decode.float))
+    use gust_ts <- decode.field(6, decode.optional(decode.int))
+    use rain1h <- decode.field(7, decode.optional(decode.float))
+    use rain1h_ts <- decode.field(8, decode.optional(decode.int))
+    use rain24h <- decode.field(9, decode.optional(decode.float))
+    use rain24h_ts <- decode.field(10, decode.optional(decode.int))
+    use mslp <- decode.field(11, decode.optional(decode.float))
+    use mslp_ts <- decode.field(12, decode.optional(decode.int))
+    decode.success(StationNeighbour(
+      station_id: st_id,
+      lat: n_lat,
+      lon: n_lon,
+      wind_speed_ms: wind_speed,
+      wind_observed_at_ms: wind_ts,
+      gust_ms: gust,
+      gust_observed_at_ms: gust_ts,
+      precip_1h_mm: rain1h,
+      precip_1h_observed_at_ms: rain1h_ts,
+      precip_24h_mm: rain24h,
+      precip_24h_observed_at_ms: rain24h_ts,
+      mslp_hpa: mslp,
+      mslp_observed_at_ms: mslp_ts,
+    ))
+  }
+  pog.query(
+    "SELECT
+       station_id,
+       lat,
+       lon,
+       wind_speed_ms,
+       (extract(epoch from wind_observed_at) * 1000)::bigint,
+       gust_ms,
+       (extract(epoch from gust_observed_at) * 1000)::bigint,
+       precip_1h_mm,
+       (extract(epoch from precip_1h_observed_at) * 1000)::bigint,
+       precip_24h_mm,
+       (extract(epoch from precip_24h_observed_at) * 1000)::bigint,
+       mslp_hpa,
+       (extract(epoch from mslp_observed_at) * 1000)::bigint
+     FROM sea.wis2_station
+     WHERE station_id <> $1
+       AND ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, 150000)",
+  )
+  |> pog.parameter(pog.text(station_id))
+  |> pog.parameter(pog.float(lon))
+  |> pog.parameter(pog.float(lat))
+  |> pog.returning(decoder)
+  |> pog.execute(conn)
+  |> result.map(fn(x) { x.rows })
+  |> result.map_error(err)
+}
+
+pub fn find_active_episode(
+  station_id: String,
+  subtype: String,
+  conn: pog.Connection,
+) -> Result(Option(Hazard), String) {
+  let prefix = station_id <> "/" <> subtype <> "/%"
+  pog.query("SELECT " <> hazard.columns <> " FROM sea.hazard
+       WHERE hazard_type = 'observed_extreme'
+         AND subtype = $1
+         AND is_current
+         AND source_id LIKE $2
+       ORDER BY modified_at_ms DESC
+       LIMIT 1")
+  |> pog.parameter(pog.text(subtype))
+  |> pog.parameter(pog.text(prefix))
+  |> pog.returning(hazard.row_decoder())
+  |> pog.execute(conn)
+  |> result.map(fn(x) { list.first(x.rows) |> option.from_result })
+  |> result.map_error(err)
+}
+
+pub fn create_observed_extreme_episode(
+  source: String,
+  source_id: String,
+  subtype: String,
+  confirmed: Bool,
+  value: Float,
+  unit: String,
+  label: String,
+  title: String,
+  station_id: String,
+  station_name: Option(String),
+  obs_time_ms: Int,
+  now_ms: Int,
+  lon: Float,
+  lat: Float,
+  conn: pog.Connection,
+) -> Result(Hazard, String) {
+  let expires_at_ms = obs_time_ms + 3 * 3600 * 1000
+  let primary_geom = wis2_observation.point_geojson(lon, lat)
+  let subtype_enum =
+    wis2_observation.subtype_from_string(subtype)
+    |> result.unwrap(wis2_observation.SubtypeWind)
+  let geometries =
+    wis2_observation.episode_feature_collection_geojson(
+      station_id,
+      station_name,
+      subtype_enum,
+      value,
+      unit,
+      lon,
+      lat,
+    )
+  let alert_level = "orange"
+  let cap_severity = "severe"
+  let description =
+    Some(
+      "Observed extreme "
+      <> subtype
+      <> " at "
+      <> wis2_observation.format_station_label(station_id, station_name),
+    )
+
+  pog.query("INSERT INTO sea.hazard (
+       source, source_id, source_episode_id, episode_count,
+       hazard_type, hazard_codes, glide,
+       alert_level, alert_score, cap_severity,
+       severity_value, severity_unit, severity_label, estimate_type,
+       title, description, countries, report_url, external_ids,
+       onset_at, onset_at_ms, expires_at, expires_at_ms,
+       modified_at, modified_at_ms, is_current,
+       centroid, bbox, primary_geometry, geometries,
+       first_seen_at, last_seen_at,
+       subtype, confirmed
+     ) VALUES (
+       $1, $2, $3, 1,
+       'observed_extreme', $4, NULL,
+       $5, NULL, $6,
+       $7, $8, $9, 'primary',
+       $10, $11, '{}', NULL, $12,
+       to_timestamp($13::double precision / 1000), $13,
+       to_timestamp($14::double precision / 1000), $14,
+       to_timestamp($15::double precision / 1000), $15,
+       true,
+       ST_SetSRID(ST_MakePoint($16, $17), 4326),
+       NULL,
+       ST_SetSRID(ST_GeomFromGeoJSON($18::text), 4326),
+       $19::jsonb,
+       to_timestamp($20::double precision / 1000),
+       to_timestamp($20::double precision / 1000),
+       $21, $22
+     )
+     ON CONFLICT (source, source_id) DO UPDATE
+     SET episode_count = sea.hazard.episode_count + 1,
+         severity_value = CASE WHEN EXCLUDED.subtype = 'low_pressure' THEN LEAST(sea.hazard.severity_value, EXCLUDED.severity_value) ELSE GREATEST(sea.hazard.severity_value, EXCLUDED.severity_value) END,
+         title = EXCLUDED.title,
+         modified_at = to_timestamp(GREATEST(sea.hazard.modified_at_ms, EXCLUDED.modified_at_ms)::double precision / 1000),
+         modified_at_ms = GREATEST(sea.hazard.modified_at_ms, EXCLUDED.modified_at_ms),
+         expires_at = to_timestamp((GREATEST(sea.hazard.modified_at_ms, EXCLUDED.modified_at_ms) + 10800000)::double precision / 1000),
+         expires_at_ms = GREATEST(sea.hazard.modified_at_ms, EXCLUDED.modified_at_ms) + 10800000,
+         confirmed = COALESCE(sea.hazard.confirmed, false) OR COALESCE(EXCLUDED.confirmed, false),
+         is_current = true,
+         last_seen_at = EXCLUDED.last_seen_at
+     RETURNING " <> hazard.columns)
+  |> pog.parameter(pog.text(source))
+  |> pog.parameter(pog.text(source_id))
+  |> pog.parameter(pog.nullable(pog.text, Some(int.to_string(obs_time_ms))))
+  |> pog.parameter(
+    pog.array(pog.text, [
+      "wis2:synop",
+      "wis2:extreme:" <> subtype,
+    ]),
+  )
+  |> pog.parameter(pog.text(alert_level))
+  |> pog.parameter(pog.text(cap_severity))
+  |> pog.parameter(pog.nullable(pog.float, Some(value)))
+  |> pog.parameter(pog.nullable(pog.text, Some(unit)))
+  |> pog.parameter(pog.nullable(pog.text, Some(label)))
+  |> pog.parameter(pog.text(title))
+  |> pog.parameter(pog.nullable(pog.text, description))
+  |> pog.parameter(pog.array(pog.text, ["station:" <> station_id]))
+  |> pog.parameter(pog.int(obs_time_ms))
+  |> pog.parameter(pog.nullable(pog.int, Some(expires_at_ms)))
+  |> pog.parameter(pog.int(obs_time_ms))
+  |> pog.parameter(pog.float(lon))
+  |> pog.parameter(pog.float(lat))
+  |> pog.parameter(pog.nullable(pog.text, Some(primary_geom)))
+  |> pog.parameter(pog.nullable(pog.text, Some(geometries)))
+  |> pog.parameter(pog.int(now_ms))
+  |> pog.parameter(pog.nullable(pog.text, Some(subtype)))
+  |> pog.parameter(pog.nullable(pog.bool, Some(confirmed)))
+  |> pog.returning(hazard.row_decoder())
+  |> pog.execute(conn)
+  |> result.map_error(err)
+  |> result.try(fn(x) {
+    case x.rows {
+      [row] -> Ok(row)
+      _ -> Error("hazard insert returned no row for " <> source_id)
+    }
+  })
+}
+
+pub fn extend_observed_extreme_episode(
+  source: String,
+  source_id: String,
+  episode_count: Int,
+  value: Float,
+  title: String,
+  obs_time_ms: Int,
+  now_ms: Int,
+  confirmed: Bool,
+  conn: pog.Connection,
+) -> Result(Hazard, String) {
+  pog.query("UPDATE sea.hazard
+     SET episode_count = $3,
+         severity_value = $4,
+         title = $5,
+         modified_at = to_timestamp(GREATEST(modified_at_ms, $6)::double precision / 1000),
+         modified_at_ms = GREATEST(modified_at_ms, $6),
+         expires_at = to_timestamp((GREATEST(modified_at_ms, $6) + 10800000)::double precision / 1000),
+         expires_at_ms = GREATEST(modified_at_ms, $6) + 10800000,
+         confirmed = COALESCE(confirmed, false) OR $7,
+         is_current = true,
+         last_seen_at = to_timestamp($8::double precision / 1000)
+     WHERE source = $1 AND source_id = $2
+     RETURNING " <> hazard.columns)
+  |> pog.parameter(pog.text(source))
+  |> pog.parameter(pog.text(source_id))
+  |> pog.parameter(pog.int(episode_count))
+  |> pog.parameter(pog.nullable(pog.float, Some(value)))
+  |> pog.parameter(pog.text(title))
+  |> pog.parameter(pog.int(obs_time_ms))
+  |> pog.parameter(pog.nullable(pog.bool, Some(confirmed)))
+  |> pog.parameter(pog.int(now_ms))
+  |> pog.returning(hazard.row_decoder())
+  |> pog.execute(conn)
+  |> result.map_error(err)
+  |> result.try(fn(x) {
+    case x.rows {
+      [row] -> Ok(row)
+      _ -> Error("hazard update returned no row for " <> source_id)
+    }
+  })
+}
+
+pub fn end_episode(
+  source: String,
+  source_id: String,
+  now_ms: Int,
+  conn: pog.Connection,
+) -> Result(Hazard, String) {
+  pog.query("UPDATE sea.hazard
+     SET is_current = false,
+         modified_at = to_timestamp($3::double precision / 1000),
+         modified_at_ms = $3,
+         last_seen_at = to_timestamp($3::double precision / 1000)
+     WHERE source = $1 AND source_id = $2
+     RETURNING " <> hazard.columns)
+  |> pog.parameter(pog.text(source))
+  |> pog.parameter(pog.text(source_id))
+  |> pog.parameter(pog.int(now_ms))
+  |> pog.returning(hazard.row_decoder())
+  |> pog.execute(conn)
+  |> result.map_error(err)
+  |> result.try(fn(x) {
+    case x.rows {
+      [row] -> Ok(row)
+      _ -> Error("end_episode returned no row for " <> source_id)
+    }
+  })
+}
+
+pub fn sweep_expired_episodes(
+  now: Timestamp,
+  conn: pog.Connection,
+) -> Result(List(Hazard), String) {
+  let now_ms = timestamp_to_ms(now)
+  pog.query("UPDATE sea.hazard
+     SET is_current = false,
+         modified_at = to_timestamp($1::double precision / 1000),
+         modified_at_ms = $1,
+         last_seen_at = to_timestamp($1::double precision / 1000)
+     WHERE hazard_type = 'observed_extreme'
+       AND is_current
+       AND expires_at_ms <= $1
+     RETURNING " <> hazard.columns)
+  |> pog.parameter(pog.int(now_ms))
+  |> pog.returning(hazard.row_decoder())
+  |> pog.execute(conn)
+  |> result.map(fn(x) { x.rows })
+  |> result.map_error(err)
 }

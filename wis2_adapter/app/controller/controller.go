@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"matrixwhale/adapters/common/cap"
@@ -26,6 +27,7 @@ import (
 	"wis2_adapter/config"
 	"wis2_adapter/dedup"
 	wis2metrics "wis2_adapter/metrics"
+	"wis2_adapter/synop"
 	"wis2_adapter/tc"
 	"wis2_adapter/wnm"
 )
@@ -35,7 +37,17 @@ const (
 	CapBatchFlushInterval = 2 * time.Second
 	TCBatchLimit          = 50
 	TCBatchFlushInterval  = 2 * time.Second
+	ObsBatchLimit         = 500
+	ObsBatchFlushInterval = 5 * time.Second
+	DefaultObsQueueCap    = 5000
+	DefaultInboundCap     = 1000
+	DefaultWorkerPoolSize = 16
 )
+
+type inboundJob struct {
+	topic   string
+	payload []byte
+}
 
 type TCFeature struct {
 	NotificationID    string             `json:"notification_id"`
@@ -103,6 +115,11 @@ type Controller struct {
 	now         func() time.Time
 	sleepAfter  func(d time.Duration) <-chan time.Time
 
+	workerPoolSize int
+	inboundCap     int
+	inboundQueue   chan inboundJob
+	droppedInbound atomic.Int64
+
 	healthMu sync.Mutex
 	health   map[HealthKey]*HealthStats
 
@@ -111,6 +128,11 @@ type Controller struct {
 
 	tcBatchMu sync.Mutex
 	tcBatch   []json.RawMessage
+
+	obsBatchMu          sync.Mutex
+	obsBatch            []json.RawMessage
+	obsQueueCap         int
+	droppedObservations atomic.Int64
 }
 
 func Run(ctx context.Context) {
@@ -147,19 +169,53 @@ func NewController(
 		concurrency = 8
 	}
 
-	return &Controller{
-		cfg:         cfg,
-		coreClient:  coreClient,
-		broker:      b,
-		httpClient:  httpClient,
-		dedupCache:  dedup.New(),
-		downloadSem: make(chan struct{}, concurrency),
-		now:         now,
-		sleepAfter:  func(d time.Duration) <-chan time.Time { return time.After(d) },
-		health:      make(map[HealthKey]*HealthStats),
-		capBatch:    make([]json.RawMessage, 0, CapBatchLimit),
-		tcBatch:     make([]json.RawMessage, 0, TCBatchLimit),
+	workerPoolSize := DefaultWorkerPoolSize
+	if concurrency > 8 {
+		workerPoolSize = concurrency * 2
 	}
+	inboundCap := DefaultInboundCap
+
+	return &Controller{
+		cfg:            cfg,
+		coreClient:     coreClient,
+		broker:         b,
+		httpClient:     httpClient,
+		dedupCache:     dedup.New(),
+		downloadSem:    make(chan struct{}, concurrency),
+		now:            now,
+		sleepAfter:     func(d time.Duration) <-chan time.Time { return time.After(d) },
+		workerPoolSize: workerPoolSize,
+		inboundCap:     inboundCap,
+		inboundQueue:   make(chan inboundJob, inboundCap),
+		health:         make(map[HealthKey]*HealthStats),
+		capBatch:       make([]json.RawMessage, 0, CapBatchLimit),
+		tcBatch:        make([]json.RawMessage, 0, TCBatchLimit),
+		obsBatch:       make([]json.RawMessage, 0, ObsBatchLimit),
+		obsQueueCap:    DefaultObsQueueCap,
+	}
+}
+
+func (c *Controller) SetInboundCap(cap int) {
+	c.inboundCap = cap
+	c.inboundQueue = make(chan inboundJob, cap)
+}
+
+func (c *Controller) SetObsQueueCap(cap int) {
+	c.obsBatchMu.Lock()
+	defer c.obsBatchMu.Unlock()
+	c.obsQueueCap = cap
+}
+
+func (c *Controller) DroppedInbound() int64 {
+	return c.droppedInbound.Load()
+}
+
+func (c *Controller) DroppedObservations() int64 {
+	return c.droppedObservations.Load()
+}
+
+func (c *Controller) TotalDropped() int64 {
+	return c.droppedInbound.Load() + c.droppedObservations.Load()
 }
 
 func (c *Controller) SetSleepAfter(fn func(d time.Duration) <-chan time.Time) {
@@ -175,33 +231,60 @@ func (c *Controller) Execute(ctx context.Context) {
 
 	var wg sync.WaitGroup
 
-	// Background worker 1: Broker subscription runner
+	// Background worker 1: Broker subscription runner (never blocks on HTTP)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		err := c.broker.Run(ctx, func(topic string, payload []byte) {
-			c.handleMessage(ctx, topic, payload)
+			select {
+			case c.inboundQueue <- inboundJob{topic: topic, payload: payload}:
+			default:
+				c.droppedInbound.Add(1)
+				wis2metrics.RecordDrop("inbound")
+				slog.Warn("Inbound queue full, dropped notification", "topic", topic)
+			}
 		})
 		if err != nil && ctx.Err() == nil {
 			slog.Error("Broker run loop ended with error", "error", err)
 		}
 	}()
 
-	// Background worker 2: CAP and TC batch flush ticker (every 2s)
+	// Worker pool processing inbound notifications
+	for i := 0; i < c.workerPoolSize; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case job := <-c.inboundQueue:
+					c.handleMessage(ctx, job.topic, job.payload)
+				}
+			}
+		}()
+	}
+
+	// Background worker 2: CAP, TC and Obs batch flush tickers
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		ticker := time.NewTicker(CapBatchFlushInterval)
-		defer ticker.Stop()
+		capTcTicker := time.NewTicker(CapBatchFlushInterval)
+		defer capTcTicker.Stop()
+		obsTicker := time.NewTicker(ObsBatchFlushInterval)
+		defer obsTicker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				c.flushCapBatch(context.Background())
 				c.flushTCBatch(context.Background())
+				c.flushObsBatch(context.Background())
 				return
-			case <-ticker.C:
+			case <-capTcTicker.C:
 				c.flushCapBatch(ctx)
 				c.flushTCBatch(ctx)
+			case <-obsTicker.C:
+				c.flushObsBatch(ctx)
 			}
 		}
 	}()
@@ -333,6 +416,8 @@ func (c *Controller) handleMessage(ctx context.Context, topic string, payload []
 		c.handleWarnings(ctx, wnmMsg, topic, centreID, channel, pubTime, fetchedVia, downloadURL, data, stats)
 	} else if kind == "trajectory" {
 		c.handleTrajectory(ctx, wnmMsg, topic, centreID, channel, pubTime, fetchedVia, downloadURL, data, stats)
+	} else if kind == "synop" {
+		c.handleSynop(ctx, wnmMsg, topic, centreID, channel, pubTime, fetchedVia, downloadURL, data, stats)
 	}
 }
 
@@ -526,6 +611,66 @@ func (c *Controller) handleTrajectory(
 	}
 }
 
+func (c *Controller) handleSynop(
+	ctx context.Context,
+	wnmMsg *wnm.WNMMessage,
+	topic string,
+	centreID string,
+	channel string,
+	pubTime string,
+	fetchedVia string,
+	downloadURL *string,
+	data []byte,
+	stats *HealthStats,
+) {
+	if !isBUFR(data) {
+		slog.Warn("Payload is not BUFR; rejected as download_failed",
+			"centre_id", centreID,
+			"data_id", wnmMsg.Properties.DataID,
+			"len", len(data),
+		)
+		stats.recordDownloadFailed()
+		wis2metrics.RecordDownload("payload", "failed")
+		return
+	}
+
+	msgs, errs := bufr.Decode(data)
+	if len(msgs) == 0 {
+		slog.Warn("No BUFR messages found in payload",
+			"centre_id", centreID,
+			"data_id", wnmMsg.Properties.DataID,
+		)
+		stats.recordDecodeFailed()
+		return
+	}
+
+	hasAnySuccess := false
+	for _, err := range errs {
+		if err == nil {
+			hasAnySuccess = true
+			break
+		}
+	}
+	if !hasAnySuccess {
+		slog.Warn("All BUFR messages failed to decode",
+			"centre_id", centreID,
+			"data_id", wnmMsg.Properties.DataID,
+		)
+		stats.recordDecodeFailed()
+		return
+	}
+
+	for _, msg := range msgs {
+		features, rejectedCount := synop.ExtractObservations(msg, wnmMsg.Properties.DataID, centreID, pubTime)
+		for i := 0; i < rejectedCount; i++ {
+			stats.recordDecodeFailed()
+		}
+		for _, feat := range features {
+			c.enqueueObservationFeature(ctx, feat)
+		}
+	}
+}
+
 func (c *Controller) enqueueCAPFeature(ctx context.Context, feat CAPFeature) {
 	b, err := json.Marshal(feat)
 	if err != nil {
@@ -613,6 +758,77 @@ func (c *Controller) flushTCBatch(ctx context.Context) {
 
 	if valErr := core.ValidateAck(ack, len(batch)); valErr != nil {
 		slog.Error("ValidateAck failed on TC batch", "error", valErr)
+	}
+}
+
+func (c *Controller) enqueueObservationFeature(ctx context.Context, feat synop.ObservationFeature) {
+	b, err := json.Marshal(feat)
+	if err != nil {
+		slog.Error("Failed to marshal observation feature", "error", err)
+		return
+	}
+
+	c.obsBatchMu.Lock()
+	if len(c.obsBatch) >= c.obsQueueCap {
+		excess := len(c.obsBatch) - c.obsQueueCap + 1
+		c.obsBatch = c.obsBatch[excess:]
+		c.droppedObservations.Add(int64(excess))
+		wis2metrics.RecordDrop("observations")
+		slog.Warn("Observation queue cap reached, dropped oldest features", "dropped", excess, "total_dropped", c.droppedObservations.Load())
+	}
+	c.obsBatch = append(c.obsBatch, b)
+	flushNow := len(c.obsBatch) >= ObsBatchLimit
+	c.obsBatchMu.Unlock()
+
+	if flushNow {
+		c.flushObsBatch(ctx)
+	}
+}
+
+func (c *Controller) FlushObservations(ctx context.Context) {
+	c.flushObsBatch(ctx)
+}
+
+func (c *Controller) flushObsBatch(ctx context.Context) {
+	c.obsBatchMu.Lock()
+	if len(c.obsBatch) == 0 {
+		c.obsBatchMu.Unlock()
+		return
+	}
+	limit := ObsBatchLimit
+	if len(c.obsBatch) < limit {
+		limit = len(c.obsBatch)
+	}
+	batch := c.obsBatch[:limit]
+	c.obsBatch = c.obsBatch[limit:]
+	c.obsBatchMu.Unlock()
+
+	meta := core.PollMeta{
+		FetchedAt:    c.now().UTC().Format(time.RFC3339),
+		HTTPStatus:   200,
+		FeatureCount: len(batch),
+		FeedURL:      c.broker.CurrentBroker(),
+	}
+
+	ack, err := c.coreClient.Send(ctx, "wis2_data/observations", meta, batch)
+	if err != nil {
+		slog.Error("Failed to send observations batch to core", "error", err, "count", len(batch))
+		// Keep memory bounded: requeue failed batch at the head, drop oldest if cap exceeded
+		c.obsBatchMu.Lock()
+		c.obsBatch = append(batch, c.obsBatch...)
+		if len(c.obsBatch) > c.obsQueueCap {
+			excess := len(c.obsBatch) - c.obsQueueCap
+			c.obsBatch = c.obsBatch[excess:]
+			c.droppedObservations.Add(int64(excess))
+			wis2metrics.RecordDrop("observations")
+			slog.Warn("Observation queue cap exceeded while core is down, dropped oldest features", "dropped", excess, "total_dropped", c.droppedObservations.Load())
+		}
+		c.obsBatchMu.Unlock()
+		return
+	}
+
+	if valErr := core.ValidateAck(ack, len(batch)); valErr != nil {
+		slog.Error("ValidateAck failed on observations batch", "error", valErr)
 	}
 }
 

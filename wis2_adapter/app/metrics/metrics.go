@@ -44,6 +44,14 @@ var (
 		},
 		[]string{"broker", "client_id"},
 	)
+
+	DropsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "matrixwhale_wis2_drops_total",
+			Help: "Total dropped items by reason/queue.",
+		},
+		[]string{"reason"},
+	)
 )
 
 func RecordMessage(kind string) {
@@ -69,4 +77,8 @@ func SetBrokerConnected(connected bool) {
 func SetBrokerInfo(broker, clientID string) {
 	BrokerInfo.Reset()
 	BrokerInfo.WithLabelValues(broker, clientID).Set(1)
+}
+
+func RecordDrop(reason string) {
+	DropsTotal.WithLabelValues(reason).Inc()
 }

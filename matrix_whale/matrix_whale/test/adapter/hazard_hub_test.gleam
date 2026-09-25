@@ -47,6 +47,8 @@ fn make_hazard(id: String, polygon_text: String) -> hazard.Hazard {
     geometries: None,
     first_seen_at: ts,
     last_seen_at: ts,
+    subtype: None,
+    confirmed: None,
   )
 }
 

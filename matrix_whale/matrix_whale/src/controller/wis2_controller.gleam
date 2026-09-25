@@ -4,11 +4,16 @@ import adapter/hazard_hub
 import adapter/response_cache
 import domain/alert.{type AlertRow}
 import domain/cap
+import domain/hazard.{type Hazard}
 import domain/wis2.{
   type BrokerState, type ChannelHealth, type Wis2CapFeature,
   type Wis2HealthFeature, type Wis2PollMeta, type Wis2TcFeature,
 }
 import domain/wis2_matcher
+import domain/wis2_observation.{
+  type Exceedance, type PlausibleObservation, type Wis2ObservationFeature,
+}
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -507,6 +512,271 @@ pub fn process_tc_tracks(
     dropped:,
     message: int.to_string(written) <> " TC tracks written",
   ))
+}
+
+pub fn process_observations(
+  _meta: Option(Wis2PollMeta),
+  features: List(Wis2ObservationFeature),
+  received: Int,
+  decode_dropped: Int,
+  ctx: Context,
+) -> Result(Wis2Ack, String) {
+  let now = timestamp.system_time()
+  let now_ms = timestamp_to_ms(now)
+  let thresholds = wis2_observation.thresholds_from_env()
+
+  // 1. Parse observed_at timestamp and apply plausibility filter
+  let #(parsed_features, parse_dropped) =
+    list.fold(features, #([], decode_dropped), fn(acc, feat) {
+      let #(feats, dropped) = acc
+      case cap.parse_rfc3339(feat.observed_at) {
+        Ok(ts) -> {
+          let obs_ms = timestamp_to_ms(ts)
+          case wis2_observation.filter_plausible(feat, obs_ms) {
+            Ok(plausible) -> #([#(plausible, ts), ..feats], dropped)
+            Error(_) -> #(feats, dropped + 1)
+          }
+        }
+        Error(_) -> #(feats, dropped + 1)
+      }
+    })
+  let parsed_features = list.reverse(parsed_features)
+
+  // 2. Batch upsert stations
+  let station_upserts =
+    list.map(parsed_features, fn(pair) {
+      let #(obs, ts) = pair
+      wis2_writer.StationUpsert(
+        station_id: obs.station_id,
+        name: obs.station_name,
+        lat: obs.lat,
+        lon: obs.lon,
+        elevation_m: obs.elevation_m,
+        observed_at: ts,
+        wind_speed_ms: obs.wind_speed_ms,
+        gust_ms: obs.gust_ms,
+        precip_1h_mm: obs.precip_1h_mm,
+        precip_24h_mm: obs.precip_24h_mm,
+        mslp_hpa: obs.mslp_hpa,
+      )
+    })
+  use _ <- result.try(wis2_writer.upsert_stations_batch(station_upserts, ctx.db))
+
+  // 3. Process exceedances chronologically
+  let sorted_features =
+    list.sort(parsed_features, fn(a, b) {
+      let #(obs_a, _) = a
+      let #(obs_b, _) = b
+      int.compare(obs_a.observed_at_ms, obs_b.observed_at_ms)
+    })
+
+  use #(new_map, updated_map) <- result.try(
+    list.try_fold(
+      sorted_features,
+      #(dict.new(), dict.new()),
+      fn(acc_maps, pair) {
+        let #(obs, _) = pair
+        let exceedances = wis2_observation.detect_exceedances(obs, thresholds)
+        case exceedances {
+          [] -> Ok(acc_maps)
+          _ -> {
+            use _ <- result.try(wis2_writer.upsert_observation_source(
+              obs.centre_id,
+              ctx.db,
+            ))
+            use candidates <- result.try(wis2_writer.fetch_neighbour_candidates(
+              obs.station_id,
+              obs.lon,
+              obs.lat,
+              ctx.db,
+            ))
+            list.try_fold(exceedances, acc_maps, fn(inner_maps, exc) {
+              let #(new_acc, upd_acc) = inner_maps
+              let is_confirmed =
+                wis2_observation.is_corroborated(
+                  obs.station_id,
+                  obs.lat,
+                  obs.lon,
+                  obs.observed_at_ms,
+                  exc.subtype,
+                  thresholds,
+                  candidates,
+                )
+              let subtype_str = wis2_observation.subtype_to_string(exc.subtype)
+              use active_opt <- result.try(wis2_writer.find_active_episode(
+                obs.station_id,
+                subtype_str,
+                ctx.db,
+              ))
+
+              case active_opt {
+                Some(active) -> {
+                  case wis2_observation.can_merge(active, obs.observed_at_ms) {
+                    True -> {
+                      let episode_count = active.episode_count + 1
+                      let current_val =
+                        option.unwrap(active.severity_value, exc.value)
+                      let merged_val =
+                        wis2_observation.merge_severity_value(
+                          exc.subtype,
+                          current_val,
+                          exc.value,
+                        )
+                      let title =
+                        wis2_observation.format_title(
+                          exc.subtype,
+                          merged_val,
+                          obs.station_id,
+                          obs.station_name,
+                        )
+                      let confirmed =
+                        option.unwrap(active.confirmed, False) || is_confirmed
+                      use updated_hazard <- result.try(
+                        wis2_writer.extend_observed_extreme_episode(
+                          active.source,
+                          active.source_id,
+                          episode_count,
+                          merged_val,
+                          title,
+                          obs.observed_at_ms,
+                          now_ms,
+                          confirmed,
+                          ctx.db,
+                        ),
+                      )
+                      let key = #(active.source, active.source_id)
+                      case dict.has_key(new_acc, key) {
+                        True ->
+                          Ok(#(
+                            dict.insert(new_acc, key, updated_hazard),
+                            upd_acc,
+                          ))
+                        False ->
+                          Ok(#(
+                            new_acc,
+                            dict.insert(upd_acc, key, updated_hazard),
+                          ))
+                      }
+                    }
+                    False -> {
+                      let #(new_acc2, upd_acc2) = case
+                        wis2_writer.end_episode(
+                          active.source,
+                          active.source_id,
+                          now_ms,
+                          ctx.db,
+                        )
+                      {
+                        Ok(ended) -> #(
+                          new_acc,
+                          dict.insert(
+                            upd_acc,
+                            #(active.source, active.source_id),
+                            ended,
+                          ),
+                        )
+                        Error(_) -> #(new_acc, upd_acc)
+                      }
+                      create_new_hazard_step(
+                        obs,
+                        exc,
+                        subtype_str,
+                        is_confirmed,
+                        now_ms,
+                        new_acc2,
+                        upd_acc2,
+                        ctx,
+                      )
+                    }
+                  }
+                }
+                None -> {
+                  create_new_hazard_step(
+                    obs,
+                    exc,
+                    subtype_str,
+                    is_confirmed,
+                    now_ms,
+                    new_acc,
+                    upd_acc,
+                    ctx,
+                  )
+                }
+              }
+            })
+          }
+        }
+      },
+    ),
+  )
+
+  let unique_new = dict.values(new_map)
+  let unique_updated = dict.values(updated_map)
+
+  case !list.is_empty(unique_new) || !list.is_empty(unique_updated) {
+    True -> {
+      hazard_hub.publish(ctx.hazard_hub, unique_new, unique_updated)
+      response_cache.invalidate(ctx.hazard_cache)
+    }
+    False -> Nil
+  }
+
+  let written = list.length(parsed_features)
+  Ok(Wis2Ack(
+    received:,
+    written:,
+    deduped: 0,
+    dropped: parse_dropped,
+    message: int.to_string(written) <> " observations written",
+  ))
+}
+
+fn create_new_hazard_step(
+  obs: PlausibleObservation,
+  exc: Exceedance,
+  subtype_str: String,
+  is_confirmed: Bool,
+  now_ms: Int,
+  new_acc: dict.Dict(#(String, String), Hazard),
+  upd_acc: dict.Dict(#(String, String), Hazard),
+  ctx: Context,
+) -> Result(
+  #(dict.Dict(#(String, String), Hazard), dict.Dict(#(String, String), Hazard)),
+  String,
+) {
+  let source = "wis2-" <> obs.centre_id
+  let source_id =
+    wis2_observation.episode_source_id(
+      obs.station_id,
+      exc.subtype,
+      obs.observed_at_ms / 1000,
+    )
+  let title =
+    wis2_observation.format_title(
+      exc.subtype,
+      exc.value,
+      obs.station_id,
+      obs.station_name,
+    )
+  use new_hazard <- result.try(wis2_writer.create_observed_extreme_episode(
+    source,
+    source_id,
+    subtype_str,
+    is_confirmed,
+    exc.value,
+    exc.unit,
+    exc.label,
+    title,
+    obs.station_id,
+    obs.station_name,
+    obs.observed_at_ms,
+    now_ms,
+    obs.lon,
+    obs.lat,
+    ctx.db,
+  ))
+  let key = #(source, source_id)
+  Ok(#(dict.insert(new_acc, key, new_hazard), upd_acc))
 }
 
 fn timestamp_to_ms(ts: timestamp.Timestamp) -> Int {

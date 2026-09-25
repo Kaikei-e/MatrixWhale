@@ -15,6 +15,7 @@ pub fn hazard_type_for_covers_all_gdacs_types_test() {
   hazard.hazard_type_for("WF") |> should.equal("wildfire")
   hazard.hazard_type_for("DR") |> should.equal("drought")
   hazard.hazard_type_for("TS") |> should.equal("tsunami")
+  hazard.hazard_type_for("observed_extreme") |> should.equal("observed_extreme")
 }
 
 pub fn hazard_codes_for_eq_has_all_three_test() {
@@ -298,6 +299,8 @@ fn sample_hazard() -> hazard.Hazard {
     geometries: Some("{\"type\":\"FeatureCollection\",\"features\":[]}"),
     first_seen_at: ts,
     last_seen_at: ts,
+    subtype: None,
+    confirmed: None,
   )
 }
 

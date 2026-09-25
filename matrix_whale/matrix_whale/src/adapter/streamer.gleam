@@ -582,7 +582,7 @@ pub fn wis2_health_response(
   }
 }
 
-fn hazards_response(
+pub fn hazards_response(
   req: Request(connection),
   ctx: Context,
 ) -> Response(mist.ResponseData) {

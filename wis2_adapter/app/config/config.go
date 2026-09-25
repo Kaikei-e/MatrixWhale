@@ -12,7 +12,7 @@ const (
 	DefaultBrokers             = "mqtts://globalbroker.meteo.fr:8883,mqtts://gb.wis.cma.cn:8883,mqtts://wis2globalbroker.nws.noaa.gov:8883,mqtts://globalbroker.inmet.gov.br:8883"
 	DefaultUsername            = "everyone"
 	DefaultPassword            = "everyone"
-	DefaultTopics              = "cache/a/wis2/+/data/core/weather/advisories-warnings/#,cache/a/wis2/+/data/core/weather/prediction/forecast/+/deterministic/trajectory/#"
+	DefaultTopics              = "cache/a/wis2/+/data/core/weather/advisories-warnings/#,cache/a/wis2/+/data/core/weather/prediction/forecast/+/deterministic/trajectory/#,cache/a/wis2/+/data/core/weather/surface-based-observations/synop/#"
 	DefaultMaxDownloadBytes    = 5 * 1024 * 1024
 	DefaultDownloadConcurrency = 8
 	DefaultHealthInterval      = 60 * time.Second

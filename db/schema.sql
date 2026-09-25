@@ -266,6 +266,8 @@ CREATE TABLE sea.hazard (
   geometries JSONB,
   first_seen_at TIMESTAMPTZ NOT NULL,
   last_seen_at TIMESTAMPTZ NOT NULL,
+  subtype TEXT,
+  confirmed BOOLEAN,
   PRIMARY KEY (source, source_id)
 );
 CREATE INDEX idx_hazard_modified_at_ms ON sea.hazard (modified_at_ms);
@@ -398,3 +400,25 @@ CREATE TABLE sea.wis2_tc_track (
 CREATE INDEX idx_wis2_tc_track_latest ON sea.wis2_tc_track (source, storm_id, analysis_time DESC);
 CREATE INDEX idx_wis2_tc_track_matched_hazard ON sea.wis2_tc_track (matched_hazard_source, matched_hazard_source_id);
 CREATE INDEX idx_wis2_tc_track_received_at ON sea.wis2_tc_track (received_at);
+
+CREATE TABLE sea.wis2_station (
+  station_id TEXT PRIMARY KEY,
+  name TEXT,
+  lat DOUBLE PRECISION NOT NULL,
+  lon DOUBLE PRECISION NOT NULL,
+  elevation_m DOUBLE PRECISION,
+  geom geometry(Point, 4326) NOT NULL,
+  last_observed_at TIMESTAMPTZ NOT NULL,
+  wind_speed_ms DOUBLE PRECISION,
+  wind_observed_at TIMESTAMPTZ,
+  gust_ms DOUBLE PRECISION,
+  gust_observed_at TIMESTAMPTZ,
+  precip_1h_mm DOUBLE PRECISION,
+  precip_1h_observed_at TIMESTAMPTZ,
+  precip_24h_mm DOUBLE PRECISION,
+  precip_24h_observed_at TIMESTAMPTZ,
+  mslp_hpa DOUBLE PRECISION,
+  mslp_observed_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_wis2_station_geom ON sea.wis2_station USING GIST (geom);

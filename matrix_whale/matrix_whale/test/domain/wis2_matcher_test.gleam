@@ -46,6 +46,8 @@ fn make_test_hazard(
     geometries: None,
     first_seen_at: ts,
     last_seen_at: ts,
+    subtype: None,
+    confirmed: None,
   )
 }
 

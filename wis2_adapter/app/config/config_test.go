@@ -14,8 +14,8 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.Username != "everyone" || cfg.Password != "everyone" {
 		t.Errorf("unexpected user/pass: %s / %s", cfg.Username, cfg.Password)
 	}
-	if len(cfg.Topics) != 2 || cfg.Topics[0] != "cache/a/wis2/+/data/core/weather/advisories-warnings/#" || cfg.Topics[1] != "cache/a/wis2/+/data/core/weather/prediction/forecast/+/deterministic/trajectory/#" {
-		t.Errorf("expected 2 default topics, got %v", cfg.Topics)
+	if len(cfg.Topics) != 3 || cfg.Topics[0] != "cache/a/wis2/+/data/core/weather/advisories-warnings/#" || cfg.Topics[1] != "cache/a/wis2/+/data/core/weather/prediction/forecast/+/deterministic/trajectory/#" || cfg.Topics[2] != "cache/a/wis2/+/data/core/weather/surface-based-observations/synop/#" {
+		t.Errorf("expected 3 default topics, got %v", cfg.Topics)
 	}
 	if cfg.MaxDownloadBytes != 5*1024*1024 {
 		t.Errorf("unexpected max download bytes: %d", cfg.MaxDownloadBytes)

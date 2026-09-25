@@ -157,6 +157,7 @@ pub fn hazard_type_for(event_type: String) -> String {
     "WF" -> "wildfire"
     "DR" -> "drought"
     "TS" -> "tsunami"
+    "observed_extreme" -> "observed_extreme"
     _ -> string.lowercase(event_type)
   }
 }
@@ -610,12 +611,14 @@ pub type Hazard {
     geometries: Option(String),
     first_seen_at: Timestamp,
     last_seen_at: Timestamp,
+    subtype: Option(String),
+    confirmed: Option(Bool),
   )
 }
 
-pub const columns = "source, source_id, source_episode_id, episode_count, hazard_type, hazard_codes, glide, alert_level, alert_score, cap_severity, severity_value, severity_unit, severity_label, estimate_type, title, description, countries, report_url, external_ids, onset_at, onset_at_ms, expires_at, expires_at_ms, modified_at, modified_at_ms, is_current, ST_X(centroid), ST_Y(centroid), ST_XMin(bbox), ST_YMin(bbox), ST_XMax(bbox), ST_YMax(bbox), ST_AsGeoJSON(ST_SimplifyPreserveTopology(primary_geometry, 0.01), 4), geometries::text, first_seen_at, last_seen_at"
+pub const columns = "source, source_id, source_episode_id, episode_count, hazard_type, hazard_codes, glide, alert_level, alert_score, cap_severity, severity_value, severity_unit, severity_label, estimate_type, title, description, countries, report_url, external_ids, onset_at, onset_at_ms, expires_at, expires_at_ms, modified_at, modified_at_ms, is_current, ST_X(centroid), ST_Y(centroid), ST_XMin(bbox), ST_YMin(bbox), ST_XMax(bbox), ST_YMax(bbox), ST_AsGeoJSON(ST_SimplifyPreserveTopology(primary_geometry, 0.01), 4), geometries::text, first_seen_at, last_seen_at, subtype, confirmed"
 
-pub const detail_columns = "source, source_id, source_episode_id, episode_count, hazard_type, hazard_codes, glide, alert_level, alert_score, cap_severity, severity_value, severity_unit, severity_label, estimate_type, title, description, countries, report_url, external_ids, onset_at, onset_at_ms, expires_at, expires_at_ms, modified_at, modified_at_ms, is_current, ST_X(centroid), ST_Y(centroid), ST_XMin(bbox), ST_YMin(bbox), ST_XMax(bbox), ST_YMax(bbox), ST_AsGeoJSON(primary_geometry, 6), geometries::text, first_seen_at, last_seen_at"
+pub const detail_columns = "source, source_id, source_episode_id, episode_count, hazard_type, hazard_codes, glide, alert_level, alert_score, cap_severity, severity_value, severity_unit, severity_label, estimate_type, title, description, countries, report_url, external_ids, onset_at, onset_at_ms, expires_at, expires_at_ms, modified_at, modified_at_ms, is_current, ST_X(centroid), ST_Y(centroid), ST_XMin(bbox), ST_YMin(bbox), ST_XMax(bbox), ST_YMax(bbox), ST_AsGeoJSON(primary_geometry, 6), geometries::text, first_seen_at, last_seen_at, subtype, confirmed"
 
 pub fn row_decoder() -> decode.Decoder(Hazard) {
   use source <- decode.field(0, decode.string)
@@ -657,6 +660,8 @@ pub fn row_decoder() -> decode.Decoder(Hazard) {
   use geometries <- decode.field(33, decode.optional(decode.string))
   use first_seen_at <- decode.field(34, earthquake.timestamptz_decoder())
   use last_seen_at <- decode.field(35, earthquake.timestamptz_decoder())
+  use subtype <- decode.field(36, decode.optional(decode.string))
+  use confirmed <- decode.field(37, decode.optional(decode.bool))
   decode.success(Hazard(
     source:,
     source_id:,
@@ -694,6 +699,8 @@ pub fn row_decoder() -> decode.Decoder(Hazard) {
     geometries:,
     first_seen_at:,
     last_seen_at:,
+    subtype:,
+    confirmed:,
   ))
 }
 
@@ -774,6 +781,8 @@ fn common_fields_with_geometry(
     #("external_ids", json.array(h.external_ids, json.string)),
     #("first_seen_at", time_json(h.first_seen_at)),
     #("last_seen_at", time_json(h.last_seen_at)),
+    #("subtype", json.nullable(h.subtype, json.string)),
+    #("confirmed", json.nullable(h.confirmed, json.bool)),
   ]
 }
 

@@ -1,6 +1,7 @@
 import adapter/context.{type Context}
 import controller/wis2_controller
 import domain/wis2
+import domain/wis2_observation
 import gleam/http
 import gleam/json
 import wisp.{type Request, type Response}
@@ -94,6 +95,43 @@ fn tc_tracks_post_handler(req: Request, ctx: Context) -> Response {
     Ok(#(meta, features, received, decode_dropped)) -> {
       case
         wis2_controller.process_tc_tracks(
+          meta,
+          features,
+          received,
+          decode_dropped,
+          ctx,
+        )
+      {
+        Ok(ack) ->
+          ack_response(
+            ack.received,
+            ack.deduped,
+            ack.written,
+            ack.dropped,
+            ack.message,
+          )
+        Error(error) -> error_response(503, error)
+      }
+    }
+  }
+}
+
+pub fn observations_handler(req: Request, ctx: Context) -> Response {
+  case req.method {
+    http.Post -> observations_post_handler(req, ctx)
+    _ -> wisp.response(405)
+  }
+}
+
+fn observations_post_handler(req: Request, ctx: Context) -> Response {
+  let req = wisp.set_max_body_size(req, 64 * 1024 * 1024)
+  use body <- wisp.require_json(req)
+  case wis2_observation.decode_observations_body(body) {
+    Error(error) ->
+      error_response(400, "invalid wis2 observations envelope: " <> error)
+    Ok(#(meta, features, received, decode_dropped)) -> {
+      case
+        wis2_controller.process_observations(
           meta,
           features,
           received,

@@ -50,10 +50,22 @@ pub fn main() {
   let assert Ok(alert_cache) = response_cache.start()
   let assert Ok(hazard_cache) = response_cache.start()
 
-  sweep_and_clean_alerts(db, hub.data, alert_cache.data)
+  sweep_and_clean_alerts(
+    db,
+    hub.data,
+    hazard_hub.data,
+    alert_cache.data,
+    hazard_cache.data,
+  )
   let _ =
     repeatedly.call(60_000, Nil, fn(_, _) {
-      sweep_and_clean_alerts(db, hub.data, alert_cache.data)
+      sweep_and_clean_alerts(
+        db,
+        hub.data,
+        hazard_hub.data,
+        alert_cache.data,
+        hazard_cache.data,
+      )
       Nil
     })
 
@@ -80,7 +92,9 @@ pub fn main() {
 fn sweep_and_clean_alerts(
   db: pog.Connection,
   hub: process.Subject(alert_hub.HubMsg),
+  hazard_hub: process.Subject(hazard_hub.HazardHubMsg),
   cache: process.Subject(response_cache.CacheMsg),
+  hazard_cache: process.Subject(response_cache.CacheMsg),
 ) -> Nil {
   let now = timestamp.system_time()
   case
@@ -96,6 +110,15 @@ fn sweep_and_clean_alerts(
       response_cache.invalidate(cache)
     }
     Error(error) -> wisp.log_error("Alert expiry sweep failed: " <> error)
+  }
+  case wis2_writer.sweep_expired_episodes(now, db) {
+    Ok([]) -> Nil
+    Ok(ended) -> {
+      hazard_hub.publish(hazard_hub, [], ended)
+      response_cache.invalidate(hazard_cache)
+    }
+    Error(error) ->
+      wisp.log_error("WIS2 observation episode expiry sweep failed: " <> error)
   }
   let cutoff = timestamp.subtract(now, duration.hours(24 * 7))
   case

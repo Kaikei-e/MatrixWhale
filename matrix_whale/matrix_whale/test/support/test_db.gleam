@@ -55,7 +55,7 @@ pub fn with_test_db(run: fn(pog.Connection) -> Nil) -> Nil {
 fn setup_test_schema(conn: pog.Connection) -> Nil {
   exec(
     conn,
-    "TRUNCATE sea.wis2_tc_track, sea.wis2_broker, sea.wis2_health_bucket, sea.wis2_cap_area, sea.wis2_notification, sea.jma_series, sea.jma_message, sea.jma_item, sea.cap_item, sea.cap_message, sea.cap_feed, sea.cap_authority, sea.hazard, sea.gdacs_event, sea.event_member, sea.event, sea.earthquake_revision, sea.earthquake, sea.alert, sea.source CASCADE",
+    "TRUNCATE sea.wis2_station, sea.wis2_tc_track, sea.wis2_broker, sea.wis2_health_bucket, sea.wis2_cap_area, sea.wis2_notification, sea.jma_series, sea.jma_message, sea.jma_item, sea.cap_item, sea.cap_message, sea.cap_feed, sea.cap_authority, sea.hazard, sea.gdacs_event, sea.event_member, sea.event, sea.earthquake_revision, sea.earthquake, sea.alert, sea.source CASCADE",
   )
   let assert Ok(Nil) = source_writer.sync(conn)
   exec(
@@ -75,7 +75,7 @@ fn setup_test_schema(conn: pog.Connection) -> Nil {
 fn teardown_test_schema(conn: pog.Connection) -> Nil {
   exec(
     conn,
-    "TRUNCATE sea.wis2_tc_track, sea.wis2_broker, sea.wis2_health_bucket, sea.wis2_cap_area, sea.wis2_notification, sea.jma_series, sea.jma_message, sea.jma_item, sea.cap_item, sea.cap_message, sea.cap_feed, sea.cap_authority, sea.hazard, sea.gdacs_event, sea.event_member, sea.event, sea.earthquake_revision, sea.earthquake, sea.alert, sea.source CASCADE",
+    "TRUNCATE sea.wis2_station, sea.wis2_tc_track, sea.wis2_broker, sea.wis2_health_bucket, sea.wis2_cap_area, sea.wis2_notification, sea.jma_series, sea.jma_message, sea.jma_item, sea.cap_item, sea.cap_message, sea.cap_feed, sea.cap_authority, sea.hazard, sea.gdacs_event, sea.event_member, sea.event, sea.earthquake_revision, sea.earthquake, sea.alert, sea.source CASCADE",
   )
   exec(
     conn,
@@ -134,6 +134,28 @@ pub fn scalar_int(conn: pog.Connection, sql: String) -> Int {
 pub fn scalar_text(conn: pog.Connection, sql: String) -> String {
   let decoder = {
     use value <- decode.field(0, decode.string)
+    decode.success(value)
+  }
+  let assert Ok(result) =
+    pog.query(sql) |> pog.returning(decoder) |> pog.execute(conn)
+  let assert [value] = result.rows
+  value
+}
+
+pub fn scalar_bool(conn: pog.Connection, sql: String) -> Bool {
+  let decoder = {
+    use value <- decode.field(0, decode.bool)
+    decode.success(value)
+  }
+  let assert Ok(result) =
+    pog.query(sql) |> pog.returning(decoder) |> pog.execute(conn)
+  let assert [value] = result.rows
+  value
+}
+
+pub fn scalar_float(conn: pog.Connection, sql: String) -> Float {
+  let decoder = {
+    use value <- decode.field(0, decode.float)
     decode.success(value)
   }
   let assert Ok(result) =

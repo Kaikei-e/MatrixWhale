@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"wis2_adapter/broker"
 	"wis2_adapter/config"
 	wis2metrics "wis2_adapter/metrics"
+	"wis2_adapter/synop"
 	"wis2_adapter/wnm"
 )
 
@@ -1534,5 +1536,454 @@ func TestControllerTCProbabilisticIgnored(t *testing.T) {
 
 	if recTraj != 0 {
 		t.Errorf("expected 0 received under kind=trajectory for probabilistic topic, got %d", recTraj)
+	}
+}
+
+func TestControllerSynopContractAndFlow(t *testing.T) {
+	synop1Bytes, err := os.ReadFile(filepath.Join("..", "testdata", "synop_1_wnm.json"))
+	if err != nil {
+		t.Fatalf("failed to read testdata synop_1_wnm.json: %v", err)
+	}
+
+	var obsReceivedCount int32
+	var capturedObs synop.ObservationFeature
+	var capturedRaw json.RawMessage
+	var capturedMeta core.PollMeta
+	var obsMu sync.Mutex
+
+	coreServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/wis2_data/observations" {
+			var env struct {
+				PollMeta core.PollMeta     `json:"poll_meta"`
+				Features []json.RawMessage `json:"features"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&env); err != nil {
+				t.Errorf("failed to decode observations envelope: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			atomic.AddInt32(&obsReceivedCount, int32(len(env.Features)))
+			obsMu.Lock()
+			capturedMeta = env.PollMeta
+			if len(env.Features) > 0 {
+				capturedRaw = env.Features[0]
+				_ = json.Unmarshal(env.Features[0], &capturedObs)
+			}
+			obsMu.Unlock()
+
+			ack := fmt.Sprintf(`{"received":%d,"deduped":0,"written":%d,"dropped":0,"message":"ok"}`,
+				len(env.Features), len(env.Features))
+			_, _ = w.Write([]byte(ack))
+		} else {
+			_, _ = w.Write([]byte(`{"received":0,"deduped":0,"written":0,"dropped":0,"message":"ok"}`))
+		}
+	}))
+	defer coreServer.Close()
+
+	cfg := config.Config{
+		Brokers:             []string{"mqtts://globalbroker.meteo.fr:8883"},
+		Topics:              []string{"cache/a/wis2/+/data/core/weather/surface-based-observations/synop/#"},
+		DownloadConcurrency: 2,
+		HealthInterval:      10 * time.Second,
+	}
+
+	coreClient := core.NewClient(coreServer.URL+"/api/v1", &http.Client{Timeout: 5 * time.Second})
+	fakeBroker := broker.NewFakeBroker("mqtts://globalbroker.meteo.fr:8883")
+	ctrl := NewController(cfg, coreClient, fakeBroker, &http.Client{Timeout: 5 * time.Second}, time.Now)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go ctrl.Execute(ctx)
+	if err := fakeBroker.WaitRunning(ctx); err != nil {
+		t.Fatalf("broker wait running failed: %v", err)
+	}
+
+	topic := "cache/a/wis2/kz-kazhydromet/data/core/weather/surface-based-observations/synop"
+	fakeBroker.Publish(topic, synop1Bytes)
+
+	// Trigger flush or wait for ticker
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		ctrl.FlushObservations(ctx)
+		if atomic.LoadInt32(&obsReceivedCount) > 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if atomic.LoadInt32(&obsReceivedCount) != 1 {
+		t.Fatalf("expected 1 observation feature received by core, got %d", atomic.LoadInt32(&obsReceivedCount))
+	}
+
+	obsMu.Lock()
+	f := capturedObs
+	raw := capturedRaw
+	meta := capturedMeta
+	obsMu.Unlock()
+
+	// Verify meta
+	if meta.FeedURL != "mqtts://globalbroker.meteo.fr:8883" {
+		t.Errorf("meta.feed_url mismatch: %s", meta.FeedURL)
+	}
+	if meta.FeatureCount != 1 {
+		t.Errorf("meta.feature_count mismatch: %d", meta.FeatureCount)
+	}
+
+	// Verify contract fields
+	if f.DataID != "kz-kazhydromet:core.surface-based-observations.synop/WIGOS_0-20000-0-35793_20260925T110000" {
+		t.Errorf("data_id mismatch: %s", f.DataID)
+	}
+	if f.CentreID != "kz-kazhydromet" {
+		t.Errorf("centre_id mismatch: %s", f.CentreID)
+	}
+	if f.PubTime != "2026-09-25T11:35:06Z" {
+		t.Errorf("pubtime mismatch: %s", f.PubTime)
+	}
+	if f.StationID != "0-20000-0-35793" {
+		t.Errorf("station_id mismatch: %s", f.StationID)
+	}
+	if math.Abs(f.Lat-47.2167) > 1e-3 || math.Abs(f.Lon-73.35) > 1e-3 {
+		t.Errorf("lat/lon mismatch: (%f, %f)", f.Lat, f.Lon)
+	}
+	if f.ObservedAt != "2026-09-25T11:00:00Z" {
+		t.Errorf("observed_at mismatch: %s", f.ObservedAt)
+	}
+
+	// Verify JSON contract keys present in raw JSON
+	var rawMap map[string]any
+	if err := json.Unmarshal(raw, &rawMap); err != nil {
+		t.Fatalf("unmarshal raw JSON failed: %v", err)
+	}
+	contractKeys := []string{
+		"data_id", "centre_id", "pubtime", "station_id", "station_name",
+		"lat", "lon", "elevation_m", "observed_at", "wind_speed_ms",
+		"gust_ms", "gust_period_min", "precip", "mslp_pa",
+	}
+	for _, k := range contractKeys {
+		if _, ok := rawMap[k]; !ok {
+			t.Errorf("missing contract key in observations JSON: %s", k)
+		}
+	}
+}
+
+func TestControllerSynopDownloadPayload(t *testing.T) {
+	bufrData, err := os.ReadFile(filepath.Join("..", "bufr", "testdata", "synop_uk_metoffice.bufr"))
+	if err != nil {
+		t.Fatalf("failed to read testdata synop_uk_metoffice.bufr: %v", err)
+	}
+
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Do not trust link type: return arbitrary content type
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(bufrData)
+	}))
+	defer upstreamServer.Close()
+
+	var obsReceivedCount int32
+	var capturedObs synop.ObservationFeature
+	var obsMu sync.Mutex
+
+	coreServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/wis2_data/observations" {
+			var env struct {
+				Features []json.RawMessage `json:"features"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&env)
+			atomic.AddInt32(&obsReceivedCount, int32(len(env.Features)))
+			obsMu.Lock()
+			if len(env.Features) > 0 {
+				_ = json.Unmarshal(env.Features[0], &capturedObs)
+			}
+			obsMu.Unlock()
+			ack := fmt.Sprintf(`{"received":%d,"deduped":0,"written":%d,"dropped":0,"message":"ok"}`,
+				len(env.Features), len(env.Features))
+			_, _ = w.Write([]byte(ack))
+		} else {
+			_, _ = w.Write([]byte(`{"received":0,"deduped":0,"written":0,"dropped":0,"message":"ok"}`))
+		}
+	}))
+	defer coreServer.Close()
+
+	cfg := config.Config{
+		Brokers:             []string{"mqtts://broker:8883"},
+		Topics:              []string{"cache/a/wis2/+/data/core/weather/surface-based-observations/synop/#"},
+		DownloadConcurrency: 2,
+		HealthInterval:      10 * time.Second,
+	}
+
+	coreClient := core.NewClient(coreServer.URL+"/api/v1", nil)
+	fakeBroker := broker.NewFakeBroker("mqtts://broker:8883")
+	ctrl := NewController(cfg, coreClient, fakeBroker, nil, time.Now)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go ctrl.Execute(ctx)
+	_ = fakeBroker.WaitRunning(ctx)
+
+	wnmMsg := wnm.WNMMessage{
+		ID:   "synop-download-notif",
+		Type: "Feature",
+		Properties: wnm.WNMProperties{
+			DataID:  "uk-data-id-123",
+			PubTime: "2026-09-25T12:00:00Z",
+		},
+		Links: []wnm.WNMLink{
+			{
+				Rel:  "canonical",
+				Href: upstreamServer.URL + "/metoffice.bufr",
+				Type: "application/bufr",
+			},
+		},
+	}
+	b, _ := json.Marshal(wnmMsg)
+	fakeBroker.Publish("cache/a/wis2/uk-metoffice/data/core/weather/surface-based-observations/synop", b)
+
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		ctrl.FlushObservations(ctx)
+		if atomic.LoadInt32(&obsReceivedCount) > 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if atomic.LoadInt32(&obsReceivedCount) != 1 {
+		t.Fatalf("expected 1 observation received from download, got %d", atomic.LoadInt32(&obsReceivedCount))
+	}
+
+	obsMu.Lock()
+	f := capturedObs
+	obsMu.Unlock()
+
+	if f.StationID != "0-826-0-79" {
+		t.Errorf("expected station_id 0-826-0-79, got: %s", f.StationID)
+	}
+	if f.StationName == nil || *f.StationName != "DONNA NOOK NO 2 AUTO" {
+		t.Errorf("station_name mismatch: %v", f.StationName)
+	}
+	if f.GustMS == nil || math.Abs(*f.GustMS-8.2) > 1e-3 {
+		t.Errorf("gust_ms mismatch: %v", f.GustMS)
+	}
+	if f.GustPeriodMin == nil || *f.GustPeriodMin != 60 {
+		t.Errorf("gust_period_min mismatch: %v", f.GustPeriodMin)
+	}
+}
+
+func TestControllerSynopRejectedSubsetsCountedAsDecodeFailed(t *testing.T) {
+	synop2Bytes, err := os.ReadFile(filepath.Join("..", "testdata", "synop_2_wnm.json"))
+	if err != nil {
+		t.Fatalf("failed to read testdata synop_2_wnm.json: %v", err)
+	}
+
+	var obsReceivedCount int32
+	coreServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/wis2_data/observations" {
+			atomic.AddInt32(&obsReceivedCount, 1)
+		}
+		_, _ = w.Write([]byte(`{"received":0,"deduped":0,"written":0,"dropped":0,"message":"ok"}`))
+	}))
+	defer coreServer.Close()
+
+	cfg := config.Config{
+		Brokers:             []string{"mqtts://broker:8883"},
+		Topics:              []string{"cache/a/wis2/+/data/core/weather/surface-based-observations/synop/#"},
+		DownloadConcurrency: 2,
+		HealthInterval:      10 * time.Second,
+	}
+
+	coreClient := core.NewClient(coreServer.URL+"/api/v1", nil)
+	fakeBroker := broker.NewFakeBroker("mqtts://broker:8883")
+	ctrl := NewController(cfg, coreClient, fakeBroker, nil, time.Now)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go ctrl.Execute(ctx)
+	_ = fakeBroker.WaitRunning(ctx)
+
+	fakeBroker.Publish("cache/a/wis2/kz-kazhydromet/data/core/weather/surface-based-observations/synop", synop2Bytes)
+
+	time.Sleep(300 * time.Millisecond)
+
+	if atomic.LoadInt32(&obsReceivedCount) > 0 {
+		t.Errorf("rejected subset must not be sent to observations endpoint")
+	}
+
+	h := ctrl.getOrCreateHealth("kz-kazhydromet", "synop")
+	h.mu.Lock()
+	rec := h.Received
+	decFailed := h.DecodeFailed
+	h.mu.Unlock()
+
+	if rec != 1 {
+		t.Errorf("expected 1 received in health, got %d", rec)
+	}
+	if decFailed != 1 {
+		t.Errorf("expected 1 decode_failed in health for rejected subset with missing lat/lon, got %d", decFailed)
+	}
+}
+
+func TestControllerInboundWorkerPoolBackpressureDropCounting(t *testing.T) {
+	cfg := config.Config{
+		Brokers:             []string{"mqtts://broker:8883"},
+		Topics:              []string{"cache/a/wis2/+/data/core/weather/surface-based-observations/synop/#"},
+		DownloadConcurrency: 1,
+		HealthInterval:      10 * time.Second,
+	}
+
+	coreClient := core.NewClient("http://127.0.0.1:9999/api/v1", nil)
+	fakeBroker := broker.NewFakeBroker("mqtts://broker:8883")
+	ctrl := NewController(cfg, coreClient, fakeBroker, nil, time.Now)
+	// Bounded inbound queue of capacity 2
+	ctrl.SetInboundCap(2)
+
+	dropsBefore := testutil.ToFloat64(wis2metrics.DropsTotal.WithLabelValues("inbound"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Fill the queue before starting workers, or burst faster than processing
+	ctrl.inboundQueue <- inboundJob{topic: "test/topic/1", payload: []byte("{}")}
+	ctrl.inboundQueue <- inboundJob{topic: "test/topic/2", payload: []byte("{}")}
+
+	go ctrl.Execute(ctx)
+	_ = fakeBroker.WaitRunning(ctx)
+
+	// Since queue capacity is 2 and we already put 2 items, publishing bursts will cause back-pressure drops
+	for i := 0; i < 20; i++ {
+		fakeBroker.Publish("cache/a/wis2/centre/data/core/weather/surface-based-observations/synop", []byte("{}"))
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	dropped := ctrl.DroppedInbound()
+	if dropped <= 0 {
+		t.Errorf("expected inbound drops > 0 under back-pressure, got %d", dropped)
+	}
+
+	dropsAfter := testutil.ToFloat64(wis2metrics.DropsTotal.WithLabelValues("inbound"))
+	if dropsAfter <= dropsBefore {
+		t.Errorf("expected DropsTotal metric to increment for inbound, before=%f after=%f", dropsBefore, dropsAfter)
+	}
+}
+
+func TestControllerObservationsQueueBoundingAndDropOldest(t *testing.T) {
+	var coreRequests int32
+	var shouldFailCore atomic.Bool
+	shouldFailCore.Store(true)
+
+	var receivedBatches [][]synop.ObservationFeature
+	var recMu sync.Mutex
+
+	coreServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&coreRequests, 1)
+		w.Header().Set("Content-Type", "application/json")
+		if shouldFailCore.Load() {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":"core down"}`))
+			return
+		}
+
+		if r.URL.Path == "/api/v1/wis2_data/observations" {
+			var env struct {
+				Features []synop.ObservationFeature `json:"features"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&env)
+			recMu.Lock()
+			receivedBatches = append(receivedBatches, env.Features)
+			recMu.Unlock()
+
+			ack := fmt.Sprintf(`{"received":%d,"deduped":0,"written":%d,"dropped":0,"message":"ok"}`,
+				len(env.Features), len(env.Features))
+			_, _ = w.Write([]byte(ack))
+		}
+	}))
+	defer coreServer.Close()
+
+	cfg := config.Config{
+		Brokers:             []string{"mqtts://broker:8883"},
+		Topics:              []string{"cache/a/wis2/+/data/core/weather/surface-based-observations/synop/#"},
+		DownloadConcurrency: 2,
+		HealthInterval:      10 * time.Second,
+	}
+
+	coreClient := core.NewClient(coreServer.URL+"/api/v1", &http.Client{Timeout: 1 * time.Second})
+	fakeBroker := broker.NewFakeBroker("mqtts://broker:8883")
+	ctrl := NewController(cfg, coreClient, fakeBroker, nil, time.Now)
+
+	// Bounded observation queue cap of 3
+	ctrl.SetObsQueueCap(3)
+
+	dropsBefore := testutil.ToFloat64(wis2metrics.DropsTotal.WithLabelValues("observations"))
+
+	ctx := context.Background()
+
+	// Enqueue 5 features while core is failing
+	for i := 1; i <= 5; i++ {
+		feat := synop.ObservationFeature{
+			DataID:     fmt.Sprintf("data-%d", i),
+			CentreID:   "test-centre",
+			PubTime:    "2026-09-25T12:00:00Z",
+			StationID:  fmt.Sprintf("0-20000-0-%05d", i),
+			Lat:        10.0,
+			Lon:        20.0,
+			ObservedAt: "2026-09-25T12:00:00Z",
+			Precip:     []synop.PrecipItem{},
+		}
+		ctrl.enqueueObservationFeature(ctx, feat)
+	}
+
+	// Queue should not exceed cap of 3
+	ctrl.obsBatchMu.Lock()
+	qLen := len(ctrl.obsBatch)
+	ctrl.obsBatchMu.Unlock()
+
+	if qLen > 3 {
+		t.Errorf("expected observation queue to be bounded by cap 3, got: %d", qLen)
+	}
+
+	droppedObs := ctrl.DroppedObservations()
+	if droppedObs != 2 {
+		t.Errorf("expected 2 dropped observations (5 enqueued, cap 3), got %d", droppedObs)
+	}
+
+	// Trigger flush while core is still down
+	ctrl.flushObsBatch(ctx)
+
+	// Memory must remain bounded after failed flush
+	ctrl.obsBatchMu.Lock()
+	qLenAfterFlush := len(ctrl.obsBatch)
+	ctrl.obsBatchMu.Unlock()
+
+	if qLenAfterFlush > 3 {
+		t.Errorf("expected queue after failed flush to not exceed cap 3, got: %d", qLenAfterFlush)
+	}
+
+	dropsAfter := testutil.ToFloat64(wis2metrics.DropsTotal.WithLabelValues("observations"))
+	if dropsAfter <= dropsBefore {
+		t.Errorf("expected DropsTotal metric to increment for observations, before=%f after=%f", dropsBefore, dropsAfter)
+	}
+
+	// Now bring the core server back up
+	shouldFailCore.Store(false)
+
+	// Flush remaining items
+	ctrl.flushObsBatch(ctx)
+
+	recMu.Lock()
+	totalDelivered := 0
+	for _, b := range receivedBatches {
+		totalDelivered += len(b)
+	}
+	recMu.Unlock()
+
+	if totalDelivered != 3 {
+		t.Errorf("expected remaining 3 observations delivered once core recovered, got: %d", totalDelivered)
 	}
 }
