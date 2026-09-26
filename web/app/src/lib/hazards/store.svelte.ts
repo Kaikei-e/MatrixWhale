@@ -7,32 +7,41 @@ import {
 	ALERT_LEVELS,
 	HAZARD_TYPES,
 	HAZARD_TYPE_CODES,
+	OBSERVED_EXTREME_SUBTYPES,
 	type Hazard,
 	type HazardDetail,
 	type HazardFilter,
 	type RawHazardEvent
 } from './types';
+import { encodeHazardDetailPath, matchesObservedExtremeFilter } from './wis2';
 
 const HEARTBEAT_TIMEOUT_MS = 60000;
 const MAX_SNAPSHOT_CACHES = 16;
-const HAZARDS_BASE_PATH = '/api/v1/hazards';
+const DEFAULT_SUBTYPES = new Set(OBSERVED_EXTREME_SUBTYPES);
 
 function defaultFilter(): HazardFilter {
 	return {
 		types: new Set(HAZARD_TYPES.filter((type) => type !== 'earthquake')),
-		levels: new Set(ALERT_LEVELS)
+		levels: new Set(ALERT_LEVELS),
+		subtypes: new Set(OBSERVED_EXTREME_SUBTYPES),
+		hideUnconfirmed: false
 	};
 }
 
 function boundedFilter(filter: Partial<HazardFilter>): HazardFilter {
+	const def = defaultFilter();
 	return {
-		types: filter.types ? new Set(filter.types) : defaultFilter().types,
-		levels: filter.levels ? new Set(filter.levels) : new Set(ALERT_LEVELS)
+		types: filter.types ? new Set(filter.types) : def.types,
+		levels: filter.levels ? new Set(filter.levels) : def.levels,
+		subtypes: filter.subtypes ? new Set(filter.subtypes) : def.subtypes,
+		hideUnconfirmed:
+			filter.hideUnconfirmed !== undefined ? filter.hideUnconfirmed : def.hideUnconfirmed
 	};
 }
 
 function requestUrl(url: string, filter: HazardFilter): string {
 	const [base, search] = url.split('?');
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
 	const params = new URLSearchParams(search);
 	params.set('types', [...filter.types].map((type) => HAZARD_TYPE_CODES[type]).join(','));
 	params.set('levels', [...filter.levels].join(','));
@@ -103,9 +112,7 @@ export class HazardStore {
 		const source = id.slice(0, separatorIndex);
 		const sourceId = id.slice(separatorIndex + 1);
 		try {
-			const response = await fetch(
-				`${HAZARDS_BASE_PATH}/${encodeURIComponent(source)}/${encodeURIComponent(sourceId)}`
-			);
+			const response = await fetch(encodeHazardDetailPath(source, sourceId));
 			if (!response.ok) return null;
 			const detail = (await response.json()) as HazardDetail;
 			this.details.set(id, detail);
@@ -279,7 +286,14 @@ export class HazardStore {
 	}
 
 	#matchesFilter(hazard: Hazard): boolean {
-		return this.filter.types.has(hazard.hazard_type) && this.filter.levels.has(hazard.alert_level);
+		if (!this.filter.types.has(hazard.hazard_type) || !this.filter.levels.has(hazard.alert_level)) {
+			return false;
+		}
+		return matchesObservedExtremeFilter(
+			hazard,
+			this.filter.subtypes ?? DEFAULT_SUBTYPES,
+			this.filter.hideUnconfirmed ?? false
+		);
 	}
 
 	#remove(key: string): void {

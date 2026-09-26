@@ -7,6 +7,8 @@
 	import CentroidMarkers from '$lib/chart/CentroidMarkers.svelte';
 	import EarthquakeMarkers from '$lib/chart/EarthquakeMarkers.svelte';
 	import HazardMarkers from '$lib/chart/HazardMarkers.svelte';
+	import ForecastTrackLayer from '$lib/chart/ForecastTrackLayer.svelte';
+	import ObservedExtremesLayer from '$lib/chart/ObservedExtremesLayer.svelte';
 	import { LAND_50M } from '$lib/chart/dataFiles';
 	import { REGION_PRESETS } from '$lib/chart/presets';
 	import { alertStore } from '$lib/alerts/store.svelte';
@@ -19,6 +21,7 @@
 		centroids: Record<string, [number, number]>;
 		phase: BlinkPhase;
 		selectedHazardId: string | null;
+		showObservedExtremes?: boolean;
 		onselectAlert: (id: string) => void;
 		onselectEarthquake: (id: number) => void;
 		onselectHazard: (id: string) => void;
@@ -30,6 +33,7 @@
 		centroids,
 		phase,
 		selectedHazardId,
+		showObservedExtremes = true,
 		onselectAlert,
 		onselectEarthquake,
 		onselectHazard
@@ -55,5 +59,11 @@
 		onready={() => (earthquakeSourceMounted = true)}
 	/>
 	<HazardMarkers selectedId={selectedHazardId} onselect={onselectHazard} />
+	<ObservedExtremesLayer
+		visible={showObservedExtremes}
+		selectedId={selectedHazardId}
+		onselect={onselectHazard}
+	/>
+	<ForecastTrackLayer {selectedHazardId} />
 	<CentroidMarkers {centroids} {phase} onselect={onselectAlert} />
 </ChartFrame>

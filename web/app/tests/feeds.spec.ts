@@ -68,4 +68,50 @@ test.describe('Feed Health Page (/feeds)', () => {
 		const fits = await wrapper.evaluate((el) => el.scrollWidth <= el.clientWidth);
 		expect(fits).toBe(true);
 	});
+
+	test('renders WIS2 broker status, sortable table, and computes unique 24h & failures', async ({
+		page
+	}) => {
+		await mockBackend(page);
+		await page.goto('/feeds');
+
+		// Broker status bar
+		const brokerStatus = page.getByTestId('wis2-broker-status');
+		await expect(brokerStatus).toBeVisible();
+		await expect(brokerStatus).toContainText('Broker Connected');
+		await expect(brokerStatus).toContainText('mqtts://globalbroker.meteo.fr:8883');
+
+		// WIS2 channels table
+		const wis2Rows = page.getByTestId('wis2-row');
+		await expect(wis2Rows).toHaveCount(3);
+
+		// Unique 24h column: received 450 - duplicates 50 = 400
+		const eumetnetRow = page.getByTestId('wis2-row').filter({ hasText: 'eu-eumetnet-warnings' });
+		await expect(eumetnetRow).toBeVisible();
+		await expect(eumetnetRow).toContainText('warnings');
+		await expect(eumetnetRow).toContainText('400'); // unique 24h primary number
+		await expect(eumetnetRow).toContainText('50'); // duplicates
+
+		// Failures column: download 4 + decode 1 + integrity 0 = 5 for in-imd
+		const imdRow = page.getByTestId('wis2-row').filter({ hasText: 'in-imd' });
+		await expect(imdRow).toBeVisible();
+		await expect(imdRow).toContainText('5'); // failures total
+		await expect(imdRow).toContainText('failing');
+
+		// Column sorting on WIS2 table
+		const centreHeader = page.getByTestId('wis2-th-centre');
+		await expect(centreHeader).toHaveAttribute('aria-sort', 'none');
+
+		// Sort ascending by centre_id: ecmwf comes first alphabetically
+		await centreHeader.click();
+		await expect(centreHeader).toHaveAttribute('aria-sort', 'ascending');
+		let firstWis2Row = page.getByTestId('wis2-row').first();
+		await expect(firstWis2Row).toContainText('ecmwf');
+
+		// Sort descending by centre_id: in-imd comes first
+		await centreHeader.click();
+		await expect(centreHeader).toHaveAttribute('aria-sort', 'descending');
+		firstWis2Row = page.getByTestId('wis2-row').first();
+		await expect(firstWis2Row).toContainText('in-imd');
+	});
 });

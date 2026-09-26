@@ -192,3 +192,113 @@ test('legend: NWS colors summary counts only NOAA alerts and stale dashed/dotted
 	await expect(nwsSummary.getByText('Wind Warning')).not.toBeVisible();
 	await expect(nwsSummary.getByText('Frost Advisory')).not.toBeVisible();
 });
+
+test('renders model forecast section and table in tropical cyclone hazard detail', async ({
+	page
+}) => {
+	await mockBackend(page);
+	await page.goto('/globe');
+
+	const sidePanel = page.getByTestId('side-panel');
+	await sidePanel.getByRole('tab', { name: /Hazards/ }).click();
+
+	// Click the TC hazard row
+	await sidePanel.getByText('Tropical Cyclone Test').click();
+
+	// Check model forecast section appears
+	const forecastSection = sidePanel.getByTestId('tc-forecast-tracks');
+	await expect(forecastSection).toBeVisible();
+	await expect(forecastSection.getByText('Model forecast')).toBeVisible();
+	await expect(forecastSection.getByText('ecmwf')).toBeVisible();
+
+	// Check table content
+	const forecastTable = sidePanel.getByTestId('forecast-track-table');
+	await expect(forecastTable).toBeVisible();
+	await expect(forecastTable).toContainText('+0h');
+	await expect(forecastTable).toContainText('+24h');
+	await expect(forecastTable).toContainText('14.5N 120.5E');
+	await expect(forecastTable).toContainText('992');
+	await expect(forecastTable).toContainText('29 m/s');
+
+	// Assert the table's scrollWidth <= clientWidth of the pane (no horizontal overflow)
+	const tableFitsPane = await forecastTable.evaluate((table) => {
+		const pane = table.closest('[data-testid="side-panel"]');
+		const paneClientWidth = pane ? pane.clientWidth : 380;
+		return table.scrollWidth <= paneClientWidth;
+	});
+	expect(tableFitsPane).toBe(true);
+
+	const containerFits = await forecastTable.evaluate((table) => {
+		const container = table.parentElement;
+		return container ? container.scrollWidth <= container.clientWidth : true;
+	});
+	expect(containerFits).toBe(true);
+
+	// Max wind header and values are fully visible
+	await expect(forecastTable.getByText('Max wind')).toBeVisible();
+	await expect(forecastTable.getByText('29 m/s')).toBeVisible();
+
+	// Wind radii are available via row tooltip and per-row expandable detail (numbers only, km)
+	const row0 = forecastTable.locator('tr', { hasText: '+0h' });
+	await expect(row0).toHaveAttribute('title', /18: 180 · 26: 80 km/);
+	await row0.click();
+	await expect(forecastTable).toContainText('18: 180 · 26: 80 km');
+
+	// Back to list restores hazards list
+	await sidePanel.getByRole('button', { name: 'Back to list' }).click();
+	await expect(sidePanel.getByText('Tropical Cyclone Test')).toBeVisible();
+});
+
+test('filters observed extremes by subtype, toggles hide unconfirmed, and toggles chart layer', async ({
+	page
+}) => {
+	await mockBackend(page);
+	await page.goto('/globe');
+
+	const sidePanel = page.getByTestId('side-panel');
+	await sidePanel.getByRole('tab', { name: /Hazards/ }).click();
+
+	// Subtype filter chips exist
+	await expect(sidePanel.getByTestId('hazard-subtype-chip-gust')).toBeVisible();
+	await expect(sidePanel.getByTestId('hazard-subtype-chip-rain_1h')).toBeVisible();
+
+	// Both observed extremes appear initially
+	await expect(sidePanel.getByText(/Gust 34\.2 m\/s/)).toBeVisible();
+	await expect(sidePanel.getByText(/Rain 52\.0 mm\/h/)).toBeVisible();
+
+	// Test "Hide unconfirmed" checkbox
+	const hideUnconfirmedCheckbox = sidePanel.getByTestId('hide-unconfirmed-checkbox');
+	await hideUnconfirmedCheckbox.check();
+
+	// Unconfirmed rain extreme is hidden
+	await expect(sidePanel.getByText(/Rain 52\.0 mm\/h/)).not.toBeVisible();
+	// Confirmed gust extreme remains
+	await expect(sidePanel.getByText(/Gust 34\.2 m\/s/)).toBeVisible();
+
+	// Uncheck: unconfirmed extreme reappears
+	await hideUnconfirmedCheckbox.uncheck();
+	await expect(sidePanel.getByText(/Rain 52\.0 mm\/h/)).toBeVisible();
+
+	// Subtype chip filter: toggle gust off
+	await sidePanel.getByTestId('hazard-subtype-chip-gust').click();
+	await expect(sidePanel.getByText(/Gust 34\.2 m\/s/)).not.toBeVisible();
+	await expect(sidePanel.getByText(/Rain 52\.0 mm\/h/)).toBeVisible();
+
+	// Toggle gust back on
+	await sidePanel.getByTestId('hazard-subtype-chip-gust').click();
+	await expect(sidePanel.getByText(/Gust 34\.2 m\/s/)).toBeVisible();
+
+	// Inspect detail for observed extreme
+	await sidePanel.getByText(/Gust 34\.2 m\/s/).click();
+	await expect(sidePanel.getByText('Observed value: 34.2 m/s')).toBeVisible();
+	await expect(sidePanel.getByText('Confirmed', { exact: true })).toBeVisible();
+
+	// Chart layer toggle button
+	const toggleBtn = page.getByTestId('toggle-observed-extremes');
+	await expect(toggleBtn).toBeVisible();
+	await expect(toggleBtn).toHaveAttribute('data-active', 'true');
+	await toggleBtn.click();
+	await expect(toggleBtn).toHaveAttribute('data-active', 'false');
+	await toggleBtn.click();
+	await expect(toggleBtn).toHaveAttribute('data-active', 'true');
+});

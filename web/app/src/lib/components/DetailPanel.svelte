@@ -85,7 +85,17 @@
 				current.attribution || '気象庁防災情報XMLをもとにMatrixWhaleが加工。編集責任：MatrixWhale。'
 			);
 		}
+		if (current.source.startsWith('wis2-')) {
+			return current.attribution || `WIS2 · ${current.source.slice(5)}`;
+		}
 		return current.attribution || current.source_name;
+	});
+
+	const sourceBadge = $derived.by(() => {
+		if (current.source.startsWith('wis2-')) {
+			return `WIS2 · ${current.source.slice(5)}`;
+		}
+		return current.source_name || null;
 	});
 
 	function formatTime(iso: string | null | undefined): string | null {
@@ -132,7 +142,17 @@
 		<p class="text-ink text-sm font-semibold">{current.headline}</p>
 	{/if}
 
-	<p class="text-ink text-xs font-medium">{current.event}</p>
+	<div class="flex flex-wrap items-center gap-1.5">
+		<p class="text-ink text-xs font-medium">{current.event}</p>
+		{#if sourceBadge}
+			<span
+				data-testid="alert-source-badge"
+				class="border-ink-2/30 text-ink-2 inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium"
+			>
+				{sourceBadge}
+			</span>
+		{/if}
+	</div>
 
 	<p class="text-ink-2 tabular text-xs">
 		{current.severity} · {current.urgency} · {current.certainty}

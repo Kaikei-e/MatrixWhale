@@ -10,15 +10,29 @@
 		ALERT_LEVEL_COLORS,
 		HAZARD_TYPES,
 		HAZARD_TYPE_LABELS,
+		OBSERVED_EXTREME_SUBTYPES,
+		OBSERVED_EXTREME_SUBTYPE_LABELS,
 		type AlertLevel,
 		type Hazard,
-		type HazardType
+		type HazardType,
+		type ObservedExtremeSubtype
 	} from '$lib/hazards/types';
+	import {
+		formatAlertSourceBadge,
+		formatLatLon,
+		formatMaxWind,
+		formatMslp,
+		formatMslpWithUnit,
+		formatObservedExtremeSubtype,
+		formatWindRadiiSummary,
+		observedExtremeColor,
+		OBSERVED_EXTREME_COLORS
+	} from '$lib/hazards/wis2';
 	import { alertStore } from '$lib/alerts/store.svelte';
 	import { SEVERITIES, type Alert } from '$lib/alerts/types';
 	import { getCountryName } from '$lib/alerts/countries';
 	import { summarizeAlertSources } from '$lib/alerts/attribution';
-	import { formatLocalDateTime } from '$lib/alerts/timeFormat';
+	import { formatCompactDateTime, formatLocalDateTime } from '$lib/alerts/timeFormat';
 	import { timelineStore } from '$lib/timeline/store.svelte';
 	import type {
 		AlertTimelineItem,
@@ -86,6 +100,16 @@
 	let now = $state(Date.now());
 	let toastMessage = $state<string | null>(null);
 	let toastTimer: ReturnType<typeof setTimeout> | undefined;
+
+	const expandedForecastRows = new SvelteSet<string>();
+
+	function toggleForecastRow(rowKey: string) {
+		if (expandedForecastRows.has(rowKey)) {
+			expandedForecastRows.delete(rowKey);
+		} else {
+			expandedForecastRows.add(rowKey);
+		}
+	}
 
 	const scrollMemory = new ScrollMemory();
 	let earthquakeListEl = $state<HTMLUListElement | undefined>();
@@ -157,8 +181,9 @@
 	function alertCountryAuthority(alert: Alert): string {
 		const countryNames = alert.countries.map((c) => getCountryName(c)).filter(Boolean);
 		const country = countryNames.length > 0 ? countryNames.join(', ') : '';
-		if (country && alert.source_name) return `${country} · ${alert.source_name}`;
-		return country || alert.source_name || alert.source;
+		const badge = formatAlertSourceBadge(alert.source, alert.source_name);
+		if (country && badge) return `${country} · ${badge}`;
+		return country || badge || alert.source;
 	}
 
 	const JMA_DEFAULT_SOURCE: DataSource = {
@@ -234,6 +259,18 @@
 		if (levels.has(level)) levels.delete(level);
 		else levels.add(level);
 		hazardStore.setFilter({ levels });
+	}
+
+	function toggleHazardSubtype(subtype: ObservedExtremeSubtype): void {
+		const currentSubtypes = hazardStore.filter.subtypes ?? new Set(OBSERVED_EXTREME_SUBTYPES);
+		const subtypes = new SvelteSet(currentSubtypes);
+		if (subtypes.has(subtype)) subtypes.delete(subtype);
+		else subtypes.add(subtype);
+		hazardStore.setFilter({ subtypes });
+	}
+
+	function toggleHideUnconfirmed(): void {
+		hazardStore.setFilter({ hideUnconfirmed: !hazardStore.filter.hideUnconfirmed });
 	}
 
 	function setActiveTab(tab: PaneTab): void {
@@ -482,7 +519,9 @@
 		<p class="tabular text-ink-2 flex items-center gap-1 text-xs">
 			<span
 				class="inline-block h-2 w-2 rounded-full"
-				style:background-color={ALERT_LEVEL_COLORS[hazard.alert_level]}
+				style:background-color={hazard.hazard_type === 'observed_extreme'
+					? observedExtremeColor(hazard.subtype)
+					: ALERT_LEVEL_COLORS[hazard.alert_level]}
 				aria-hidden="true"
 			></span>
 			{HAZARD_TYPE_LABELS[hazard.hazard_type]} · {levelLabel(hazard.alert_level)}
@@ -490,7 +529,33 @@
 				· {hazard.severity_label}
 			{/if}
 		</p>
-		<p>{hazard.description}</p>
+		{#if hazard.hazard_type === 'observed_extreme'}
+			<div class="border-ink-2/20 bg-shoal/10 flex flex-col gap-1 rounded border p-2 text-xs">
+				<div class="flex items-center gap-2">
+					<span
+						class="inline-block h-2.5 w-2.5 rounded-full"
+						style:background-color={observedExtremeColor(hazard.subtype)}
+						aria-hidden="true"
+					></span>
+					<span class="text-ink font-medium">
+						{formatObservedExtremeSubtype(hazard.subtype)}
+					</span>
+					<span class="text-ink-2">·</span>
+					<span class={hazard.confirmed ? 'text-ink font-medium' : 'text-ink-2'}>
+						{hazard.confirmed ? 'Confirmed' : 'Unconfirmed'}
+					</span>
+				</div>
+				{#if hazard.severity_value !== null}
+					<p class="text-ink tabular text-xs font-medium">
+						Observed value: {hazard.severity_value}
+						{hazard.severity_unit ?? ''}
+					</p>
+				{/if}
+			</div>
+		{/if}
+		{#if hazard.description}
+			<p>{hazard.description}</p>
+		{/if}
 		<p class="tabular text-ink-2 text-xs">
 			Onset <time datetime={hazard.onset_at} title={hazard.onset_at}
 				>{formatLocalDateTime(hazard.onset_at)}</time
@@ -526,6 +591,104 @@
 				rel="external noopener noreferrer"
 				class="text-ink-2 text-xs hover:underline">{source!.attribution_text}</a
 			>
+		{/if}
+		{#if hazardStore.details.get(hazard.id)?.forecast_tracks && hazardStore.details.get(hazard.id)!.forecast_tracks!.length > 0}
+			{@const detail = hazardStore.details.get(hazard.id)!}
+			<div
+				class="border-ink-2/30 mt-2 flex flex-col gap-2.5 border-t pt-3"
+				data-testid="tc-forecast-tracks"
+			>
+				<h3 class="text-ink text-xs font-semibold tracking-wide uppercase">Model forecast</h3>
+				{#each detail.forecast_tracks as track (track.centre_id + track.analysis_time)}
+					<div class="border-ink-2/20 bg-shoal/10 flex flex-col gap-1.5 rounded border p-2 text-xs">
+						<div class="flex items-center justify-between gap-2">
+							<span class="text-ink font-semibold">{track.centre_id}</span>
+							{#if track.storm_name}
+								<span class="text-ink-2">{track.storm_name} ({track.storm_id})</span>
+							{:else}
+								<span class="text-ink-2">{track.storm_id}</span>
+							{/if}
+						</div>
+						<p class="tabular text-ink-2 text-[11px]">
+							Analysis: <time datetime={track.analysis_time}
+								>{formatLocalDateTime(track.analysis_time)}</time
+							>
+						</p>
+						<div class="overflow-x-auto">
+							<table
+								class="tabular w-full border-collapse text-left text-[11px]"
+								data-testid="forecast-track-table"
+							>
+								<thead>
+									<tr class="border-ink-2/20 text-ink-2 border-b">
+										<th class="py-1 pr-1 font-medium">Lead h</th>
+										<th class="px-1 py-1 font-medium">Time</th>
+										<th class="px-1 py-1 font-medium">Lat/Lon</th>
+										<th class="px-1 py-1 text-right font-medium">MSLP hPa</th>
+										<th class="py-1 pl-1 text-right font-medium">Max wind</th>
+									</tr>
+								</thead>
+								<tbody class="divide-ink-2/10 divide-y">
+									{#each track.points as point (point.lead_hours)}
+										{@const rowKey = `${track.centre_id}-${point.lead_hours}`}
+										{@const radiiSummary = formatWindRadiiSummary(point.wind_radii)}
+										{@const hasRadii = radiiSummary !== '—'}
+										{@const isExpanded = expandedForecastRows.has(rowKey)}
+										<tr
+											class="hover:bg-shoal/30 {hasRadii ? 'cursor-pointer' : ''}"
+											onclick={hasRadii ? () => toggleForecastRow(rowKey) : undefined}
+											title={hasRadii ? `Wind radii: ${radiiSummary}` : undefined}
+										>
+											<td class="py-1 pr-1 font-medium whitespace-nowrap">
+												+{point.lead_hours}h{#if hasRadii}<span
+													class="text-ink-2/60 ml-0.5 text-[9px]"
+													aria-hidden="true">{isExpanded ? '▾' : '▸'}</span
+												>{/if}
+											</td>
+											<td class="px-1 py-1 whitespace-nowrap">
+												<time datetime={point.time} title={formatLocalDateTime(point.time)}>
+													{formatCompactDateTime(point.time)}
+												</time>
+											</td>
+											<td class="px-1 py-1 whitespace-nowrap">
+												<span title="{point.lat.toFixed(2)}°, {point.lon.toFixed(2)}°">
+													{formatLatLon(point.lat, point.lon)}
+												</span>
+											</td>
+											<td class="px-1 py-1 text-right whitespace-nowrap">
+												<span title={formatMslpWithUnit(point.mslp_pa)}>
+													{formatMslp(point.mslp_pa)}
+												</span>
+											</td>
+											<td class="py-1 pl-1 text-right whitespace-nowrap">
+												<span
+													title={point.max_wind_ms !== null
+														? `${point.max_wind_ms.toFixed(1)} m/s`
+														: undefined}
+												>
+													{formatMaxWind(point.max_wind_ms)}
+												</span>
+											</td>
+										</tr>
+										{#if isExpanded && hasRadii}
+											<tr
+												class="bg-shoal/20 hover:bg-shoal/30 text-ink-2 cursor-pointer text-[10px]"
+												onclick={() => toggleForecastRow(rowKey)}
+												title="Click to collapse"
+											>
+												<td colspan="5" class="px-2 py-1">
+													<span class="text-ink font-medium">Radii (km):</span>
+													{radiiSummary}
+												</td>
+											</tr>
+										{/if}
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					</div>
+				{/each}
+			</div>
 		{/if}
 	</div>
 {/snippet}
@@ -747,6 +910,35 @@
 									/>
 								{/each}
 							</div>
+							<div class="flex flex-wrap items-center gap-1.5" aria-label="Subtype filters">
+								<span
+									class="text-ink-2 w-14 shrink-0 text-[11px] font-medium tracking-wide uppercase"
+									>Subtype</span
+								>
+								{#each OBSERVED_EXTREME_SUBTYPES as subtype (subtype)}
+									<FilterChip
+										label={OBSERVED_EXTREME_SUBTYPE_LABELS[subtype]}
+										pressed={(
+											hazardStore.filter.subtypes ?? new Set(OBSERVED_EXTREME_SUBTYPES)
+										).has(subtype)}
+										dotColor={OBSERVED_EXTREME_COLORS[subtype]}
+										onclick={() => toggleHazardSubtype(subtype)}
+										testid="hazard-subtype-chip-{subtype}"
+									/>
+								{/each}
+							</div>
+							<div class="flex items-center gap-2 pt-0.5">
+								<label class="text-ink-2 flex cursor-pointer items-center gap-1.5 text-xs">
+									<input
+										type="checkbox"
+										data-testid="hide-unconfirmed-checkbox"
+										checked={hazardStore.filter.hideUnconfirmed ?? false}
+										onchange={toggleHideUnconfirmed}
+										class="border-ink-2/30 rounded"
+									/>
+									<span>Hide unconfirmed</span>
+								</label>
+							</div>
 						</div>
 					</div>
 					{#if hazardStore.snapshotError}
@@ -773,9 +965,22 @@
 								rowId={hazard.id}
 								title={hazard.title}
 								meta={formatShortRelativeTime(hazard.modified_at, now)}
-								subtitle={HAZARD_TYPE_LABELS[hazard.hazard_type]}
-								secondary={hazard.severity_label ?? undefined}
-								level={hazard.alert_level}
+								subtitle={hazard.hazard_type === 'observed_extreme' && hazard.subtype
+									? `Observed Extreme · ${formatObservedExtremeSubtype(hazard.subtype)}`
+									: HAZARD_TYPE_LABELS[hazard.hazard_type]}
+								secondary={hazard.hazard_type === 'observed_extreme'
+									? hazard.confirmed
+										? 'Confirmed'
+										: 'Unconfirmed'
+									: (hazard.severity_label ?? undefined)}
+								level={hazard.hazard_type !== 'observed_extreme' ? hazard.alert_level : undefined}
+								kindColor={hazard.hazard_type === 'observed_extreme'
+									? observedExtremeColor(hazard.subtype)
+									: undefined}
+								kindLabel={hazard.hazard_type === 'observed_extreme'
+									? (hazard.subtype ?? 'Observed Extreme')
+									: undefined}
+								ended={hazard.hazard_type === 'observed_extreme' && !hazard.confirmed}
 								onclick={() => openHazard(hazard.id)}
 							/>
 						{:else}

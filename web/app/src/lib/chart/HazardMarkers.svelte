@@ -64,13 +64,18 @@
 
 	// Built from the store's already-filtered list; feature-state (selection)
 	// is set separately below so selecting a hazard never touches this data.
+	// Observed extremes are rendered by ObservedExtremesLayer with distinct subtype styling.
+	const standardHazards = $derived.by(() =>
+		hazardStore.sorted.filter((hazard) => hazard.hazard_type !== 'observed_extreme')
+	);
+
 	const entries = $derived.by((): HazardEntry[] =>
-		hazardStore.sorted.map((hazard) => ({ id: hazard.id, alertLevel: hazard.alert_level }))
+		standardHazards.map((hazard) => ({ id: hazard.id, alertLevel: hazard.alert_level }))
 	);
 
 	const featureCollection = $derived({
 		type: 'FeatureCollection' as const,
-		features: hazardStore.sorted.flatMap((hazard) => {
+		features: standardHazards.flatMap((hazard) => {
 			const properties = { id: hazard.id, alert_level: hazard.alert_level };
 			const centroid = {
 				type: 'Feature' as const,

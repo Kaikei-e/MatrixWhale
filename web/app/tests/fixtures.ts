@@ -356,6 +356,88 @@ export const HAZARDS = [
 		external_ids: [],
 		first_seen_at: new Date().toISOString(),
 		last_seen_at: new Date().toISOString()
+	},
+	{
+		id: 'wis2-jma:obs-gust-1',
+		source: 'wis2-jma',
+		source_id: 'obs-gust-1',
+		source_type_code: 'OE',
+		hazard_type: 'observed_extreme',
+		subtype: 'gust',
+		confirmed: true,
+		hazard_codes: ['wis2:OE'],
+		glide: null,
+		alert_level: 'orange',
+		alert_score: 1.8,
+		cap_severity: 'severe',
+		severity_value: 34.2,
+		severity_unit: 'm/s',
+		severity_label: 'Gust 34.2 m/s',
+		estimate_type: 'primary',
+		title: 'Gust 34.2 m/s at 0-20000-0-47662',
+		description: 'Extreme gust observed at station 47662',
+		countries: ['JPN'],
+		report_url: null,
+		onset_at: new Date().toISOString(),
+		onset_at_ms: Date.now(),
+		expires_at: new Date().toISOString(),
+		expires_at_ms: Date.now(),
+		modified_at: new Date().toISOString(),
+		modified_at_ms: Date.now(),
+		is_current: true,
+		episode_id: '1',
+		episode_count: 1,
+		longitude: 139.75,
+		latitude: 35.68,
+		bbox: [139.75, 35.68, 139.75, 35.68],
+		primary_geometry: {
+			type: 'Point',
+			coordinates: [139.75, 35.68]
+		},
+		external_ids: [],
+		first_seen_at: new Date().toISOString(),
+		last_seen_at: new Date().toISOString()
+	},
+	{
+		id: 'wis2-dwd:obs-rain-2',
+		source: 'wis2-dwd',
+		source_id: 'obs-rain-2',
+		source_type_code: 'OE',
+		hazard_type: 'observed_extreme',
+		subtype: 'rain_1h',
+		confirmed: false,
+		hazard_codes: ['wis2:OE'],
+		glide: null,
+		alert_level: 'orange',
+		alert_score: 1.6,
+		cap_severity: 'severe',
+		severity_value: 52.0,
+		severity_unit: 'mm',
+		severity_label: 'Rain 52.0 mm/h',
+		estimate_type: 'primary',
+		title: 'Rain 52.0 mm/h at 0-20000-0-10382',
+		description: 'Extreme hourly precipitation observed at station 10382',
+		countries: ['DEU'],
+		report_url: null,
+		onset_at: new Date().toISOString(),
+		onset_at_ms: Date.now(),
+		expires_at: new Date().toISOString(),
+		expires_at_ms: Date.now(),
+		modified_at: new Date().toISOString(),
+		modified_at_ms: Date.now(),
+		is_current: true,
+		episode_id: '1',
+		episode_count: 1,
+		longitude: 13.4,
+		latitude: 52.5,
+		bbox: [13.4, 52.5, 13.4, 52.5],
+		primary_geometry: {
+			type: 'Point',
+			coordinates: [13.4, 52.5]
+		},
+		external_ids: [],
+		first_seen_at: new Date().toISOString(),
+		last_seen_at: new Date().toISOString()
 	}
 ];
 
@@ -517,6 +599,98 @@ export const ALERT_DETAILS: Record<
 	}
 };
 
+export const WIS2_HEALTH = {
+	broker: {
+		url: 'mqtts://globalbroker.meteo.fr:8883',
+		connected: true,
+		last_report_at: '2026-09-25T15:00:00Z',
+		error: null
+	},
+	channels: [
+		{
+			centre_id: 'eu-eumetnet-warnings',
+			kind: 'warnings',
+			received_24h: 450,
+			duplicates_24h: 50,
+			download_failed_24h: 1,
+			decode_failed_24h: 0,
+			integrity_failed_24h: 0,
+			last_received_at: '2026-09-25T14:55:00Z',
+			status: 'ok'
+		},
+		{
+			centre_id: 'ecmwf',
+			kind: 'trajectory',
+			received_24h: 120,
+			duplicates_24h: 10,
+			download_failed_24h: 0,
+			decode_failed_24h: 2,
+			integrity_failed_24h: 1,
+			last_received_at: '2026-09-25T13:00:00Z',
+			status: 'stale'
+		},
+		{
+			centre_id: 'in-imd',
+			kind: 'synop',
+			received_24h: 80,
+			duplicates_24h: 5,
+			download_failed_24h: 4,
+			decode_failed_24h: 1,
+			integrity_failed_24h: 0,
+			last_received_at: '2026-09-25T11:00:00Z',
+			status: 'failing'
+		}
+	]
+};
+
+export const HAZARD_DETAILS = {
+	'gdacs:TC-1000001': {
+		hazard: HAZARDS[0],
+		episodes: [],
+		forecast_tracks: [
+			{
+				source: 'wis2-ecmwf',
+				centre_id: 'ecmwf',
+				storm_id: 'TC-1000001',
+				storm_name: 'Test Storm',
+				analysis_time: '2026-09-25T12:00:00Z',
+				points: [
+					{
+						lead_hours: 0,
+						time: '2026-09-25T12:00:00Z',
+						lat: 14.5,
+						lon: 120.5,
+						mslp_pa: 99200,
+						max_wind_ms: 28.5,
+						max_wind_lat: 14.5,
+						max_wind_lon: 120.5,
+						wind_radii: [
+							{ threshold_ms: 18, radii_m: [180000, 160000, 140000, 150000] },
+							{ threshold_ms: 26, radii_m: [80000, 70000, 60000, 75000] },
+							{ threshold_ms: 33, radii_m: [0, 0, 0, 0] }
+						]
+					},
+					{
+						lead_hours: 24,
+						time: '2026-09-26T12:00:00Z',
+						lat: 16.0,
+						lon: 119.2,
+						mslp_pa: 97500,
+						max_wind_ms: 38.0,
+						max_wind_lat: 16.0,
+						max_wind_lon: 119.2,
+						wind_radii: [
+							{ threshold_ms: 18, radii_m: [240000, 220000, 200000, 210000] },
+							{ threshold_ms: 26, radii_m: [140000, 130000, 120000, 130000] },
+							{ threshold_ms: 33, radii_m: [60000, 50000, 40000, 55000] }
+						]
+					}
+				]
+			}
+		]
+	}
+};
+
 export async function mockBackend(page: Page): Promise<void> {
 	await page.route('**/api/v1/alerts/active*', (route) => route.fulfill({ json: ALERTS }));
 	await page.route('**/api/v1/alerts/detail**', (route) => {
@@ -590,6 +764,34 @@ export async function mockBackend(page: Page): Promise<void> {
 	await page.route('**/api/v1/sources', (route) =>
 		route.fulfill({ json: { sources: DATA_SOURCES } })
 	);
+	await page.route('**/api/v1/wis2/health*', (route) => route.fulfill({ json: WIS2_HEALTH }));
+	await page.route('**/api/v1/hazards/*/**', (route) => {
+		const url = new URL(route.request().url());
+		if (url.pathname.includes('/recent') || url.pathname.includes('/stream')) {
+			return route.fallback();
+		}
+		const path = url.pathname.replace(/^\/api\/v1\/hazards\//, '');
+		const firstSlash = path.indexOf('/');
+		if (firstSlash === -1) return route.fallback();
+		const source = decodeURIComponent(path.slice(0, firstSlash));
+		const sourceId = path
+			.slice(firstSlash + 1)
+			.split('/')
+			.map(decodeURIComponent)
+			.join('/');
+		const id = `${source}:${sourceId}`;
+		if (HAZARD_DETAILS[id as keyof typeof HAZARD_DETAILS]) {
+			return route.fulfill({ json: HAZARD_DETAILS[id as keyof typeof HAZARD_DETAILS] });
+		}
+		const found = HAZARDS.find((h) => h.id === id) ?? HAZARDS[0];
+		return route.fulfill({
+			json: {
+				hazard: found,
+				episodes: [],
+				forecast_tracks: []
+			}
+		});
+	});
 }
 
 /**

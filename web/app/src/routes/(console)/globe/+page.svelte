@@ -35,6 +35,7 @@
 	let selectedId = $state<string | null>(null);
 	let selectedEarthquakeId = $state<number | null>(null);
 	let selectedHazardId = $state<string | null>(null);
+	let showObservedExtremes = $state(true);
 	let earthquakeSourceMounted = $state(false);
 	let earthquakeLayerReady = $state(false);
 	let sheetExpanded = $state(false);
@@ -225,6 +226,7 @@
 		selectedHazardId = id;
 		userInteracted = true;
 		sheetExpanded = true;
+		void hazardStore.fetchDetail(id);
 		const hazard = hazardStore.hazards.get(id);
 		if (!hazard) return;
 		map?.easeTo({
@@ -235,6 +237,12 @@
 			duration: alertStore.reducedMotion ? 0 : 600
 		});
 	}
+
+	$effect(() => {
+		if (selectedHazardId) {
+			void hazardStore.fetchDetail(selectedHazardId);
+		}
+	});
 
 	function closeHazardDetail(): void {
 		selectedHazardId = null;
@@ -254,6 +262,7 @@
 			{centroids}
 			phase={engine.phase}
 			{selectedHazardId}
+			{showObservedExtremes}
 			onselectAlert={selectAlert}
 			onselectEarthquake={selectEarthquake}
 			onselectHazard={selectHazard}
@@ -277,6 +286,18 @@
 			class="border-ink-2/30 bg-paper/90 text-ink hover:bg-shoal border px-2 py-1 text-sm"
 		>
 			NWS colors
+		</button>
+		<button
+			type="button"
+			data-testid="toggle-observed-extremes"
+			aria-pressed={showObservedExtremes}
+			data-active={showObservedExtremes ? 'true' : 'false'}
+			onclick={() => (showObservedExtremes = !showObservedExtremes)}
+			class="border-ink-2/30 bg-paper/90 text-ink hover:bg-shoal border px-2 py-1 text-sm {showObservedExtremes
+				? 'bg-shoal'
+				: ''}"
+		>
+			Observed extremes
 		</button>
 	</div>
 

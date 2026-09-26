@@ -57,3 +57,12 @@ export type FeedSortColumn =
 	| 'items'
 	| 'newest_item'
 	| 'active_alerts';
+
+export type {
+	Wis2BrokerHealth,
+	Wis2ChannelHealth,
+	Wis2ChannelKind,
+	Wis2ChannelStatus,
+	Wis2HealthResponse,
+	Wis2SortColumn
+} from './wis2';

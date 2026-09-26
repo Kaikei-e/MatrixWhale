@@ -14,6 +14,13 @@
 		formatFeedDisplayUrl,
 		isHttpUrl
 	} from '$lib/feeds/logic';
+	import {
+		computeTotalFailures,
+		computeUnique24h,
+		sortWis2Channels,
+		type Wis2HealthResponse,
+		type Wis2SortColumn
+	} from '$lib/feeds/wis2';
 	import { formatShortRelativeTime } from '$lib/pane/format';
 	import { formatLocalDateTime } from '$lib/alerts/timeFormat';
 	import FilterChip from '$lib/components/pane/FilterChip.svelte';
@@ -37,6 +44,12 @@
 	let sortColumn = $state<FeedSortColumn>('health');
 	let sortDirection = $state<'asc' | 'desc'>('asc');
 
+	let wis2Loading = $state(true);
+	let wis2Error = $state<string | null>(null);
+	let wis2Data = $state<Wis2HealthResponse | null>(null);
+	let wis2SortColumn = $state<Wis2SortColumn>('status');
+	let wis2SortDirection = $state<'asc' | 'desc'>('asc');
+
 	async function fetchFeeds(): Promise<void> {
 		loading = true;
 		error = null;
@@ -52,11 +65,46 @@
 		}
 	}
 
+	async function fetchWis2(): Promise<void> {
+		wis2Loading = true;
+		wis2Error = null;
+		try {
+			const res = await fetch('/api/v1/wis2/health');
+			if (!res.ok) throw new Error(`WIS2 health request failed with status ${res.status}`);
+			wis2Data = (await res.json()) as Wis2HealthResponse;
+			wis2Error = null;
+		} catch (err) {
+			wis2Error = err instanceof Error ? err.message : 'Failed to load WIS2 health';
+		} finally {
+			wis2Loading = false;
+		}
+	}
+
 	onMount(() => {
 		void fetchFeeds();
+		void fetchWis2();
 		const timer = setInterval(() => (now = Date.now()), 30000);
 		return () => clearInterval(timer);
 	});
+
+	function handleWis2Sort(col: Wis2SortColumn): void {
+		if (wis2SortColumn === col) {
+			wis2SortDirection = wis2SortDirection === 'asc' ? 'desc' : 'asc';
+		} else {
+			wis2SortColumn = col;
+			wis2SortDirection =
+				col === 'unique_24h' ||
+				col === 'duplicates_24h' ||
+				col === 'failures' ||
+				col === 'last_received_at'
+					? 'desc'
+					: 'asc';
+		}
+	}
+
+	const sortedWis2Channels = $derived(
+		wis2Data ? sortWis2Channels(wis2Data.channels, wis2SortColumn, wis2SortDirection) : []
+	);
 
 	function toggleHealth(health: FeedHealth): void {
 		if (activeHealths.has(health)) {
@@ -475,4 +523,272 @@
 			</table>
 		</div>
 	{/if}
+
+	<section class="mt-8 flex flex-col gap-4" data-testid="wis2-section">
+		<header
+			class="border-ink-2/30 flex flex-wrap items-baseline justify-between gap-4 border-b pb-3"
+		>
+			<div>
+				<h2 class="text-xl font-bold tracking-tight">WIS2 Ingestion Health</h2>
+				<p class="text-ink-2 mt-1 text-sm">
+					Real-time status of WMO Information System 2.0 Global Broker subscription and channel
+					ingestion metrics.
+				</p>
+			</div>
+
+			{#if wis2Data?.broker}
+				<div
+					data-testid="wis2-broker-status"
+					class="border-ink-2/30 bg-shoal/20 text-ink flex flex-wrap items-center gap-2 rounded border px-3 py-1.5 text-xs"
+				>
+					<span
+						class="inline-block h-2 w-2 rounded-full {wis2Data.broker.connected
+							? 'bg-emerald-500'
+							: 'bg-rose-500'}"
+						aria-hidden="true"
+					></span>
+					<span class="font-medium">
+						{wis2Data.broker.connected ? 'Broker Connected' : 'Broker Disconnected'}
+					</span>
+					<span class="text-ink-2">·</span>
+					<span class="text-ink-2 font-mono text-[11px]">{wis2Data.broker.url}</span>
+					{#if wis2Data.broker.last_report_at}
+						<span class="text-ink-2">·</span>
+						<span class="tabular text-ink-2"
+							>Reported {formatTime(wis2Data.broker.last_report_at)}</span
+						>
+					{/if}
+					{#if wis2Data.broker.error}
+						<span class="text-ink-2">·</span>
+						<span class="font-medium text-rose-600 dark:text-rose-400">{wis2Data.broker.error}</span
+						>
+					{/if}
+				</div>
+			{/if}
+		</header>
+
+		{#if wis2Loading}
+			<div class="text-ink-2 py-8 text-center text-sm">Loading WIS2 health…</div>
+		{:else if wis2Error}
+			<div class="text-ink-2 flex flex-col items-center justify-center gap-2 py-8 text-sm">
+				<span>{wis2Error}</span>
+				<button
+					type="button"
+					onclick={fetchWis2}
+					class="border-ink-2/30 text-ink hover:bg-shoal border px-3 py-1 text-xs"
+				>
+					Retry
+				</button>
+			</div>
+		{:else if sortedWis2Channels.length === 0}
+			<div class="text-ink-2 py-8 text-center text-sm">No active WIS2 channels reported.</div>
+		{:else}
+			<div class="border-ink-2/30 w-full overflow-x-auto border" data-testid="wis2-table-wrapper">
+				<table class="tabular w-full table-fixed text-left text-xs" data-testid="wis2-table">
+					<thead class="border-ink-2/30 bg-shoal/40 text-ink border-b">
+						<tr>
+							<th
+								scope="col"
+								data-testid="wis2-th-centre"
+								class="hover:bg-shoal/80 w-44 cursor-pointer px-3 py-2.5 font-semibold select-none"
+								aria-sort={wis2SortColumn === 'centre_id'
+									? wis2SortDirection === 'asc'
+										? 'ascending'
+										: 'descending'
+									: 'none'}
+								onclick={() => handleWis2Sort('centre_id')}
+							>
+								<button type="button" class="flex items-center gap-1 font-semibold">
+									Centre
+									{#if wis2SortColumn === 'centre_id'}
+										<span aria-hidden="true">{wis2SortDirection === 'asc' ? '▲' : '▼'}</span>
+									{/if}
+								</button>
+							</th>
+							<th
+								scope="col"
+								data-testid="wis2-th-kind"
+								class="hover:bg-shoal/80 w-28 cursor-pointer px-3 py-2.5 font-semibold select-none"
+								aria-sort={wis2SortColumn === 'kind'
+									? wis2SortDirection === 'asc'
+										? 'ascending'
+										: 'descending'
+									: 'none'}
+								onclick={() => handleWis2Sort('kind')}
+							>
+								<button type="button" class="flex items-center gap-1 font-semibold">
+									Kind
+									{#if wis2SortColumn === 'kind'}
+										<span aria-hidden="true">{wis2SortDirection === 'asc' ? '▲' : '▼'}</span>
+									{/if}
+								</button>
+							</th>
+							<th
+								scope="col"
+								data-testid="wis2-th-unique"
+								class="hover:bg-shoal/80 w-28 cursor-pointer px-3 py-2.5 text-right font-semibold select-none"
+								aria-sort={wis2SortColumn === 'unique_24h'
+									? wis2SortDirection === 'asc'
+										? 'ascending'
+										: 'descending'
+									: 'none'}
+								onclick={() => handleWis2Sort('unique_24h')}
+							>
+								<button
+									type="button"
+									class="flex w-full items-center justify-end gap-1 font-semibold"
+								>
+									Unique 24h
+									{#if wis2SortColumn === 'unique_24h'}
+										<span aria-hidden="true">{wis2SortDirection === 'asc' ? '▲' : '▼'}</span>
+									{/if}
+								</button>
+							</th>
+							<th
+								scope="col"
+								data-testid="wis2-th-duplicates"
+								class="hover:bg-shoal/80 w-24 cursor-pointer px-3 py-2.5 text-right font-semibold select-none"
+								aria-sort={wis2SortColumn === 'duplicates_24h'
+									? wis2SortDirection === 'asc'
+										? 'ascending'
+										: 'descending'
+									: 'none'}
+								onclick={() => handleWis2Sort('duplicates_24h')}
+							>
+								<button
+									type="button"
+									class="flex w-full items-center justify-end gap-1 font-semibold"
+								>
+									Duplicates
+									{#if wis2SortColumn === 'duplicates_24h'}
+										<span aria-hidden="true">{wis2SortDirection === 'asc' ? '▲' : '▼'}</span>
+									{/if}
+								</button>
+							</th>
+							<th
+								scope="col"
+								data-testid="wis2-th-failures"
+								class="hover:bg-shoal/80 w-40 cursor-pointer px-3 py-2.5 text-right font-semibold select-none"
+								aria-sort={wis2SortColumn === 'failures'
+									? wis2SortDirection === 'asc'
+										? 'ascending'
+										: 'descending'
+									: 'none'}
+								onclick={() => handleWis2Sort('failures')}
+							>
+								<button
+									type="button"
+									class="flex w-full items-center justify-end gap-1 font-semibold"
+								>
+									Failures
+									{#if wis2SortColumn === 'failures'}
+										<span aria-hidden="true">{wis2SortDirection === 'asc' ? '▲' : '▼'}</span>
+									{/if}
+								</button>
+							</th>
+							<th
+								scope="col"
+								data-testid="wis2-th-last_received"
+								class="hover:bg-shoal/80 w-28 cursor-pointer px-3 py-2.5 text-right font-semibold select-none"
+								aria-sort={wis2SortColumn === 'last_received_at'
+									? wis2SortDirection === 'asc'
+										? 'ascending'
+										: 'descending'
+									: 'none'}
+								onclick={() => handleWis2Sort('last_received_at')}
+							>
+								<button
+									type="button"
+									class="flex w-full items-center justify-end gap-1 font-semibold"
+								>
+									Last Received
+									{#if wis2SortColumn === 'last_received_at'}
+										<span aria-hidden="true">{wis2SortDirection === 'asc' ? '▲' : '▼'}</span>
+									{/if}
+								</button>
+							</th>
+							<th
+								scope="col"
+								data-testid="wis2-th-status"
+								class="hover:bg-shoal/80 w-24 cursor-pointer px-3 py-2.5 font-semibold select-none"
+								aria-sort={wis2SortColumn === 'status'
+									? wis2SortDirection === 'asc'
+										? 'ascending'
+										: 'descending'
+									: 'none'}
+								onclick={() => handleWis2Sort('status')}
+							>
+								<button type="button" class="flex items-center gap-1 font-semibold">
+									Status
+									{#if wis2SortColumn === 'status'}
+										<span aria-hidden="true">{wis2SortDirection === 'asc' ? '▲' : '▼'}</span>
+									{/if}
+								</button>
+							</th>
+						</tr>
+					</thead>
+					<tbody class="divide-ink-2/10 divide-y">
+						{#each sortedWis2Channels as channel (channel.centre_id + channel.kind)}
+							{@const unique = computeUnique24h(channel.received_24h, channel.duplicates_24h)}
+							{@const totalFailures = computeTotalFailures(
+								channel.download_failed_24h,
+								channel.decode_failed_24h,
+								channel.integrity_failed_24h
+							)}
+							<tr class="hover:bg-shoal/20" data-testid="wis2-row">
+								<td class="text-ink px-3 py-2 font-medium">
+									<div class="truncate" title={channel.centre_id}>
+										{channel.centre_id}
+									</div>
+								</td>
+								<td class="text-ink-2 px-3 py-2">
+									<span
+										class="border-ink-2/20 bg-shoal/30 inline-flex rounded border px-1.5 py-0.5 font-mono text-[11px]"
+									>
+										{channel.kind}
+									</span>
+								</td>
+								<td
+									class="px-3 py-2 text-right font-semibold {unique > 0
+										? 'text-ink'
+										: 'text-ink-2'}"
+								>
+									{unique}
+								</td>
+								<td class="text-ink-2 px-3 py-2 text-right">
+									{channel.duplicates_24h}
+								</td>
+								<td
+									class="px-3 py-2 text-right {totalFailures > 0
+										? 'text-amber font-medium'
+										: 'text-ink-2'}"
+								>
+									<span
+										title="Download: {channel.download_failed_24h}, Decode: {channel.decode_failed_24h}, Integrity: {channel.integrity_failed_24h}"
+									>
+										{totalFailures}
+										<span class="text-ink-2 text-[10px] font-normal">
+											({channel.download_failed_24h}/{channel.decode_failed_24h}/{channel.integrity_failed_24h})
+										</span>
+									</span>
+								</td>
+								<td class="text-ink-2 px-3 py-2 text-right whitespace-nowrap">
+									{formatTime(channel.last_received_at)}
+								</td>
+								<td class="px-3 py-2 whitespace-nowrap">
+									<span
+										class="inline-flex items-center rounded border px-1.5 py-0.5 text-[11px] font-medium {HEALTH_BADGE_CLASSES[
+											channel.status
+										]}"
+									>
+										{channel.status}
+									</span>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+	</section>
 </main>
