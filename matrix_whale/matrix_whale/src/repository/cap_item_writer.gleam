@@ -298,7 +298,7 @@ fn touch_known_items(
     _ -> {
       let urls = list.map(items, fn(i) { i.cap_url })
       pog.query(
-        "UPDATE sea.cap_item SET last_seen_at = $2 WHERE cap_url = ANY($1)",
+        "UPDATE sea.cap_item SET last_seen_at = $2 WHERE cap_url = ANY($1) AND last_seen_at < $2 - INTERVAL '1 hour'",
       )
       |> pog.parameter(pog.array(pog.text, urls))
       |> pog.parameter(pog.timestamp(now))
@@ -310,7 +310,8 @@ fn touch_known_items(
   }
 }
 
-const insert_cap_item_sql = "
+const insert_cap_item_sql =
+  "
   INSERT INTO sea.cap_item
     (cap_url, feed_url, published_at, state, attempts, last_attempt_at, http_status, error, message_key, first_seen_at, last_seen_at)
   VALUES
@@ -343,11 +344,12 @@ fn insert_new_items(
   })
 }
 
-const pending_sql = "
+const pending_sql =
+  "
   SELECT cap_url, feed_url
   FROM sea.cap_item
-  WHERE state = 'pending'
-     OR (state = 'failed' AND attempts < $1 AND last_attempt_at <= $2)
+  WHERE state IN ('pending', 'failed')
+    AND (state = 'pending' OR (attempts < $1 AND last_attempt_at <= $2))
   ORDER BY first_seen_at DESC
   LIMIT $3"
 

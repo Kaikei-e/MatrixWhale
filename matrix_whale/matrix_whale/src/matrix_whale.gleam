@@ -15,7 +15,9 @@ import pog
 import repeatedly
 import repository/alert_writer
 import repository/earthquake_reader
+import repository/gdacs_event_writer
 import repository/initialize_db
+import repository/jma_item_writer
 import repository/source_writer
 import repository/wis2_writer
 import wisp
@@ -102,6 +104,7 @@ fn sweep_and_clean_alerts(
       alert_writer.expire_due(now, db)
     })
   {
+    Ok([]) -> Nil
     Ok(rows) -> {
       alert_hub.publish(
         hub,
@@ -111,7 +114,11 @@ fn sweep_and_clean_alerts(
     }
     Error(error) -> wisp.log_error("Alert expiry sweep failed: " <> error)
   }
-  case wis2_writer.sweep_expired_episodes(now, db) {
+  case
+    metrics.time_db(metrics.Wis2Expire, fn() {
+      wis2_writer.sweep_expired_episodes(now, db)
+    })
+  {
     Ok([]) -> Nil
     Ok(ended) -> {
       hazard_hub.publish(hazard_hub, [], ended)
@@ -129,10 +136,30 @@ fn sweep_and_clean_alerts(
     Ok(Nil) -> Nil
     Error(error) -> wisp.log_error("Alert retention cleanup failed: " <> error)
   }
-  case wis2_writer.cleanup(cutoff, db) {
+  case
+    metrics.time_db(metrics.Wis2Cleanup, fn() {
+      wis2_writer.cleanup(cutoff, db)
+    })
+  {
     Ok(Nil) -> Nil
     Error(error) ->
       wisp.log_error("WIS2 notification retention cleanup failed: " <> error)
+  }
+  case
+    metrics.time_db(metrics.JmaCleanup, fn() {
+      jma_item_writer.cleanup(cutoff, db)
+    })
+  {
+    Ok(Nil) -> Nil
+    Error(error) -> wisp.log_error("JMA retention cleanup failed: " <> error)
+  }
+  case
+    metrics.time_db(metrics.GdacsCleanup, fn() {
+      gdacs_event_writer.cleanup(cutoff, db)
+    })
+  {
+    Ok(Nil) -> Nil
+    Error(error) -> wisp.log_error("GDACS retention cleanup failed: " <> error)
   }
 }
 

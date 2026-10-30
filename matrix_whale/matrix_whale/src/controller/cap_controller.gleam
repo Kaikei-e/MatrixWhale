@@ -273,8 +273,13 @@ pub fn process_alerts(
         }
       })
 
-      alert_hub.publish(ctx.hub, diff)
-      response_cache.invalidate(ctx.alert_cache)
+      case diff.new != [] || diff.updated != [] || diff.ended != [] {
+        True -> {
+          alert_hub.publish(ctx.hub, diff)
+          response_cache.invalidate(ctx.alert_cache)
+        }
+        False -> Nil
+      }
 
       // Mark repeats fetched (non-repeats are marked inside their transaction)
       use _ <- result.try(

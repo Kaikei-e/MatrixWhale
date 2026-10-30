@@ -6,6 +6,7 @@ import gleam/list
 import gleam/option.{type Option}
 import gleam/result
 import gleam/string
+import gleam/time/timestamp.{type Timestamp}
 import intake/pipeline.{type Written, Written}
 import intake/record.{type Incoming, type Key, type Verdict, Incoming, Key}
 import message/reciever/models/gdacs.{type GdacsFeature}
@@ -19,11 +20,8 @@ pub type GdacsWriteResult {
   )
 }
 
-const empty_result = GdacsWriteResult(
-  written_features: [],
-  new_hazards: [],
-  updated_hazards: [],
-)
+const empty_result =
+  GdacsWriteResult(written_features: [], new_hazards: [], updated_hazards: [])
 
 pub fn write_batch(
   records: List(Incoming(GdacsFeature)),
@@ -134,18 +132,15 @@ fn load_current(
   records: List(Incoming(GdacsFeature)),
   conn: pog.Connection,
 ) -> Result(#(Dict(Key, Int), Dict(Key, OriginPair)), String) {
-  let keys =
-    list.map(records, fn(r) {
-      composite_key(
-        r.payload.event_type,
-        r.payload.event_id,
-        r.payload.episode_id,
-      )
-    })
+  let event_types = list.map(records, fn(r) { r.payload.event_type })
+  let event_ids = list.map(records, fn(r) { r.payload.event_id })
+  let episode_ids = list.map(records, fn(r) { r.payload.episode_id })
   pog.query(
-    "SELECT event_type, event_id, episode_id, modified_at_ms, origin_source, origin_source_id FROM sea.gdacs_event WHERE (event_type || '-' || event_id::text || '-' || episode_id::text) = ANY($1) FOR UPDATE",
+    "SELECT e.event_type, e.event_id, e.episode_id, e.modified_at_ms, e.origin_source, e.origin_source_id FROM unnest($1::text[], $2::bigint[], $3::bigint[]) AS k(event_type, event_id, episode_id) JOIN sea.gdacs_event e USING (event_type, event_id, episode_id) FOR UPDATE OF e",
   )
-  |> pog.parameter(pog.array(pog.text, keys))
+  |> pog.parameter(pog.array(pog.text, event_types))
+  |> pog.parameter(pog.array(pog.int, event_ids))
+  |> pog.parameter(pog.array(pog.int, episode_ids))
   |> pog.returning({
     use event_type <- decode.field(0, decode.string)
     use event_id <- decode.field(1, decode.int)
@@ -213,9 +208,11 @@ fn preserve_origin(
   }
 }
 
-const insert_sql = "INSERT INTO sea.gdacs_event (event_type,event_id,episode_id,alert_level,alert_score,episode_alert_level,episode_alert_score,name,event_name,description,html_description,country,iso3,glide,origin_source,origin_source_id,severity_value,severity_unit,severity_text,from_at,from_at_ms,to_at,to_at_ms,modified_at,modified_at_ms,is_current,is_temporary,longitude,latitude,bbox_west,bbox_south,bbox_east,bbox_north,affected_countries,report_url,geometry_url,icon_url,raw,first_seen_at,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,to_timestamp($20::double precision/1000),$20,to_timestamp($21::double precision/1000),$21,to_timestamp($22::double precision/1000),$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35::jsonb,to_timestamp($36::double precision/1000),to_timestamp($36::double precision/1000)) ON CONFLICT (event_type,event_id,episode_id) DO NOTHING RETURNING event_type, event_id, episode_id"
+const insert_sql =
+  "INSERT INTO sea.gdacs_event (event_type,event_id,episode_id,alert_level,alert_score,episode_alert_level,episode_alert_score,name,event_name,description,html_description,country,iso3,glide,origin_source,origin_source_id,severity_value,severity_unit,severity_text,from_at,from_at_ms,to_at,to_at_ms,modified_at,modified_at_ms,is_current,is_temporary,longitude,latitude,bbox_west,bbox_south,bbox_east,bbox_north,affected_countries,report_url,geometry_url,icon_url,raw,first_seen_at,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,to_timestamp($20::double precision/1000),$20,to_timestamp($21::double precision/1000),$21,to_timestamp($22::double precision/1000),$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35::jsonb,to_timestamp($36::double precision/1000),to_timestamp($36::double precision/1000)) ON CONFLICT (event_type,event_id,episode_id) DO NOTHING RETURNING event_type, event_id, episode_id"
 
-const update_sql = "UPDATE sea.gdacs_event SET alert_level=$4,alert_score=$5,episode_alert_level=$6,episode_alert_score=$7,name=$8,event_name=$9,description=$10,html_description=$11,country=$12,iso3=$13,glide=$14,origin_source=$15,origin_source_id=$16,severity_value=$17,severity_unit=$18,severity_text=$19,from_at=to_timestamp($20::double precision/1000),from_at_ms=$20,to_at=to_timestamp($21::double precision/1000),to_at_ms=$21,modified_at=to_timestamp($22::double precision/1000),modified_at_ms=$22,is_current=$23,is_temporary=$24,longitude=$25,latitude=$26,bbox_west=$27,bbox_south=$28,bbox_east=$29,bbox_north=$30,affected_countries=$31,report_url=$32,geometry_url=$33,icon_url=$34,raw=$35::jsonb,last_seen_at=to_timestamp($36::double precision/1000) WHERE event_type=$1 AND event_id=$2 AND episode_id=$3 RETURNING event_type, event_id, episode_id"
+const update_sql =
+  "UPDATE sea.gdacs_event SET alert_level=$4,alert_score=$5,episode_alert_level=$6,episode_alert_score=$7,name=$8,event_name=$9,description=$10,html_description=$11,country=$12,iso3=$13,glide=$14,origin_source=$15,origin_source_id=$16,severity_value=$17,severity_unit=$18,severity_text=$19,from_at=to_timestamp($20::double precision/1000),from_at_ms=$20,to_at=to_timestamp($21::double precision/1000),to_at_ms=$21,modified_at=to_timestamp($22::double precision/1000),modified_at_ms=$22,is_current=$23,is_temporary=$24,longitude=$25,latitude=$26,bbox_west=$27,bbox_south=$28,bbox_east=$29,bbox_north=$30,affected_countries=$31,report_url=$32,geometry_url=$33,icon_url=$34,raw=$35::jsonb,last_seen_at=to_timestamp($36::double precision/1000) WHERE event_type=$1 AND event_id=$2 AND episode_id=$3 RETURNING event_type, event_id, episode_id"
 
 fn insert_new(
   pairs: List(#(Incoming(GdacsFeature), Verdict)),
@@ -327,32 +324,39 @@ pub fn recompute_hazard(
   now_ms: Int,
   conn: pog.Connection,
 ) -> Result(HazardRecompute, String) {
-  use rows <- result.try(load_episodes(event_type, event_id, conn))
-  let active_rows = hazard.active_episodes(rows)
-  case hazard.latest_episode(active_rows) {
+  use latest_opt <- result.try(load_latest_active_episode(
+    event_type,
+    event_id,
+    conn,
+  ))
+  case latest_opt {
     option.None -> Ok(Skipped)
-    option.Some(latest) -> {
-      let normalized = hazard.normalize(latest, list.length(active_rows))
+    option.Some(#(latest, active_count)) -> {
+      let normalized = hazard.normalize(latest, active_count)
       write_hazard(normalized, now_ms, conn)
     }
   }
 }
 
-fn load_episodes(
+fn load_latest_active_episode(
   event_type: String,
   event_id: Int,
   conn: pog.Connection,
-) -> Result(List(hazard.GdacsEpisodeRow), String) {
+) -> Result(Option(#(hazard.GdacsEpisodeRow, Int)), String) {
   pog.query(
     "SELECT "
     <> hazard.episode_columns
-    <> " FROM sea.gdacs_event WHERE event_type = $1 AND event_id = $2",
+    <> ", count(*) OVER ()::integer FROM sea.gdacs_event WHERE event_type = $1 AND event_id = $2 AND NOT is_temporary ORDER BY modified_at_ms DESC, episode_id DESC LIMIT 1",
   )
   |> pog.parameter(pog.text(event_type))
   |> pog.parameter(pog.int(event_id))
-  |> pog.returning(hazard.episode_row_decoder())
+  |> pog.returning({
+    use episode <- decode.then(hazard.episode_row_decoder())
+    use active_count <- decode.field(29, decode.int)
+    decode.success(#(episode, active_count))
+  })
   |> pog.execute(conn)
-  |> result.map(fn(x) { x.rows })
+  |> result.map(fn(x) { list.first(x.rows) |> option.from_result })
   |> result.map_error(err)
 }
 
@@ -386,10 +390,12 @@ fn hazard_exists(
   |> result.map_error(err)
 }
 
-const hazard_insert_sql = "INSERT INTO sea.hazard (source,source_id,source_episode_id,episode_count,hazard_type,hazard_codes,glide,alert_level,alert_score,cap_severity,severity_value,severity_unit,severity_label,estimate_type,title,description,countries,report_url,external_ids,onset_at,onset_at_ms,expires_at,expires_at_ms,modified_at,modified_at_ms,is_current,centroid,bbox,primary_geometry,geometries,first_seen_at,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,to_timestamp($20::double precision/1000),$20,to_timestamp($21::double precision/1000),$21,to_timestamp($22::double precision/1000),$22,$23,ST_SetSRID(ST_MakePoint($24,$25),4326),ST_SetSRID(ST_MakeEnvelope($26,$27,$28,$29),4326),ST_SetSRID(ST_GeomFromGeoJSON($30::text),4326),$31::jsonb,to_timestamp($32::double precision/1000),to_timestamp($32::double precision/1000)) RETURNING "
+const hazard_insert_sql =
+  "INSERT INTO sea.hazard (source,source_id,source_episode_id,episode_count,hazard_type,hazard_codes,glide,alert_level,alert_score,cap_severity,severity_value,severity_unit,severity_label,estimate_type,title,description,countries,report_url,external_ids,onset_at,onset_at_ms,expires_at,expires_at_ms,modified_at,modified_at_ms,is_current,centroid,bbox,primary_geometry,geometries,first_seen_at,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,to_timestamp($20::double precision/1000),$20,to_timestamp($21::double precision/1000),$21,to_timestamp($22::double precision/1000),$22,$23,ST_SetSRID(ST_MakePoint($24,$25),4326),ST_SetSRID(ST_MakeEnvelope($26,$27,$28,$29),4326),ST_SetSRID(ST_GeomFromGeoJSON($30::text),4326),$31::jsonb,to_timestamp($32::double precision/1000),to_timestamp($32::double precision/1000)) RETURNING "
   <> hazard.columns
 
-const hazard_update_sql = "UPDATE sea.hazard SET source_episode_id=$3,episode_count=$4,hazard_type=$5,hazard_codes=$6,glide=$7,alert_level=$8,alert_score=$9,cap_severity=$10,severity_value=$11,severity_unit=$12,severity_label=$13,estimate_type=$14,title=$15,description=$16,countries=$17,report_url=$18,external_ids=$19,onset_at=to_timestamp($20::double precision/1000),onset_at_ms=$20,expires_at=to_timestamp($21::double precision/1000),expires_at_ms=$21,modified_at=to_timestamp($22::double precision/1000),modified_at_ms=$22,is_current=$23,centroid=ST_SetSRID(ST_MakePoint($24,$25),4326),bbox=ST_SetSRID(ST_MakeEnvelope($26,$27,$28,$29),4326),primary_geometry=ST_SetSRID(ST_GeomFromGeoJSON($30::text),4326),geometries=$31::jsonb,last_seen_at=to_timestamp($32::double precision/1000) WHERE source=$1 AND source_id=$2 RETURNING "
+const hazard_update_sql =
+  "UPDATE sea.hazard SET source_episode_id=$3,episode_count=$4,hazard_type=$5,hazard_codes=$6,glide=$7,alert_level=$8,alert_score=$9,cap_severity=$10,severity_value=$11,severity_unit=$12,severity_label=$13,estimate_type=$14,title=$15,description=$16,countries=$17,report_url=$18,external_ids=$19,onset_at=to_timestamp($20::double precision/1000),onset_at_ms=$20,expires_at=to_timestamp($21::double precision/1000),expires_at_ms=$21,modified_at=to_timestamp($22::double precision/1000),modified_at_ms=$22,is_current=$23,centroid=ST_SetSRID(ST_MakePoint($24,$25),4326),bbox=ST_SetSRID(ST_MakeEnvelope($26,$27,$28,$29),4326),primary_geometry=ST_SetSRID(ST_GeomFromGeoJSON($30::text),4326),geometries=$31::jsonb,last_seen_at=to_timestamp($32::double precision/1000) WHERE source=$1 AND source_id=$2 RETURNING "
   <> hazard.columns
 
 fn run_hazard_write(
@@ -455,7 +461,8 @@ fn hazard_bind_params(query, n: hazard.NormalizedHazard, now_ms: Int) {
   |> pog.parameter(pog.int(now_ms))
 }
 
-const feature_row_columns = "event_type, event_id, episode_id, alert_level, alert_score, episode_alert_level, episode_alert_score, name, event_name, description, html_description, country, iso3, glide, origin_source, origin_source_id, severity_value, severity_unit, severity_text, from_at_ms, to_at_ms, modified_at_ms, is_current, is_temporary, longitude, latitude, bbox_west, bbox_south, bbox_east, bbox_north, affected_countries, report_url, geometry_url, icon_url, raw::text"
+const feature_row_columns =
+  "event_type, event_id, episode_id, alert_level, alert_score, episode_alert_level, episode_alert_score, name, event_name, description, html_description, country, iso3, glide, origin_source, origin_source_id, severity_value, severity_unit, severity_text, from_at_ms, to_at_ms, modified_at_ms, is_current, is_temporary, longitude, latitude, bbox_west, bbox_south, bbox_east, bbox_north, affected_countries, report_url, geometry_url, icon_url, raw::text"
 
 /// Reads one raw episode row back in the same shape the adapter originally
 /// sent it in, so it can be re-run through `gdacs.to_incoming_earthquake`
@@ -553,6 +560,27 @@ fn feature_row_decoder() -> decode.Decoder(GdacsFeature) {
     icon_url:,
     raw:,
   ))
+}
+
+pub fn cleanup(cutoff: Timestamp, conn: pog.Connection) -> Result(Nil, String) {
+  use _ <- result.try(
+    pog.query(
+      "DELETE FROM sea.gdacs_event WHERE NOT is_current AND last_seen_at < $1 AND modified_at < $1",
+    )
+    |> pog.parameter(pog.timestamp(cutoff))
+    |> pog.returning(decode.success(Nil))
+    |> pog.execute(conn)
+    |> result.map(fn(_) { Nil })
+    |> result.map_error(err),
+  )
+  pog.query(
+    "DELETE FROM sea.hazard WHERE source = 'gdacs' AND NOT is_current AND last_seen_at < $1 AND modified_at < $1",
+  )
+  |> pog.parameter(pog.timestamp(cutoff))
+  |> pog.returning(decode.success(Nil))
+  |> pog.execute(conn)
+  |> result.map(fn(_) { Nil })
+  |> result.map_error(err)
 }
 
 fn err(x: pog.QueryError) -> String {

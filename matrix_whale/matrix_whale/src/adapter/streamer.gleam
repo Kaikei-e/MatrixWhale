@@ -337,11 +337,30 @@ fn tagged_json_response(
   weakness: String,
 ) -> Response(mist.ResponseData) {
   let base_etag = weakness <> "\"" <> sha256_hex(validator_text) <> "\""
-  let gzip = case compression.request_accepts_gzip(req) {
-    True -> option.Some(compression.gzip(bit_array.from_string(text)))
-    False -> option.None
+  let accepts_gzip = compression.request_accepts_gzip(req)
+  let response_etag = case accepts_gzip {
+    True -> string.drop_end(base_etag, 1) <> "-gzip\""
+    False -> base_etag
   }
-  tagged_response(req, base_etag, text, gzip)
+  let not_modified = case request.get_header(req, "if-none-match") {
+    Ok(value) -> if_none_match_matches(value, response_etag)
+    Error(Nil) -> False
+  }
+  case not_modified {
+    True ->
+      response.new(304)
+      |> response.set_header("etag", response_etag)
+      |> response.set_header("cache-control", "no-cache")
+      |> compression.add_vary_accept_encoding
+      |> response.set_body(mist.Bytes(bytes_tree.new()))
+    False -> {
+      let gzip = case accepts_gzip {
+        True -> option.Some(compression.gzip(bit_array.from_string(text)))
+        False -> option.None
+      }
+      tagged_response(req, base_etag, text, gzip)
+    }
+  }
 }
 
 fn tagged_response(

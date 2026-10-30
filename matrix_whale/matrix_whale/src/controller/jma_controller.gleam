@@ -7,6 +7,7 @@ import gleam/option.{type Option}
 import gleam/result
 import gleam/time/timestamp
 import message/reciever/models/jma as models_jma
+import metrics
 import repository/jma_item_writer.{type PendingItem}
 import repository/jma_message_writer
 
@@ -28,7 +29,9 @@ pub fn process_index(
   ctx: Context,
 ) -> Result(ControllerAck, String) {
   let now = timestamp.system_time()
-  jma_item_writer.write_index(items, received, decode_dropped, now, ctx.db)
+  metrics.time_db(metrics.JmaIndexWrite, fn() {
+    jma_item_writer.write_index(items, received, decode_dropped, now, ctx.db)
+  })
   |> result.map(fn(ack) {
     let bytes = option.map(meta, fn(m) { m.bytes }) |> option.unwrap(0)
     let http_status =
@@ -76,7 +79,9 @@ pub fn process_messages(
   ctx: Context,
 ) -> Result(ControllerAck, String) {
   let now = timestamp.system_time()
-  jma_message_writer.write_batch(results, now, ctx.db)
+  metrics.time_db(metrics.JmaMessageWrite, fn() {
+    jma_message_writer.write_batch(results, now, ctx.db)
+  })
   |> result.map(fn(res) {
     let bytes = option.map(meta, fn(m) { m.bytes }) |> option.unwrap(0)
     let http_status =

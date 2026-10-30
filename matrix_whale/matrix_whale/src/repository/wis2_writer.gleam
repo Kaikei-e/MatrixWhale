@@ -94,6 +94,22 @@ pub fn cleanup(cutoff: Timestamp, conn: pog.Connection) -> Result(Nil, String) {
     |> result.map_error(err),
   )
   use _ <- result.try(
+    pog.query("DELETE FROM sea.wis2_cap_area WHERE received_at < $1")
+    |> pog.parameter(pog.timestamp(cutoff))
+    |> pog.returning(decode.success(Nil))
+    |> pog.execute(conn)
+    |> result.map(fn(_) { Nil })
+    |> result.map_error(err),
+  )
+  use _ <- result.try(
+    pog.query("DELETE FROM sea.wis2_health_bucket WHERE bucket_start < $1")
+    |> pog.parameter(pog.timestamp(cutoff))
+    |> pog.returning(decode.success(Nil))
+    |> pog.execute(conn)
+    |> result.map(fn(_) { Nil })
+    |> result.map_error(err),
+  )
+  use _ <- result.try(
     pog.query("DELETE FROM sea.wis2_tc_track WHERE received_at < $1")
     |> pog.parameter(pog.timestamp(cutoff))
     |> pog.returning(decode.success(Nil))
@@ -257,9 +273,7 @@ const update_alert_geom_sql = "
     WHERE (sender = $1::text AND identifier = $2::text) OR source_id = $1::text || ',' || $2::text
     RETURNING *
   )
-  SELECT "
-  <> alert.columns
-  <> "
+  SELECT " <> alert.columns <> "
   FROM written a
   JOIN sea.source s ON s.id = a.source"
 
@@ -573,9 +587,11 @@ pub fn write_tc_track(
   |> result.map_error(err)
 }
 
-const tc_hazard_insert_sql = "INSERT INTO sea.hazard (source,source_id,source_episode_id,episode_count,hazard_type,hazard_codes,glide,alert_level,alert_score,cap_severity,severity_value,severity_unit,severity_label,estimate_type,title,description,countries,report_url,external_ids,onset_at,onset_at_ms,expires_at,expires_at_ms,modified_at,modified_at_ms,is_current,centroid,bbox,primary_geometry,geometries,first_seen_at,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,to_timestamp($20::double precision/1000),$20,to_timestamp($21::double precision/1000),$21,to_timestamp($22::double precision/1000),$22,$23,ST_SetSRID(ST_MakePoint($24,$25),4326),ST_SetSRID(ST_MakeEnvelope($26,$27,$28,$29),4326),ST_SetSRID(ST_GeomFromGeoJSON($30::text),4326),$31::jsonb,to_timestamp($32::double precision/1000),to_timestamp($32::double precision/1000)) RETURNING "
+const tc_hazard_insert_sql =
+  "INSERT INTO sea.hazard (source,source_id,source_episode_id,episode_count,hazard_type,hazard_codes,glide,alert_level,alert_score,cap_severity,severity_value,severity_unit,severity_label,estimate_type,title,description,countries,report_url,external_ids,onset_at,onset_at_ms,expires_at,expires_at_ms,modified_at,modified_at_ms,is_current,centroid,bbox,primary_geometry,geometries,first_seen_at,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,to_timestamp($20::double precision/1000),$20,to_timestamp($21::double precision/1000),$21,to_timestamp($22::double precision/1000),$22,$23,ST_SetSRID(ST_MakePoint($24,$25),4326),ST_SetSRID(ST_MakeEnvelope($26,$27,$28,$29),4326),ST_SetSRID(ST_GeomFromGeoJSON($30::text),4326),$31::jsonb,to_timestamp($32::double precision/1000),to_timestamp($32::double precision/1000)) RETURNING "
 
-const tc_hazard_update_sql = "UPDATE sea.hazard SET alert_level=$3::text,cap_severity=$4::text,severity_value=$5::double precision,title=$6::text,description=$7,expires_at=to_timestamp($8::double precision/1000),expires_at_ms=$8,modified_at=to_timestamp($9::double precision/1000),modified_at_ms=$9,is_current=$10,centroid=ST_SetSRID(ST_MakePoint($11,$12),4326),bbox=ST_SetSRID(ST_MakeEnvelope($13,$14,$15,$16),4326),primary_geometry=ST_SetSRID(ST_GeomFromGeoJSON($17::text),4326),geometries=$18::jsonb,last_seen_at=to_timestamp($19::double precision/1000) WHERE source=$1::text AND source_id=$2::text RETURNING "
+const tc_hazard_update_sql =
+  "UPDATE sea.hazard SET alert_level=$3::text,cap_severity=$4::text,severity_value=$5::double precision,title=$6::text,description=$7,expires_at=to_timestamp($8::double precision/1000),expires_at_ms=$8,modified_at=to_timestamp($9::double precision/1000),modified_at_ms=$9,is_current=$10,centroid=ST_SetSRID(ST_MakePoint($11,$12),4326),bbox=ST_SetSRID(ST_MakeEnvelope($13,$14,$15,$16),4326),primary_geometry=ST_SetSRID(ST_GeomFromGeoJSON($17::text),4326),geometries=$18::jsonb,last_seen_at=to_timestamp($19::double precision/1000) WHERE source=$1::text AND source_id=$2::text RETURNING "
 
 pub fn upsert_own_tc_hazard(
   feature: Wis2TcFeature,
@@ -947,7 +963,8 @@ pub type StationUpsert {
   )
 }
 
-const batch_upsert_stations_sql = "
+const batch_upsert_stations_sql =
+  "
   INSERT INTO sea.wis2_station (
     station_id, name, lat, lon, elevation_m, geom, last_observed_at,
     wind_speed_ms, wind_observed_at,

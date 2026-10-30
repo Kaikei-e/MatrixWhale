@@ -99,7 +99,7 @@ fn touch_known_items(
     _ -> {
       let urls = list.map(items, fn(i) { i.item_url })
       pog.query(
-        "UPDATE sea.jma_item SET last_seen_at = $2 WHERE item_url = ANY($1)",
+        "UPDATE sea.jma_item SET last_seen_at = $2 WHERE item_url = ANY($1) AND last_seen_at < $2 - INTERVAL '1 hour'",
       )
       |> pog.parameter(pog.array(pog.text, urls))
       |> pog.parameter(pog.timestamp(now))
@@ -111,7 +111,8 @@ fn touch_known_items(
   }
 }
 
-const insert_item_sql = "
+const insert_item_sql =
+  "
   INSERT INTO sea.jma_item
     (item_url, feed_url, guid, title, published_at, state, attempts, first_seen_at, last_seen_at)
   VALUES
@@ -142,11 +143,12 @@ fn insert_new_items(
   })
 }
 
-const pending_sql = "
+const pending_sql =
+  "
   SELECT item_url, feed_url
   FROM sea.jma_item
-  WHERE state = 'pending'
-     OR (state = 'failed' AND attempts < $1 AND last_attempt_at <= $2)
+  WHERE state IN ('pending', 'failed')
+    AND (state = 'pending' OR (attempts < $1 AND last_attempt_at <= $2))
   ORDER BY published_at DESC NULLS LAST, first_seen_at DESC
   LIMIT $3"
 
@@ -165,6 +167,27 @@ pub fn pending(
   |> pog.returning(pending_item_decoder())
   |> pog.execute(conn)
   |> result.map(fn(x) { x.rows })
+  |> result.map_error(err)
+}
+
+pub fn cleanup(cutoff: Timestamp, conn: pog.Connection) -> Result(Nil, String) {
+  use _ <- result.try(
+    pog.query(
+      "DELETE FROM sea.jma_message WHERE last_seen_at < $1 AND sent < $1",
+    )
+    |> pog.parameter(pog.timestamp(cutoff))
+    |> pog.returning(decode.success(Nil))
+    |> pog.execute(conn)
+    |> result.map(fn(_) { Nil })
+    |> result.map_error(err),
+  )
+  pog.query(
+    "DELETE FROM sea.jma_item WHERE last_seen_at < $1 AND state <> 'pending' AND NOT EXISTS (SELECT 1 FROM sea.jma_message m WHERE m.item_url = sea.jma_item.item_url)",
+  )
+  |> pog.parameter(pog.timestamp(cutoff))
+  |> pog.returning(decode.success(Nil))
+  |> pog.execute(conn)
+  |> result.map(fn(_) { Nil })
   |> result.map_error(err)
 }
 

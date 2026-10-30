@@ -69,6 +69,8 @@ CREATE INDEX idx_alert_reference_keys ON sea.alert USING GIN (reference_keys);
 CREATE INDEX idx_alert_area_desc_trgm ON sea.alert USING GIN (area_desc gin_trgm_ops);
 CREATE INDEX idx_alert_event_trgm ON sea.alert USING GIN (event gin_trgm_ops);
 CREATE INDEX idx_alert_headline_trgm ON sea.alert USING GIN (headline gin_trgm_ops);
+CREATE INDEX idx_alert_sender_identifier ON sea.alert (sender, identifier) WHERE sender IS NOT NULL AND identifier IS NOT NULL;
+CREATE INDEX idx_alert_source_id ON sea.alert (source_id);
 
 CREATE TABLE sea.cap_authority (
   oid TEXT PRIMARY KEY,
@@ -118,6 +120,9 @@ CREATE TABLE sea.cap_item (
   last_seen_at TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX idx_cap_item_state_first_seen ON sea.cap_item (state, first_seen_at DESC);
+CREATE INDEX idx_cap_item_pending_retry ON sea.cap_item (first_seen_at DESC) WHERE state IN ('pending', 'failed');
+CREATE INDEX idx_cap_item_failed_feed_url ON sea.cap_item (feed_url) WHERE state = 'failed';
+CREATE INDEX idx_cap_item_last_seen_at ON sea.cap_item (last_seen_at) WHERE state <> 'pending';
 
 CREATE TABLE sea.cap_message (
   sender TEXT NOT NULL,
@@ -293,6 +298,8 @@ CREATE TABLE sea.jma_item (
   last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_jma_item_state_first_seen ON sea.jma_item (state, first_seen_at DESC);
+CREATE INDEX idx_jma_item_pending_retry ON sea.jma_item (published_at DESC NULLS LAST, first_seen_at DESC) WHERE state IN ('pending', 'failed');
+CREATE INDEX idx_jma_item_last_seen_at ON sea.jma_item (last_seen_at) WHERE state <> 'pending';
 
 CREATE TABLE sea.jma_message (
   identifier TEXT PRIMARY KEY,
@@ -359,6 +366,7 @@ CREATE TABLE sea.wis2_cap_area (
   PRIMARY KEY (cap_sender, cap_identifier, area_key)
 );
 CREATE INDEX idx_wis2_cap_area_geom ON sea.wis2_cap_area USING GIST (geom);
+CREATE INDEX idx_wis2_cap_area_received_at ON sea.wis2_cap_area (received_at);
 
 CREATE TABLE sea.wis2_health_bucket (
   centre_id TEXT NOT NULL,
@@ -372,6 +380,7 @@ CREATE TABLE sea.wis2_health_bucket (
   last_received_at TIMESTAMPTZ,
   PRIMARY KEY (centre_id, kind, bucket_start)
 );
+CREATE INDEX idx_wis2_health_bucket_start ON sea.wis2_health_bucket (bucket_start);
 
 CREATE TABLE sea.wis2_broker (
   id SMALLINT PRIMARY KEY CHECK (id = 1),
@@ -422,3 +431,4 @@ CREATE TABLE sea.wis2_station (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_wis2_station_geom ON sea.wis2_station USING GIST (geom);
+CREATE INDEX idx_wis2_station_geog ON sea.wis2_station USING GIST ((geom::geography));

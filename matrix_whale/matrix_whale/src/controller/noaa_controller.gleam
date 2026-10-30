@@ -105,8 +105,13 @@ pub fn noaa_controller(
         list.length(diff.updated),
         ended_count,
       )
-      alert_hub.publish(ctx.hub, diff)
-      response_cache.invalidate(ctx.alert_cache)
+      case diff.new != [] || diff.updated != [] || diff.ended != [] {
+        True -> {
+          alert_hub.publish(ctx.hub, diff)
+          response_cache.invalidate(ctx.alert_cache)
+        }
+        False -> Nil
+      }
 
       Ok(NoaaResult(
         new: outcome.new,

@@ -4,7 +4,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/time/timestamp
 
-const ttl_seconds = 60
+const ttl_seconds = 300
 
 const max_entries = 8
 

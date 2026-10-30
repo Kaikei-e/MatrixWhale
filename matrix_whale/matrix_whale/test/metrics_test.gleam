@@ -68,6 +68,20 @@ pub fn route_template_test() {
   |> should.equal("/api/v1/cap_data/pending")
   metrics.route_template(["api", "v1", "cap_data", "alerts"])
   |> should.equal("/api/v1/cap_data/alerts")
+  metrics.route_template(["api", "v1", "jma_data", "index"])
+  |> should.equal("/api/v1/jma_data/index")
+  metrics.route_template(["api", "v1", "jma_data", "pending"])
+  |> should.equal("/api/v1/jma_data/pending")
+  metrics.route_template(["api", "v1", "jma_data", "messages"])
+  |> should.equal("/api/v1/jma_data/messages")
+  metrics.route_template(["api", "v1", "wis2_data", "cap"])
+  |> should.equal("/api/v1/wis2_data/cap")
+  metrics.route_template(["api", "v1", "wis2_data", "health"])
+  |> should.equal("/api/v1/wis2_data/health")
+  metrics.route_template(["api", "v1", "wis2_data", "tc_tracks"])
+  |> should.equal("/api/v1/wis2_data/tc_tracks")
+  metrics.route_template(["api", "v1", "wis2_data", "observations"])
+  |> should.equal("/api/v1/wis2_data/observations")
 
   // Streamer routes
   metrics.route_template(["api", "v1", "streamer", "health"])
@@ -84,6 +98,8 @@ pub fn route_template_test() {
   |> should.equal("/api/v1/alerts/history")
   metrics.route_template(["api", "v1", "cap", "feeds"])
   |> should.equal("/api/v1/cap/feeds")
+  metrics.route_template(["api", "v1", "wis2", "health"])
+  |> should.equal("/api/v1/wis2/health")
   metrics.route_template(["api", "v1", "earthquakes", "recent"])
   |> should.equal("/api/v1/earthquakes/recent")
   metrics.route_template(["api", "v1", "earthquakes", "stream"])
@@ -97,6 +113,16 @@ pub fn route_template_test() {
   metrics.route_template(["api", "v1", "hazards", "stream"])
   |> should.equal("/api/v1/hazards/stream")
   metrics.route_template(["api", "v1", "hazards", "usgs", "123"])
+  |> should.equal("/api/v1/hazards/:source/:id")
+  metrics.route_template([
+    "api",
+    "v1",
+    "hazards",
+    "wis2-jp",
+    "station",
+    "wind",
+    "123",
+  ])
   |> should.equal("/api/v1/hazards/:source/:id")
   metrics.route_template(["api", "v1", "timeline"])
   |> should.equal("/api/v1/timeline")

@@ -73,8 +73,13 @@ pub fn process(
     let new_hazards = list.flat_map(outcome.results, fn(r) { r.new_hazards })
     let updated_hazards =
       list.flat_map(outcome.results, fn(r) { r.updated_hazards })
-    hazard_hub.publish(ctx.hazard_hub, new_hazards, updated_hazards)
-    response_cache.invalidate(ctx.hazard_cache)
+    case new_hazards != [] || updated_hazards != [] {
+      True -> {
+        hazard_hub.publish(ctx.hazard_hub, new_hazards, updated_hazards)
+        response_cache.invalidate(ctx.hazard_cache)
+      }
+      False -> Nil
+    }
 
     GdacsResult(
       new: outcome.new,
@@ -103,8 +108,13 @@ pub fn process_geometry(
     gdacs_geometry_writer.apply(results, now_ms, ctx.db)
   })
   |> result.map(fn(outcome) {
-    hazard_hub.publish(ctx.hazard_hub, [], outcome.changed_hazards)
-    response_cache.invalidate(ctx.hazard_cache)
+    case outcome.changed_hazards != [] {
+      True -> {
+        hazard_hub.publish(ctx.hazard_hub, [], outcome.changed_hazards)
+        response_cache.invalidate(ctx.hazard_cache)
+      }
+      False -> Nil
+    }
     run_geometry_earthquake_path(outcome.applied, backfill, ctx)
     GdacsGeometryResultAck(
       written: outcome.written,

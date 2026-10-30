@@ -36,9 +36,19 @@ pub type DbOp {
   CapMessageWrite
   CapIndexWrite
   CapRegistryWrite
+  JmaIndexWrite
+  JmaMessageWrite
+  Wis2CapWrite
+  Wis2HealthWrite
+  Wis2TcTrackWrite
+  Wis2ObservationWrite
   EarthquakeCleanup
   AlertExpire
   AlertCleanup
+  Wis2Expire
+  Wis2Cleanup
+  JmaCleanup
+  GdacsCleanup
 }
 
 pub fn db_op_to_string(op: DbOp) -> String {
@@ -50,9 +60,19 @@ pub fn db_op_to_string(op: DbOp) -> String {
     CapMessageWrite -> "cap_message_write"
     CapIndexWrite -> "cap_index_write"
     CapRegistryWrite -> "cap_registry_write"
+    JmaIndexWrite -> "jma_index_write"
+    JmaMessageWrite -> "jma_message_write"
+    Wis2CapWrite -> "wis2_cap_write"
+    Wis2HealthWrite -> "wis2_health_write"
+    Wis2TcTrackWrite -> "wis2_tc_track_write"
+    Wis2ObservationWrite -> "wis2_observation_write"
     EarthquakeCleanup -> "earthquake_cleanup"
     AlertExpire -> "alert_expire"
     AlertCleanup -> "alert_cleanup"
+    Wis2Expire -> "wis2_expire"
+    Wis2Cleanup -> "wis2_cleanup"
+    JmaCleanup -> "jma_cleanup"
+    GdacsCleanup -> "gdacs_cleanup"
   }
 }
 
@@ -131,6 +151,14 @@ pub fn route_template(segments: List(String)) -> String {
     ["api", "v1", "cap_data", "index"] -> "/api/v1/cap_data/index"
     ["api", "v1", "cap_data", "pending"] -> "/api/v1/cap_data/pending"
     ["api", "v1", "cap_data", "alerts"] -> "/api/v1/cap_data/alerts"
+    ["api", "v1", "jma_data", "index"] -> "/api/v1/jma_data/index"
+    ["api", "v1", "jma_data", "pending"] -> "/api/v1/jma_data/pending"
+    ["api", "v1", "jma_data", "messages"] -> "/api/v1/jma_data/messages"
+    ["api", "v1", "wis2_data", "cap"] -> "/api/v1/wis2_data/cap"
+    ["api", "v1", "wis2_data", "health"] -> "/api/v1/wis2_data/health"
+    ["api", "v1", "wis2_data", "tc_tracks"] -> "/api/v1/wis2_data/tc_tracks"
+    ["api", "v1", "wis2_data", "observations"] ->
+      "/api/v1/wis2_data/observations"
     ["api", "v1", "streamer", "health"] -> "/api/v1/streamer/health"
     ["api", "v1", "alerts", "active"] -> "/api/v1/alerts/active"
     ["api", "v1", "alerts", "detail"] -> "/api/v1/alerts/detail"
@@ -138,13 +166,15 @@ pub fn route_template(segments: List(String)) -> String {
     ["api", "v1", "alerts", "search"] -> "/api/v1/alerts/search"
     ["api", "v1", "alerts", "history"] -> "/api/v1/alerts/history"
     ["api", "v1", "cap", "feeds"] -> "/api/v1/cap/feeds"
+    ["api", "v1", "wis2", "health"] -> "/api/v1/wis2/health"
     ["api", "v1", "earthquakes", "recent"] -> "/api/v1/earthquakes/recent"
     ["api", "v1", "earthquakes", "stream"] -> "/api/v1/earthquakes/stream"
     ["api", "v1", "pipeline", "status"] -> "/api/v1/pipeline/status"
     ["api", "v1", "sources"] -> "/api/v1/sources"
     ["api", "v1", "hazards", "recent"] -> "/api/v1/hazards/recent"
     ["api", "v1", "hazards", "stream"] -> "/api/v1/hazards/stream"
-    ["api", "v1", "hazards", _source, _id] -> "/api/v1/hazards/:source/:id"
+    ["api", "v1", "hazards", _source, ..rest] if rest != [] ->
+      "/api/v1/hazards/:source/:id"
     ["api", "v1", "timeline"] -> "/api/v1/timeline"
     ["api", "v1", "stream"] -> "/api/v1/stream"
     _ -> "unmatched"
