@@ -244,6 +244,8 @@ services:
     command:
       - postgres
       - -c
+      - io_method=sync
+      - -c
       - shared_buffers=512MB
       - -c
       - work_mem=16MB
