@@ -52,7 +52,8 @@ fn make_hazard(id: String, polygon_text: String) -> hazard.Hazard {
   )
 }
 
-const sample_polygon_geojson = "{\"type\":\"Polygon\",\"coordinates\":[[[105.8726,-8.5419],[106.0,-8.0],[105.0,-8.0],[105.8726,-8.5419]]]}"
+const sample_polygon_geojson =
+  "{\"type\":\"Polygon\",\"coordinates\":[[[105.8726,-8.5419],[106.0,-8.0],[105.0,-8.0],[105.8726,-8.5419]]]}"
 
 pub fn two_cohorts_delivery_and_payload_distinction_test() {
   let assert Ok(actor.Started(_, hub)) = hazard_hub.start()

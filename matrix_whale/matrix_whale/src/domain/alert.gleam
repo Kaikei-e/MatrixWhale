@@ -7,7 +7,8 @@ import gleam/option.{type Option, None, Some}
 import gleam/time/calendar
 import gleam/time/timestamp.{type Timestamp}
 
-pub const columns = "a.source, a.source_id, s.name AS source_name, s.attribution_text AS attribution, a.sender, a.sender_name, a.identifier, a.message_type, a.event, a.category, a.severity, a.urgency, a.certainty, a.headline, a.description, a.instruction, a.web, a.contact, a.language, a.area_desc, a.geocodes::text, a.countries, "
+pub const columns =
+  "a.source, a.source_id, s.name AS source_name, s.attribution_text AS attribution, a.sender, a.sender_name, a.identifier, a.message_type, a.event, a.category, a.severity, a.urgency, a.certainty, a.headline, a.description, a.instruction, a.web, a.contact, a.language, a.area_desc, a.geocodes::text, a.countries, "
   <> geom_expr
   <> ", a.reference_keys, a.sent, a.effective, a.onset, a.expires, a.ends, a.active_until, a.first_seen_at, a.last_seen_at, a.ended_at, a.end_reason, a.superseded_by"
 
@@ -15,9 +16,11 @@ pub const columns = "a.source, a.source_id, s.name AS source_name, s.attribution
 /// avoid transferring thousands of invisible island slivers from JMA alerts,
 /// while short-circuiting NULL and single-polygon geometries to avoid ST_Dump
 /// and window function overhead on standard CAP/NOAA polygons.
-const geom_expr = "CASE WHEN a.geom IS NULL THEN NULL WHEN ST_NumGeometries(a.geom) = 1 THEN ST_AsGeoJSON(ST_Multi(ST_SimplifyPreserveTopology(a.geom, 0.01)), 4) ELSE (SELECT ST_AsGeoJSON(ST_Multi(ST_SimplifyPreserveTopology(ST_CollectionExtract(ST_Collect(d.geom), 3), 0.01)), 4) FROM (SELECT g.geom, row_number() OVER (ORDER BY ST_Area(g.geom) DESC) AS rn FROM ST_Dump(a.geom) g) d WHERE ST_Area(d.geom) >= 1e-5 OR d.rn = 1) END"
+const geom_expr =
+  "CASE WHEN a.geom IS NULL THEN NULL WHEN ST_NumGeometries(a.geom) = 1 THEN ST_AsGeoJSON(ST_Multi(ST_SimplifyPreserveTopology(a.geom, 0.01)), 4) ELSE (SELECT ST_AsGeoJSON(ST_Multi(ST_SimplifyPreserveTopology(ST_CollectionExtract(ST_Collect(d.geom), 3), 0.01)), 4) FROM (SELECT g.geom, row_number() OVER (ORDER BY ST_Area(g.geom) DESC) AS rn FROM ST_Dump(a.geom) g) d WHERE ST_Area(d.geom) >= 1e-5 OR d.rn = 1) END"
 
-pub const detail_columns = "a.source, a.source_id, s.name AS source_name, s.attribution_text AS attribution, a.sender, a.sender_name, a.identifier, a.message_type, a.event, a.category, a.severity, a.urgency, a.certainty, a.headline, a.description, a.instruction, a.web, a.contact, a.language, a.area_desc, a.geocodes::text, a.countries, ST_AsGeoJSON(a.geom, 6), a.reference_keys, a.sent, a.effective, a.onset, a.expires, a.ends, a.active_until, a.first_seen_at, a.last_seen_at, a.ended_at, a.end_reason, a.superseded_by"
+pub const detail_columns =
+  "a.source, a.source_id, s.name AS source_name, s.attribution_text AS attribution, a.sender, a.sender_name, a.identifier, a.message_type, a.event, a.category, a.severity, a.urgency, a.certainty, a.headline, a.description, a.instruction, a.web, a.contact, a.language, a.area_desc, a.geocodes::text, a.countries, ST_AsGeoJSON(a.geom, 6), a.reference_keys, a.sent, a.effective, a.onset, a.expires, a.ends, a.active_until, a.first_seen_at, a.last_seen_at, a.ended_at, a.end_reason, a.superseded_by"
 
 pub type AlertRow {
   AlertRow(

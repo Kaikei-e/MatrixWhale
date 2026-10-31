@@ -151,10 +151,12 @@ fn current_row_decoder() -> decode.Decoder(#(String, String, Int)) {
   decode.success(#(source, source_id, updated_at_ms))
 }
 
-const insert_sql = "INSERT INTO sea.earthquake (source,source_id,contributing_ids,sources,net,code,magnitude,magnitude_type,occurred_at,occurred_at_ms,updated_at,updated_at_ms,place,title,status,event_type,tsunami,significance,alert,mmi,cdi,felt,nst,dmin,rms,gap,url,detail,longitude,latitude,depth_km,first_seen_at,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,to_timestamp($9::double precision/1000),$9,to_timestamp($10::double precision/1000),$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,to_timestamp($30::double precision/1000),to_timestamp($30::double precision/1000)) ON CONFLICT (source,source_id) DO NOTHING RETURNING "
+const insert_sql =
+  "INSERT INTO sea.earthquake (source,source_id,contributing_ids,sources,net,code,magnitude,magnitude_type,occurred_at,occurred_at_ms,updated_at,updated_at_ms,place,title,status,event_type,tsunami,significance,alert,mmi,cdi,felt,nst,dmin,rms,gap,url,detail,longitude,latitude,depth_km,first_seen_at,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,to_timestamp($9::double precision/1000),$9,to_timestamp($10::double precision/1000),$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,to_timestamp($30::double precision/1000),to_timestamp($30::double precision/1000)) ON CONFLICT (source,source_id) DO NOTHING RETURNING "
   <> earthquake.columns
 
-const update_sql = "UPDATE sea.earthquake SET contributing_ids=$3,sources=$4,net=$5,code=$6,magnitude=$7,magnitude_type=$8,occurred_at=to_timestamp($9::double precision/1000),occurred_at_ms=$9,updated_at=to_timestamp($10::double precision/1000),updated_at_ms=$10,place=$11,title=$12,status=$13,event_type=$14,tsunami=$15,significance=$16,alert=$17,mmi=$18,cdi=$19,felt=$20,nst=$21,dmin=$22,rms=$23,gap=$24,url=$25,detail=$26,longitude=$27,latitude=$28,depth_km=$29,last_seen_at=to_timestamp($30::double precision/1000) WHERE source=$1 AND source_id=$2 RETURNING "
+const update_sql =
+  "UPDATE sea.earthquake SET contributing_ids=$3,sources=$4,net=$5,code=$6,magnitude=$7,magnitude_type=$8,occurred_at=to_timestamp($9::double precision/1000),occurred_at_ms=$9,updated_at=to_timestamp($10::double precision/1000),updated_at_ms=$10,place=$11,title=$12,status=$13,event_type=$14,tsunami=$15,significance=$16,alert=$17,mmi=$18,cdi=$19,felt=$20,nst=$21,dmin=$22,rms=$23,gap=$24,url=$25,detail=$26,longitude=$27,latitude=$28,depth_km=$29,last_seen_at=to_timestamp($30::double precision/1000) WHERE source=$1 AND source_id=$2 RETURNING "
   <> earthquake.columns
 
 fn insert_new(

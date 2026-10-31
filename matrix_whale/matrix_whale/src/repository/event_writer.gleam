@@ -455,7 +455,8 @@ fn select_earthquake(
   })
 }
 
-const insert_event_sql = "INSERT INTO sea.event (kind,preferred_source,preferred_source_id,magnitude,magnitude_type,occurred_at,occurred_at_ms,updated_at,updated_at_ms,place,title,status,event_type,longitude,latitude,depth_km) VALUES ($1,$2,$3,$4,$5,to_timestamp($6::double precision/1000),$6,to_timestamp($7::double precision/1000),$7,$8,$9,$10,$11,$12,$13,$14) RETURNING "
+const insert_event_sql =
+  "INSERT INTO sea.event (kind,preferred_source,preferred_source_id,magnitude,magnitude_type,occurred_at,occurred_at_ms,updated_at,updated_at_ms,place,title,status,event_type,longitude,latitude,depth_km) VALUES ($1,$2,$3,$4,$5,to_timestamp($6::double precision/1000),$6,to_timestamp($7::double precision/1000),$7,$8,$9,$10,$11,$12,$13,$14) RETURNING "
   <> event.columns
 
 fn insert_event(
@@ -489,7 +490,8 @@ fn insert_event(
   })
 }
 
-const update_event_sql = "UPDATE sea.event SET preferred_source=$2,preferred_source_id=$3,magnitude=$4,magnitude_type=$5,occurred_at=to_timestamp($6::double precision/1000),occurred_at_ms=$6,updated_at=to_timestamp($7::double precision/1000),updated_at_ms=$7,place=$8,title=$9,status=$10,event_type=$11,longitude=$12,latitude=$13,depth_km=$14,last_seen_at=now() WHERE id=$1 RETURNING "
+const update_event_sql =
+  "UPDATE sea.event SET preferred_source=$2,preferred_source_id=$3,magnitude=$4,magnitude_type=$5,occurred_at=to_timestamp($6::double precision/1000),occurred_at_ms=$6,updated_at=to_timestamp($7::double precision/1000),updated_at_ms=$7,place=$8,title=$9,status=$10,event_type=$11,longitude=$12,latitude=$13,depth_km=$14,last_seen_at=now() WHERE id=$1 RETURNING "
   <> event.columns
 
 fn update_event(

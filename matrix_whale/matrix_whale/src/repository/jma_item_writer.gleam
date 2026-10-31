@@ -111,7 +111,8 @@ fn touch_known_items(
   }
 }
 
-const insert_item_sql = "
+const insert_item_sql =
+  "
   INSERT INTO sea.jma_item
     (item_url, feed_url, guid, title, published_at, state, attempts, first_seen_at, last_seen_at)
   VALUES
@@ -142,7 +143,8 @@ fn insert_new_items(
   })
 }
 
-const pending_sql = "
+const pending_sql =
+  "
   SELECT item_url, feed_url
   FROM sea.jma_item
   WHERE state IN ('pending', 'failed')

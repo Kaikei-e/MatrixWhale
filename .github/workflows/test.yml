@@ -45,7 +45,7 @@ jobs:
     strategy:
       matrix:
         otp: ["27.3.4.17", "28.5.0.6", "29.0.6"]
-        gleam: ["1.18.1"]
+        gleam: ["1.19.2"]
 
     steps:
       - uses: actions/checkout@v7

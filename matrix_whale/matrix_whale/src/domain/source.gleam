@@ -15,55 +15,60 @@ pub type Source {
   )
 }
 
-pub const noaa = Source(
-  id: "noaa",
-  name: "NOAA National Weather Service",
-  homepage: option.Some("https://www.weather.gov/"),
-  license: "public-domain",
-  attribution_text: "Source: NOAA National Weather Service",
-  redistributable: True,
-  priority: 100,
-)
+pub const noaa =
+  Source(
+    id: "noaa",
+    name: "NOAA National Weather Service",
+    homepage: option.Some("https://www.weather.gov/"),
+    license: "public-domain",
+    attribution_text: "Source: NOAA National Weather Service",
+    redistributable: True,
+    priority: 100,
+  )
 
-pub const usgs = Source(
-  id: "usgs",
-  name: "U.S. Geological Survey",
-  homepage: option.Some("https://earthquake.usgs.gov/"),
-  license: "public-domain",
-  attribution_text: "Credit: U.S. Geological Survey",
-  redistributable: True,
-  priority: 100,
-)
+pub const usgs =
+  Source(
+    id: "usgs",
+    name: "U.S. Geological Survey",
+    homepage: option.Some("https://earthquake.usgs.gov/"),
+    license: "public-domain",
+    attribution_text: "Credit: U.S. Geological Survey",
+    redistributable: True,
+    priority: 100,
+  )
 
-pub const emsc = Source(
-  id: "emsc",
-  name: "EMSC",
-  homepage: option.Some("https://www.seismicportal.eu/"),
-  license: "CC-BY-4.0",
-  attribution_text: "Credit: EMSC/CSEM, https://www.emsc-csem.org",
-  redistributable: True,
-  priority: 90,
-)
+pub const emsc =
+  Source(
+    id: "emsc",
+    name: "EMSC",
+    homepage: option.Some("https://www.seismicportal.eu/"),
+    license: "CC-BY-4.0",
+    attribution_text: "Credit: EMSC/CSEM, https://www.emsc-csem.org",
+    redistributable: True,
+    priority: 90,
+  )
 
-pub const gdacs = Source(
-  id: "gdacs",
-  name: "GDACS",
-  homepage: option.Some("https://www.gdacs.org/"),
-  license: "Public domain (GDACS RSS); attribution requested",
-  attribution_text: "Global Disaster Awareness and Coordination System, GDACS",
-  redistributable: False,
-  priority: 80,
-)
+pub const gdacs =
+  Source(
+    id: "gdacs",
+    name: "GDACS",
+    homepage: option.Some("https://www.gdacs.org/"),
+    license: "Public domain (GDACS RSS); attribution requested",
+    attribution_text: "Global Disaster Awareness and Coordination System, GDACS",
+    redistributable: False,
+    priority: 80,
+  )
 
-pub const jma = Source(
-  id: "jma",
-  name: "Japan Meteorological Agency",
-  homepage: option.Some("https://www.jma.go.jp/jma/kishou/info/coment.html"),
-  license: "公共データ利用規約（第1.0版）",
-  attribution_text: "出典：気象庁防災情報XMLおよび気象庁ホームページ「予報区等GISデータ」をもとにMatrixWhaleが加工・作成。編集責任：MatrixWhale。",
-  redistributable: True,
-  priority: 95,
-)
+pub const jma =
+  Source(
+    id: "jma",
+    name: "Japan Meteorological Agency",
+    homepage: option.Some("https://www.jma.go.jp/jma/kishou/info/coment.html"),
+    license: "公共データ利用規約（第1.0版）",
+    attribution_text: "出典：気象庁防災情報XMLおよび気象庁ホームページ「予報区等GISデータ」をもとにMatrixWhaleが加工・作成。編集責任：MatrixWhale。",
+    redistributable: True,
+    priority: 95,
+  )
 
 pub const all: List(Source) = [noaa, usgs, emsc, gdacs, jma]
 

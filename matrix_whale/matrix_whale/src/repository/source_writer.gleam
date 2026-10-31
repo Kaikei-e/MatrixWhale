@@ -21,7 +21,8 @@ pub fn list_all(conn: pog.Connection) -> Result(List(Source), String) {
   |> result.map_error(fn(x) { "Database error: " <> string.inspect(x) })
 }
 
-const upsert_sql = "
+const upsert_sql =
+  "
   INSERT INTO sea.source (id, name, homepage, license, attribution_text, redistributable, priority)
   VALUES ($1, $2, $3, $4, $5, $6, $7)
   ON CONFLICT (id) DO UPDATE SET

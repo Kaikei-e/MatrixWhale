@@ -220,7 +220,8 @@ fn classify_authorities(
   })
 }
 
-const upsert_source_sql = "
+const upsert_source_sql =
+  "
   INSERT INTO sea.source
     (id, name, homepage, license, attribution_text, redistributable, priority)
   VALUES
@@ -253,7 +254,8 @@ fn upsert_sources(
   })
 }
 
-const insert_authority_sql = "
+const insert_authority_sql =
+  "
   INSERT INTO sea.cap_authority
     (oid, source, name, country_name, country_iso3, abbrev, register_url, categories, raa_pub_date, first_seen_at, last_seen_at, removed_at)
   VALUES
@@ -287,7 +289,8 @@ fn insert_authorities(
   })
 }
 
-const update_authority_sql = "
+const update_authority_sql =
+  "
   UPDATE sea.cap_authority SET
     source = $2,
     name = $3,
@@ -351,7 +354,8 @@ fn touch_authorities(
   }
 }
 
-const upsert_feed_sql = "
+const upsert_feed_sql =
+  "
   INSERT INTO sea.cap_feed
     (url, authority_oid, authority_oids, language, subscribed, exclusion_reason,
      format, last_polled_at, last_success_at, last_http_status, last_error,

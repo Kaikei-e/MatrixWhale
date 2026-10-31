@@ -7,7 +7,8 @@ import gleam/option.{type Option}
 import gleam/time/calendar
 import gleam/time/timestamp.{type Timestamp}
 
-pub const columns = "source, source_id, contributing_ids, sources, net, code, magnitude, magnitude_type, occurred_at, occurred_at_ms, updated_at, updated_at_ms, place, title, status, event_type, tsunami, significance, alert, mmi, cdi, felt, nst, dmin, rms, gap, url, detail, longitude, latitude, depth_km, first_seen_at, last_seen_at"
+pub const columns =
+  "source, source_id, contributing_ids, sources, net, code, magnitude, magnitude_type, occurred_at, occurred_at_ms, updated_at, updated_at_ms, place, title, status, event_type, tsunami, significance, alert, mmi, cdi, felt, nst, dmin, rms, gap, url, detail, longitude, latitude, depth_km, first_seen_at, last_seen_at"
 
 pub type MagnitudeFilter {
   Minimum(Float)

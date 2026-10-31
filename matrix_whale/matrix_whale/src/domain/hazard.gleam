@@ -49,7 +49,8 @@ pub type GdacsEpisodeRow {
   )
 }
 
-pub const episode_columns = "event_type, event_id, episode_id, alert_level, alert_score, name, description, country, iso3, glide, origin_source, origin_source_id, severity_value, severity_unit, severity_text, from_at_ms, to_at_ms, modified_at_ms, is_current, longitude, latitude, bbox_west, bbox_south, bbox_east, bbox_north, affected_countries, report_url, geometry::text, is_temporary"
+pub const episode_columns =
+  "event_type, event_id, episode_id, alert_level, alert_score, name, description, country, iso3, glide, origin_source, origin_source_id, severity_value, severity_unit, severity_text, from_at_ms, to_at_ms, modified_at_ms, is_current, longitude, latitude, bbox_west, bbox_south, bbox_east, bbox_north, affected_countries, report_url, geometry::text, is_temporary"
 
 pub fn episode_row_decoder() -> decode.Decoder(GdacsEpisodeRow) {
   use event_type <- decode.field(0, decode.string)
@@ -616,9 +617,11 @@ pub type Hazard {
   )
 }
 
-pub const columns = "source, source_id, source_episode_id, episode_count, hazard_type, hazard_codes, glide, alert_level, alert_score, cap_severity, severity_value, severity_unit, severity_label, estimate_type, title, description, countries, report_url, external_ids, onset_at, onset_at_ms, expires_at, expires_at_ms, modified_at, modified_at_ms, is_current, ST_X(centroid), ST_Y(centroid), ST_XMin(bbox), ST_YMin(bbox), ST_XMax(bbox), ST_YMax(bbox), ST_AsGeoJSON(ST_SimplifyPreserveTopology(primary_geometry, 0.01), 4), geometries::text, first_seen_at, last_seen_at, subtype, confirmed"
+pub const columns =
+  "source, source_id, source_episode_id, episode_count, hazard_type, hazard_codes, glide, alert_level, alert_score, cap_severity, severity_value, severity_unit, severity_label, estimate_type, title, description, countries, report_url, external_ids, onset_at, onset_at_ms, expires_at, expires_at_ms, modified_at, modified_at_ms, is_current, ST_X(centroid), ST_Y(centroid), ST_XMin(bbox), ST_YMin(bbox), ST_XMax(bbox), ST_YMax(bbox), ST_AsGeoJSON(ST_SimplifyPreserveTopology(primary_geometry, 0.01), 4), geometries::text, first_seen_at, last_seen_at, subtype, confirmed"
 
-pub const detail_columns = "source, source_id, source_episode_id, episode_count, hazard_type, hazard_codes, glide, alert_level, alert_score, cap_severity, severity_value, severity_unit, severity_label, estimate_type, title, description, countries, report_url, external_ids, onset_at, onset_at_ms, expires_at, expires_at_ms, modified_at, modified_at_ms, is_current, ST_X(centroid), ST_Y(centroid), ST_XMin(bbox), ST_YMin(bbox), ST_XMax(bbox), ST_YMax(bbox), ST_AsGeoJSON(primary_geometry, 6), geometries::text, first_seen_at, last_seen_at, subtype, confirmed"
+pub const detail_columns =
+  "source, source_id, source_episode_id, episode_count, hazard_type, hazard_codes, glide, alert_level, alert_score, cap_severity, severity_value, severity_unit, severity_label, estimate_type, title, description, countries, report_url, external_ids, onset_at, onset_at_ms, expires_at, expires_at_ms, modified_at, modified_at_ms, is_current, ST_X(centroid), ST_Y(centroid), ST_XMin(bbox), ST_YMin(bbox), ST_XMax(bbox), ST_YMax(bbox), ST_AsGeoJSON(primary_geometry, 6), geometries::text, first_seen_at, last_seen_at, subtype, confirmed"
 
 pub fn row_decoder() -> decode.Decoder(Hazard) {
   use source <- decode.field(0, decode.string)

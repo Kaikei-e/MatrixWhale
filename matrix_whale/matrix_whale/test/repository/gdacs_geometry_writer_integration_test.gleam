@@ -14,7 +14,8 @@ import repository/gdacs_geometry_writer
 import repository/hazard_reader
 import support/test_db
 
-const feature_collection = "{\"type\":\"FeatureCollection\",\"features\":[{\"properties\":{\"Class\":\"Poly_Circle\"},\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[[105,-9],[106,-9],[106,-8],[105,-8],[105,-9]]]}}]}"
+const feature_collection =
+  "{\"type\":\"FeatureCollection\",\"features\":[{\"properties\":{\"Class\":\"Poly_Circle\"},\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[[105,-9],[106,-9],[106,-8],[105,-8],[105,-9]]]}}]}"
 
 pub fn pending_excludes_fetched_episodes_integration_test() {
   test_db.with_test_db(fn(conn) {

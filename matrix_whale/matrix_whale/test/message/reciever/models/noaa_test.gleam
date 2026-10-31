@@ -5,7 +5,8 @@ import gleam/option
 import gleeunit/should
 import message/reciever/models/noaa
 
-const base_properties = "
+const base_properties =
+  "
     \"@id\": \"https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.test1\",
     \"id\": \"urn:oid:2.49.0.1.840.0.test1\",
     \"areaDesc\": \"Test County\",

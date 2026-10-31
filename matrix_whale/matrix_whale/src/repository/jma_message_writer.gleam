@@ -652,7 +652,8 @@ fn compute_series_key(msg: models_jma.JmaMessageContent) -> String {
   }
 }
 
-const claim_message_sql = "
+const claim_message_sql =
+  "
   INSERT INTO sea.jma_message
     (identifier, item_url, feed_url, control_title, status, info_type, event_id, series_key, sent, headline, description, raw_xml, normalized, first_seen_at, last_seen_at)
   VALUES
@@ -1027,9 +1028,7 @@ const upsert_alert_sql = "
        OR (sea.alert.sent IS NULL)
     RETURNING *
   )
-  SELECT "
-  <> alert.columns
-  <> "
+  SELECT " <> alert.columns <> "
   FROM written a
   JOIN sea.source s ON s.id = a.source"
 

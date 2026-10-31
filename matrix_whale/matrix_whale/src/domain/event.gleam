@@ -5,7 +5,8 @@ import gleam/option.{type Option}
 import gleam/time/calendar
 import gleam/time/timestamp.{type Timestamp}
 
-pub const columns = "id, kind, preferred_source, preferred_source_id, magnitude, magnitude_type, occurred_at, occurred_at_ms, updated_at, updated_at_ms, place, title, status, event_type, longitude, latitude, depth_km, first_seen_at, last_seen_at"
+pub const columns =
+  "id, kind, preferred_source, preferred_source_id, magnitude, magnitude_type, occurred_at, occurred_at_ms, updated_at, updated_at_ms, place, title, status, event_type, longitude, latitude, depth_km, first_seen_at, last_seen_at"
 
 pub type Event {
   Event(

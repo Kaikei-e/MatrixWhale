@@ -40,7 +40,8 @@ fn row_cursor(row: KeyRow) -> String {
   ))
 }
 
-const keyset_sql = "WITH filtered AS (
+const keyset_sql =
+  "WITH filtered AS (
   SELECT 'earthquake'::text AS kind, 'earthquake:' || id::text AS key, first_seen_at
     FROM sea.event
    WHERE status IS DISTINCT FROM 'deleted'

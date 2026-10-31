@@ -116,7 +116,8 @@ fn feed_row_decoder() -> decode.Decoder(FeedRow) {
   ))
 }
 
-const feed_view_sql = "
+const feed_view_sql =
+  "
   SELECT
     f.url,
     f.authority_oid,

@@ -306,7 +306,8 @@ fn touch_messages(
   }
 }
 
-const insert_cap_message_sql = "
+const insert_cap_message_sql =
+  "
   INSERT INTO sea.cap_message
     (sender, identifier, sent, sent_ms, status, msg_type, scope, source, feed_url, cap_url,
      reference_keys, cap, raw_xml, normalized, expires_at, first_seen_at, last_seen_at)
