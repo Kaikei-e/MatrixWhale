@@ -310,8 +310,7 @@ fn touch_known_items(
   }
 }
 
-const insert_cap_item_sql =
-  "
+const insert_cap_item_sql = "
   INSERT INTO sea.cap_item
     (cap_url, feed_url, published_at, state, attempts, last_attempt_at, http_status, error, message_key, first_seen_at, last_seen_at)
   VALUES
@@ -344,8 +343,7 @@ fn insert_new_items(
   })
 }
 
-const pending_sql =
-  "
+const pending_sql = "
   SELECT cap_url, feed_url
   FROM sea.cap_item
   WHERE state IN ('pending', 'failed')

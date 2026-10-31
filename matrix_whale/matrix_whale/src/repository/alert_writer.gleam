@@ -169,7 +169,9 @@ const insert_noaa_sql = "
     ON CONFLICT (source, source_id) DO NOTHING
     RETURNING *
   )
-  SELECT " <> alert.columns <> "
+  SELECT "
+  <> alert.columns
+  <> "
   FROM written a
   JOIN sea.source s ON s.id = a.source"
 
@@ -186,7 +188,9 @@ const update_noaa_sql = "
     WHERE source = 'noaa' AND source_id = $1
     RETURNING *
   )
-  SELECT " <> alert.columns <> "
+  SELECT "
+  <> alert.columns
+  <> "
   FROM written a
   JOIN sea.source s ON s.id = a.source"
 
@@ -439,7 +443,9 @@ const insert_cap_sql = "
       superseded_by = EXCLUDED.superseded_by
     RETURNING *
   )
-  SELECT " <> alert.columns <> "
+  SELECT "
+  <> alert.columns
+  <> "
   FROM written a
   JOIN sea.source s ON s.id = a.source"
 
@@ -450,7 +456,9 @@ const end_cap_sql = "
     WHERE source = $1 AND source_id = $2 AND ended_at IS NULL
     RETURNING *
   )
-  SELECT " <> alert.columns <> "
+  SELECT "
+  <> alert.columns
+  <> "
   FROM written a
   JOIN sea.source s ON s.id = a.source"
 

@@ -20,8 +20,11 @@ pub type GdacsWriteResult {
   )
 }
 
-const empty_result =
-  GdacsWriteResult(written_features: [], new_hazards: [], updated_hazards: [])
+const empty_result = GdacsWriteResult(
+  written_features: [],
+  new_hazards: [],
+  updated_hazards: [],
+)
 
 pub fn write_batch(
   records: List(Incoming(GdacsFeature)),
@@ -208,11 +211,9 @@ fn preserve_origin(
   }
 }
 
-const insert_sql =
-  "INSERT INTO sea.gdacs_event (event_type,event_id,episode_id,alert_level,alert_score,episode_alert_level,episode_alert_score,name,event_name,description,html_description,country,iso3,glide,origin_source,origin_source_id,severity_value,severity_unit,severity_text,from_at,from_at_ms,to_at,to_at_ms,modified_at,modified_at_ms,is_current,is_temporary,longitude,latitude,bbox_west,bbox_south,bbox_east,bbox_north,affected_countries,report_url,geometry_url,icon_url,raw,first_seen_at,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,to_timestamp($20::double precision/1000),$20,to_timestamp($21::double precision/1000),$21,to_timestamp($22::double precision/1000),$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35::jsonb,to_timestamp($36::double precision/1000),to_timestamp($36::double precision/1000)) ON CONFLICT (event_type,event_id,episode_id) DO NOTHING RETURNING event_type, event_id, episode_id"
+const insert_sql = "INSERT INTO sea.gdacs_event (event_type,event_id,episode_id,alert_level,alert_score,episode_alert_level,episode_alert_score,name,event_name,description,html_description,country,iso3,glide,origin_source,origin_source_id,severity_value,severity_unit,severity_text,from_at,from_at_ms,to_at,to_at_ms,modified_at,modified_at_ms,is_current,is_temporary,longitude,latitude,bbox_west,bbox_south,bbox_east,bbox_north,affected_countries,report_url,geometry_url,icon_url,raw,first_seen_at,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,to_timestamp($20::double precision/1000),$20,to_timestamp($21::double precision/1000),$21,to_timestamp($22::double precision/1000),$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35::jsonb,to_timestamp($36::double precision/1000),to_timestamp($36::double precision/1000)) ON CONFLICT (event_type,event_id,episode_id) DO NOTHING RETURNING event_type, event_id, episode_id"
 
-const update_sql =
-  "UPDATE sea.gdacs_event SET alert_level=$4,alert_score=$5,episode_alert_level=$6,episode_alert_score=$7,name=$8,event_name=$9,description=$10,html_description=$11,country=$12,iso3=$13,glide=$14,origin_source=$15,origin_source_id=$16,severity_value=$17,severity_unit=$18,severity_text=$19,from_at=to_timestamp($20::double precision/1000),from_at_ms=$20,to_at=to_timestamp($21::double precision/1000),to_at_ms=$21,modified_at=to_timestamp($22::double precision/1000),modified_at_ms=$22,is_current=$23,is_temporary=$24,longitude=$25,latitude=$26,bbox_west=$27,bbox_south=$28,bbox_east=$29,bbox_north=$30,affected_countries=$31,report_url=$32,geometry_url=$33,icon_url=$34,raw=$35::jsonb,last_seen_at=to_timestamp($36::double precision/1000) WHERE event_type=$1 AND event_id=$2 AND episode_id=$3 RETURNING event_type, event_id, episode_id"
+const update_sql = "UPDATE sea.gdacs_event SET alert_level=$4,alert_score=$5,episode_alert_level=$6,episode_alert_score=$7,name=$8,event_name=$9,description=$10,html_description=$11,country=$12,iso3=$13,glide=$14,origin_source=$15,origin_source_id=$16,severity_value=$17,severity_unit=$18,severity_text=$19,from_at=to_timestamp($20::double precision/1000),from_at_ms=$20,to_at=to_timestamp($21::double precision/1000),to_at_ms=$21,modified_at=to_timestamp($22::double precision/1000),modified_at_ms=$22,is_current=$23,is_temporary=$24,longitude=$25,latitude=$26,bbox_west=$27,bbox_south=$28,bbox_east=$29,bbox_north=$30,affected_countries=$31,report_url=$32,geometry_url=$33,icon_url=$34,raw=$35::jsonb,last_seen_at=to_timestamp($36::double precision/1000) WHERE event_type=$1 AND event_id=$2 AND episode_id=$3 RETURNING event_type, event_id, episode_id"
 
 fn insert_new(
   pairs: List(#(Incoming(GdacsFeature), Verdict)),
@@ -390,12 +391,10 @@ fn hazard_exists(
   |> result.map_error(err)
 }
 
-const hazard_insert_sql =
-  "INSERT INTO sea.hazard (source,source_id,source_episode_id,episode_count,hazard_type,hazard_codes,glide,alert_level,alert_score,cap_severity,severity_value,severity_unit,severity_label,estimate_type,title,description,countries,report_url,external_ids,onset_at,onset_at_ms,expires_at,expires_at_ms,modified_at,modified_at_ms,is_current,centroid,bbox,primary_geometry,geometries,first_seen_at,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,to_timestamp($20::double precision/1000),$20,to_timestamp($21::double precision/1000),$21,to_timestamp($22::double precision/1000),$22,$23,ST_SetSRID(ST_MakePoint($24,$25),4326),ST_SetSRID(ST_MakeEnvelope($26,$27,$28,$29),4326),ST_SetSRID(ST_GeomFromGeoJSON($30::text),4326),$31::jsonb,to_timestamp($32::double precision/1000),to_timestamp($32::double precision/1000)) RETURNING "
+const hazard_insert_sql = "INSERT INTO sea.hazard (source,source_id,source_episode_id,episode_count,hazard_type,hazard_codes,glide,alert_level,alert_score,cap_severity,severity_value,severity_unit,severity_label,estimate_type,title,description,countries,report_url,external_ids,onset_at,onset_at_ms,expires_at,expires_at_ms,modified_at,modified_at_ms,is_current,centroid,bbox,primary_geometry,geometries,first_seen_at,last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,to_timestamp($20::double precision/1000),$20,to_timestamp($21::double precision/1000),$21,to_timestamp($22::double precision/1000),$22,$23,ST_SetSRID(ST_MakePoint($24,$25),4326),ST_SetSRID(ST_MakeEnvelope($26,$27,$28,$29),4326),ST_SetSRID(ST_GeomFromGeoJSON($30::text),4326),$31::jsonb,to_timestamp($32::double precision/1000),to_timestamp($32::double precision/1000)) RETURNING "
   <> hazard.columns
 
-const hazard_update_sql =
-  "UPDATE sea.hazard SET source_episode_id=$3,episode_count=$4,hazard_type=$5,hazard_codes=$6,glide=$7,alert_level=$8,alert_score=$9,cap_severity=$10,severity_value=$11,severity_unit=$12,severity_label=$13,estimate_type=$14,title=$15,description=$16,countries=$17,report_url=$18,external_ids=$19,onset_at=to_timestamp($20::double precision/1000),onset_at_ms=$20,expires_at=to_timestamp($21::double precision/1000),expires_at_ms=$21,modified_at=to_timestamp($22::double precision/1000),modified_at_ms=$22,is_current=$23,centroid=ST_SetSRID(ST_MakePoint($24,$25),4326),bbox=ST_SetSRID(ST_MakeEnvelope($26,$27,$28,$29),4326),primary_geometry=ST_SetSRID(ST_GeomFromGeoJSON($30::text),4326),geometries=$31::jsonb,last_seen_at=to_timestamp($32::double precision/1000) WHERE source=$1 AND source_id=$2 RETURNING "
+const hazard_update_sql = "UPDATE sea.hazard SET source_episode_id=$3,episode_count=$4,hazard_type=$5,hazard_codes=$6,glide=$7,alert_level=$8,alert_score=$9,cap_severity=$10,severity_value=$11,severity_unit=$12,severity_label=$13,estimate_type=$14,title=$15,description=$16,countries=$17,report_url=$18,external_ids=$19,onset_at=to_timestamp($20::double precision/1000),onset_at_ms=$20,expires_at=to_timestamp($21::double precision/1000),expires_at_ms=$21,modified_at=to_timestamp($22::double precision/1000),modified_at_ms=$22,is_current=$23,centroid=ST_SetSRID(ST_MakePoint($24,$25),4326),bbox=ST_SetSRID(ST_MakeEnvelope($26,$27,$28,$29),4326),primary_geometry=ST_SetSRID(ST_GeomFromGeoJSON($30::text),4326),geometries=$31::jsonb,last_seen_at=to_timestamp($32::double precision/1000) WHERE source=$1 AND source_id=$2 RETURNING "
   <> hazard.columns
 
 fn run_hazard_write(
@@ -461,8 +460,7 @@ fn hazard_bind_params(query, n: hazard.NormalizedHazard, now_ms: Int) {
   |> pog.parameter(pog.int(now_ms))
 }
 
-const feature_row_columns =
-  "event_type, event_id, episode_id, alert_level, alert_score, episode_alert_level, episode_alert_score, name, event_name, description, html_description, country, iso3, glide, origin_source, origin_source_id, severity_value, severity_unit, severity_text, from_at_ms, to_at_ms, modified_at_ms, is_current, is_temporary, longitude, latitude, bbox_west, bbox_south, bbox_east, bbox_north, affected_countries, report_url, geometry_url, icon_url, raw::text"
+const feature_row_columns = "event_type, event_id, episode_id, alert_level, alert_score, episode_alert_level, episode_alert_score, name, event_name, description, html_description, country, iso3, glide, origin_source, origin_source_id, severity_value, severity_unit, severity_text, from_at_ms, to_at_ms, modified_at_ms, is_current, is_temporary, longitude, latitude, bbox_west, bbox_south, bbox_east, bbox_north, affected_countries, report_url, geometry_url, icon_url, raw::text"
 
 /// Reads one raw episode row back in the same shape the adapter originally
 /// sent it in, so it can be re-run through `gdacs.to_incoming_earthquake`
