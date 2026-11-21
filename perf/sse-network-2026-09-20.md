@@ -112,4 +112,4 @@ node scripts/perf/sse.mjs --seconds 180 --out ../../perf/results/slow-network/ma
 node scripts/perf/network.mjs --seconds 60 --ect 3G --out ../../perf/results/slow-network/browser.json
 ```
 
-agy-mcpの別々の会話にWeb調査・共有SSEバックエンド・災害の符号化・フロントエンド実装を分担した。agy側で拒否されたURL閲覧とコマンドは権限を変更せず、親側で一次資料を確認し、型修正・差分レビュー・テストと実測を行った。
+別々のエージェントの会話にWeb調査・共有SSEバックエンド・災害の符号化・フロントエンド実装を分担した。エージェント側で拒否されたURL閲覧とコマンドは権限を変更せず、親側で一次資料を確認し、型修正・差分レビュー・テストと実測を行った。
